@@ -28,6 +28,21 @@ project(
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Slint ships no prebuilt C++ binaries for macOS arm64, so build the C++ API
+# from source; this compiles the Slint runtime with cargo via Corrosion and
+# needs a Rust toolchain on PATH.
+include(FetchContent)
+FetchContent_Declare(
+    Slint
+    GIT_REPOSITORY https://github.com/slint-ui/slint.git
+    GIT_TAG v1.17.1
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR api/cpp
+)
+FetchContent_MakeAvailable(Slint)
+
 add_executable(spdsx-patchedit source/main.cpp)
+slint_target_sources(spdsx-patchedit ui/app-window.slint)
+target_link_libraries(spdsx-patchedit PRIVATE Slint::Slint)
 
 install(TARGETS spdsx-patchedit RUNTIME)
