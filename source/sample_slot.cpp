@@ -25,6 +25,12 @@ void SampleSlot::set_sample_name(const juce::String& name)
   repaint();
 }
 
+void SampleSlot::set_image(const juce::Image& image)
+{
+  image_ = image;
+  repaint();
+}
+
 void SampleSlot::set_playing(bool playing)
 {
   if (playing_ != playing) {
@@ -38,6 +44,12 @@ void SampleSlot::paint(juce::Graphics& g)
   auto bounds = getLocalBounds().toFloat();
   g.setColour(hovered_ ? kSlotBgHover : kSlotBg);
   g.fillRoundedRectangle(bounds, 8.0f);
+
+  if (image_.isValid()) {
+    g.drawImage(image_,
+        bounds.reduced(4.0f),
+        juce::RectanglePlacement::stretchToFit);
+  }
 
   if (has_sample()) {
     g.setColour(kNameText);

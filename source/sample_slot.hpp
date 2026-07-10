@@ -18,6 +18,9 @@ public:
   std::function<void(int, bool)> on_hover;
 
   void set_sample_name(const juce::String& name);
+  // An invalid image just leaves the slot without a spectrogram (e.g.
+  // files shorter than one FFT window).
+  void set_image(const juce::Image& image);
   void set_playing(bool playing);
   bool has_sample() const { return sample_name_.isNotEmpty(); }
 
@@ -28,6 +31,7 @@ public:
 private:
   int index_;
   juce::String sample_name_;
+  juce::Image image_;
   bool playing_ = false;
   bool hovered_ = false;
 };

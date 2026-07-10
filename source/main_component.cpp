@@ -2,6 +2,8 @@
 
 #include <cstdio>
 
+#include "spectro.hpp"
+
 namespace spdsx {
 
 namespace {
@@ -46,6 +48,16 @@ void MainComponent::load_sample(int idx, const juce::File& file)
   }
   auto& slot = *slots_[static_cast<size_t>(idx)];
   slot.set_sample_name(file.getFileName());
+  // Too-short files play fine but render no spectrogram; the slot just
+  // shows the name in that case.
+  juce::Image image;
+  if (auto png = render_spectrogram(
+          file.getFullPathName().toStdString(), idx);
+      !png.empty())
+  {
+    image = juce::ImageFileFormat::loadFrom(juce::File(png));
+  }
+  slot.set_image(image);
   slot.set_playing(false);
 }
 
