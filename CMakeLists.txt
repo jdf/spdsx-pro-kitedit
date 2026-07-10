@@ -22,54 +22,29 @@ project(
     spdsx-patchedit
     VERSION 0.1.0
     DESCRIPTION "Interactive kit designer for the Roland SPD-SX"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Slint ships no prebuilt C++ binaries for macOS arm64, so build the C++ API
-# from source; this compiles the Slint runtime with cargo via Corrosion and
-# needs a Rust toolchain on PATH.
-include(FetchContent)
-FetchContent_Declare(
-    Slint
-    GIT_REPOSITORY https://github.com/slint-ui/slint.git
-    GIT_TAG v1.17.1
-    GIT_SHALLOW TRUE
-    SOURCE_SUBDIR api/cpp
-)
-FetchContent_MakeAvailable(Slint)
-
-# miniaudio is header-only; its vcpkg port ships no CMake config.
-find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
+find_package(JUCE CONFIG REQUIRED)
 # specgram comes from the overlay port in ports/, which builds the sibling
 # specs checkout.
 find_package(specgram CONFIG REQUIRED)
 
-add_executable(spdsx-patchedit
+juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit")
+
+target_sources(spdsx-patchedit PRIVATE
     source/main.cpp
-    source/audio.cpp
     source/spectro.cpp
 )
-if(APPLE)
-    enable_language(OBJCXX)
-    target_sources(spdsx-patchedit PRIVATE source/macdrop.mm)
-endif()
-slint_target_sources(spdsx-patchedit ui/app-window.slint)
-target_include_directories(spdsx-patchedit PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
-target_link_libraries(spdsx-patchedit PRIVATE
-    Slint::Slint
-    specgram::specgram
+target_compile_definitions(spdsx-patchedit PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
 )
-if(APPLE)
-    # Core Audio for miniaudio's backend; Cocoa for the drop shim.
-    target_link_libraries(spdsx-patchedit PRIVATE
-        "-framework CoreFoundation"
-        "-framework CoreAudio"
-        "-framework AudioToolbox"
-        "-framework Cocoa"
-    )
-endif()
-
-install(TARGETS spdsx-patchedit RUNTIME)
+target_link_libraries(spdsx-patchedit PRIVATE
+    juce::juce_gui_basics
+    specgram::specgram
+    juce::juce_recommended_config_flags
+)
