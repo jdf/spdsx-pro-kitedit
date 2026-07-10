@@ -55,11 +55,13 @@ private:
   juce::ApplicationCommandManager& commands_;
   KitModel model_;
   juce::UndoManager undo_;
-  KitDocument document_ {model_, undo_};
+  juce::ApplicationProperties settings_;
+  KitDocument document_ {model_, undo_, settings_};
   AudioEngine engine_ {kSlotCount};
   std::unique_ptr<juce::FileChooser> chooser_;
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   juce::Label name_label_;
+  juce::File last_sample_dir_;
   int hovered_ = -1;
   bool could_undo_ = false;
   bool could_redo_ = false;

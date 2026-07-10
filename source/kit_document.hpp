@@ -14,7 +14,11 @@ namespace spdsx {
 
 class KitDocument : public juce::FileBasedDocument {
 public:
-  KitDocument(KitModel& model, juce::UndoManager& undo);
+  // settings persists "where kits live" across sessions, kept separate
+  // from the sample chooser's directory memory.
+  KitDocument(KitModel& model,
+      juce::UndoManager& undo,
+      juce::ApplicationProperties& settings);
 
   juce::String getDocumentTitle() override;
 
@@ -30,7 +34,7 @@ protected:
 private:
   KitModel& model_;
   juce::UndoManager& undo_;
-  juce::File last_opened_;
+  juce::ApplicationProperties& settings_;
 };
 
 }  // namespace spdsx

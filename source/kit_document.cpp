@@ -2,11 +2,14 @@
 
 namespace spdsx {
 
-KitDocument::KitDocument(KitModel& model, juce::UndoManager& undo)
+KitDocument::KitDocument(KitModel& model,
+    juce::UndoManager& undo,
+    juce::ApplicationProperties& settings)
     : juce::FileBasedDocument(
           ".kit", "*.kit", "Open a kit", "Save this kit")
     , model_(model)
     , undo_(undo)
+    , settings_(settings)
 {
 }
 
@@ -73,14 +76,18 @@ juce::Result KitDocument::saveDocument(const juce::File& file)
   return juce::Result::ok();
 }
 
+// FileBasedDocument starts its open/save dialogs here; persisting it
+// keeps the kit dialogs anchored to kit territory across sessions,
+// independent of where samples were last browsed.
 juce::File KitDocument::getLastDocumentOpened()
 {
-  return last_opened_;
+  return {settings_.getUserSettings()->getValue("lastKitFile")};
 }
 
 void KitDocument::setLastDocumentOpened(const juce::File& file)
 {
-  last_opened_ = file;
+  settings_.getUserSettings()->setValue(
+      "lastKitFile", file.getFullPathName());
 }
 
 }  // namespace spdsx

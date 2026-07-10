@@ -29,6 +29,16 @@ const juce::Colour kDirtyDot(0xffd9a94f);
 MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
 {
+  juce::PropertiesFile::Options options;
+  options.applicationName = "spdsx-patchedit";
+  options.filenameSuffix = ".settings";
+  options.osxLibrarySubFolder = "Application Support";
+  options.folderName = "spdsx-patchedit";
+  options.millisecondsBeforeSaving = 500;
+  settings_.setStorageParameters(options);
+  last_sample_dir_ =
+      juce::File(settings_.getUserSettings()->getValue("lastSampleDir"));
+
   setWantsKeyboardFocus(true);
   for (int i = 0; i < kSlotCount; ++i) {
     slots_[static_cast<size_t>(i)] = std::make_unique<SampleSlot>(i);
@@ -80,6 +90,13 @@ void MainComponent::load_sample(int idx, const juce::File& file)
   }
   undo_.beginNewTransaction("Load " + file.getFileName());
   undo_.perform(new SetSlotAction(model_, idx, file));
+  // Remember where samples come from — chooser picks and drags alike —
+  // separately from where kits are saved.
+  if (auto dir = file.getParentDirectory(); dir.isDirectory()) {
+    last_sample_dir_ = dir;
+    settings_.getUserSettings()->setValue(
+        "lastSampleDir", dir.getFullPathName());
+  }
 }
 
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
@@ -337,9 +354,14 @@ void MainComponent::transport_action(int idx, TransportAction action)
 void MainComponent::choose_sample(int idx)
 {
   // The chooser must outlive launchAsync, hence the member; opening a
-  // new one abandons any dialog already up.
+  // new one abandons any dialog already up. It starts in the app's own
+  // last-sample directory rather than the OS-shared last-used location,
+  // which saving a kit would have dragged off to kit territory.
+  auto start = last_sample_dir_.isDirectory()
+      ? last_sample_dir_
+      : juce::File::getSpecialLocation(juce::File::userMusicDirectory);
   chooser_ = std::make_unique<juce::FileChooser>(
-      "Choose a sample", juce::File(), "*.wav");
+      "Choose a sample", start, "*.wav");
   chooser_->launchAsync(juce::FileBrowserComponent::openMode
           | juce::FileBrowserComponent::canSelectFiles,
       [this, idx](const juce::FileChooser& fc)
