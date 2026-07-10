@@ -1,62 +1,33 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.25)
 
 include(cmake/prelude.cmake)
+
+# Locate the vcpkg toolchain: an explicit CMAKE_TOOLCHAIN_FILE wins, then
+# $VCPKG_ROOT, then ~/vcpkg. (Same convention as specs.)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        set(_vcpkg_root "$ENV{VCPKG_ROOT}")
+    else()
+        set(_vcpkg_root "$ENV{HOME}/vcpkg")
+    endif()
+    set(CMAKE_TOOLCHAIN_FILE "${_vcpkg_root}/scripts/buildsystems/vcpkg.cmake")
+endif()
+if(NOT EXISTS "${CMAKE_TOOLCHAIN_FILE}")
+    message(FATAL_ERROR
+        "vcpkg toolchain not found at ${CMAKE_TOOLCHAIN_FILE}; "
+        "set VCPKG_ROOT (or CMAKE_TOOLCHAIN_FILE) to your vcpkg checkout")
+endif()
 
 project(
     spdsx-patchedit
     VERSION 0.1.0
-    DESCRIPTION "Short description"
-    HOMEPAGE_URL "https://example.com/"
+    DESCRIPTION "Interactive kit designer for the Roland SPD-SX"
     LANGUAGES CXX
 )
 
-include(cmake/project-is-top-level.cmake)
-include(cmake/variables.cmake)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ---- Declare library ----
+add_executable(spdsx-patchedit source/main.cpp)
 
-add_library(
-    spdsx-patchedit_lib OBJECT
-    source/lib.cpp
-)
-
-target_include_directories(
-    spdsx-patchedit_lib ${warning_guard}
-    PUBLIC
-    "\$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/source>"
-)
-
-target_compile_features(spdsx-patchedit_lib PUBLIC cxx_std_20)
-
-find_package(fmt REQUIRED)
-target_link_libraries(spdsx-patchedit_lib PRIVATE fmt::fmt)
-
-# ---- Declare executable ----
-
-add_executable(spdsx-patchedit_exe source/main.cpp)
-add_executable(spdsx-patchedit::exe ALIAS spdsx-patchedit_exe)
-
-set_property(TARGET spdsx-patchedit_exe PROPERTY OUTPUT_NAME spdsx-patchedit)
-
-target_compile_features(spdsx-patchedit_exe PRIVATE cxx_std_20)
-
-target_link_libraries(spdsx-patchedit_exe PRIVATE spdsx-patchedit_lib)
-
-# ---- Install rules ----
-
-if(NOT CMAKE_SKIP_INSTALL_RULES)
-  include(cmake/install-rules.cmake)
-endif()
-
-# ---- Developer mode ----
-
-if(NOT spdsx-patchedit_DEVELOPER_MODE)
-  return()
-elseif(NOT PROJECT_IS_TOP_LEVEL)
-  message(
-      AUTHOR_WARNING
-      "Developer mode is intended for developers of spdsx-patchedit"
-  )
-endif()
-
-include(cmake/dev-mode.cmake)
+install(TARGETS spdsx-patchedit RUNTIME)
