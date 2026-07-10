@@ -10,7 +10,14 @@ namespace {
 
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
+constexpr int kPadPadding = 8;
+constexpr int kPadHeader = 20;
 constexpr int kSlotSpacing = 8;
+
+const juce::Colour kWindowBg(0xff12161b);
+const juce::Colour kPadBg(0xff161b22);
+const juce::Colour kPadBorder(0xff242d38);
+const juce::Colour kPadLabel(0xff8a97a6);
 
 }  // namespace
 
@@ -20,23 +27,16 @@ MainComponent::MainComponent()
   for (int i = 0; i < kSlotCount; ++i) {
     slots_[static_cast<size_t>(i)] = std::make_unique<SampleSlot>(i);
     auto& slot = *slots_[static_cast<size_t>(i)];
-    slot.on_hover = [this](int idx, bool entered)
-    {
-      if (entered) {
-        hovered_ = idx;
-      } else if (hovered_ == idx) {
-        hovered_ = -1;
-      }
-    };
     slot.on_drop = [this](int idx, const juce::File& file)
     { load_sample(idx, file); };
     slot.on_click = [this](int idx) { choose_sample(idx); };
+    slot.on_transport = [this](int idx, TransportAction action)
+    { transport_action(idx, action); };
     addAndMakeVisible(slot);
   }
   setSize(960, 720);
-  // Sounds end on the audio thread; poll so the playing highlight clears
-  // when a sample runs out on its own.
-  startTimerHz(10);
+  // Drives the hover poll, the playhead, and end-of-sample detection.
+  startTimerHz(30);
 }
 
 void MainComponent::load_sample(int idx, const juce::File& file)
@@ -46,13 +46,12 @@ void MainComponent::load_sample(int idx, const juce::File& file)
         stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
     return;
   }
-  if (!engine_.load(idx, file)) {
+  auto info = engine_.load(idx, file);
+  if (!info) {
     return;
   }
-  auto& slot = *slots_[static_cast<size_t>(idx)];
-  slot.set_sample_name(file.getFileName());
   // Too-short files play fine but render no spectrogram; the slot just
-  // shows the name in that case.
+  // shows the info bar in that case.
   juce::Image image;
   if (auto png = render_spectrogram(
           file.getFullPathName().toStdString(), idx);
@@ -60,35 +59,49 @@ void MainComponent::load_sample(int idx, const juce::File& file)
   {
     image = juce::ImageFileFormat::loadFrom(juce::File(png));
   }
-  slot.set_image(image);
-  slot.set_playing(false);
-}
-
-void MainComponent::timerCallback()
-{
-  for (int i = 0; i < kSlotCount; ++i) {
-    slots_[static_cast<size_t>(i)]->set_playing(engine_.is_playing(i));
-  }
+  slots_[static_cast<size_t>(idx)]->set_sample(file.getFileName(),
+      info->duration_seconds, info->sample_rate, image);
 }
 
 void MainComponent::paint(juce::Graphics& g)
 {
-  g.fillAll(juce::Colour(0xff12161b));
+  g.fillAll(kWindowBg);
+  for (int r = 0; r < 3; ++r) {
+    for (int c = 0; c < 3; ++c) {
+      auto pad = pad_bounds(r, c);
+      g.setColour(kPadBg);
+      g.fillRoundedRectangle(pad.toFloat(), 10.0f);
+      g.setColour(kPadBorder);
+      g.drawRoundedRectangle(pad.toFloat().reduced(0.5f), 10.0f, 1.0f);
+      g.setColour(kPadLabel);
+      g.setFont(juce::Font(juce::FontOptions(13.0f)).boldened());
+      g.drawText(juce::String(r * 3 + c + 1),
+          pad.reduced(kPadPadding + 2, kPadPadding)
+              .removeFromTop(kPadHeader),
+          juce::Justification::centredLeft);
+    }
+  }
+}
+
+juce::Rectangle<int> MainComponent::pad_bounds(int row, int col) const
+{
+  const int cell_w = (getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+  const int cell_h = (getHeight() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+  return {kGridPadding + col * (cell_w + kGridSpacing),
+      kGridPadding + row * (cell_h + kGridSpacing), cell_w, cell_h};
 }
 
 void MainComponent::resized()
 {
-  const int cell_w = (getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
-  const int cell_h = (getHeight() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
-  const int slot_h = (cell_h - kSlotSpacing) / 2;
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
-      const int x = kGridPadding + c * (cell_w + kGridSpacing);
-      const int y = kGridPadding + r * (cell_h + kGridSpacing);
+      auto inner = pad_bounds(r, c).reduced(kPadPadding);
+      inner.removeFromTop(kPadHeader);
+      const int slot_h = (inner.getHeight() - kSlotSpacing) / 2;
       const auto pad = static_cast<size_t>((r * 3 + c) * 2);
-      slots_[pad]->setBounds(x, y, cell_w, slot_h);
-      slots_[pad + 1]->setBounds(
-          x, y + slot_h + kSlotSpacing, cell_w, slot_h);
+      slots_[pad]->setBounds(inner.removeFromTop(slot_h));
+      inner.removeFromTop(kSlotSpacing);
+      slots_[pad + 1]->setBounds(inner.removeFromTop(slot_h));
     }
   }
 }
@@ -97,11 +110,44 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
   if (key == juce::KeyPress::spaceKey) {
     if (hovered_ >= 0) {
-      toggle_play(hovered_);
+      // Space toggles play/pause on the slot under the mouse, lighting
+      // the matching button.
+      auto& slot = *slots_[static_cast<size_t>(hovered_)];
+      if (slot.has_sample()) {
+        auto action = slot.play_state() == PlayState::playing
+            ? TransportAction::pause
+            : TransportAction::play;
+        transport_action(hovered_, action);
+        slot.flash_transport_button(action);
+      }
     }
     return true;
   }
   return false;
+}
+
+void MainComponent::transport_action(int idx, TransportAction action)
+{
+  auto& slot = *slots_[static_cast<size_t>(idx)];
+  if (!slot.has_sample()) {
+    return;
+  }
+  switch (action) {
+    case TransportAction::play:
+      engine_.play(idx);
+      slot.set_play_state(PlayState::playing);
+      break;
+    case TransportAction::pause:
+      if (slot.play_state() == PlayState::playing) {
+        engine_.pause(idx);
+        slot.set_play_state(PlayState::paused);
+      }
+      break;
+    case TransportAction::stop:
+      engine_.stop(idx);
+      slot.set_play_state(PlayState::stopped);
+      break;
+  }
 }
 
 void MainComponent::choose_sample(int idx)
@@ -120,18 +166,35 @@ void MainComponent::choose_sample(int idx)
       });
 }
 
-void MainComponent::toggle_play(int idx)
+void MainComponent::timerCallback()
 {
-  auto& slot = *slots_[static_cast<size_t>(idx)];
-  if (!slot.has_sample()) {
-    return;
+  // Focus follows the mouse. Polled rather than event-driven: the
+  // transport buttons are child components, and enter/exit pairs across
+  // parent/child boundaries are easy to get wrong.
+  int hovered = -1;
+  for (int i = 0; i < kSlotCount; ++i) {
+    if (slots_[static_cast<size_t>(i)]->isMouseOver(true)) {
+      hovered = i;
+      break;
+    }
   }
-  if (engine_.is_playing(idx)) {
-    engine_.stop(idx);
-    slot.set_playing(false);
-  } else {
-    engine_.start(idx);
-    slot.set_playing(true);
+  hovered_ = hovered;
+  for (int i = 0; i < kSlotCount; ++i) {
+    slots_[static_cast<size_t>(i)]->set_hovered(i == hovered);
+  }
+
+  // Advance playheads; sounds end on the audio thread, so a slot that
+  // thinks it's playing while its transport has stopped just ran out.
+  for (int i = 0; i < kSlotCount; ++i) {
+    auto& slot = *slots_[static_cast<size_t>(i)];
+    if (slot.play_state() == PlayState::playing) {
+      if (engine_.is_playing(i)) {
+        slot.set_position(engine_.position_fraction(i));
+      } else {
+        engine_.stop(i);
+        slot.set_play_state(PlayState::stopped);
+      }
+    }
   }
 }
 

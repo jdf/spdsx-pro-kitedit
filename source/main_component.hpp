@@ -1,6 +1,6 @@
-// The main window content: a 3x3 grid of pads, each with a top and a
-// bottom sample slot (18 slots, indexed (row * 3 + col) * 2, +1 for the
-// bottom).
+// The main window content: a 3x3 grid of pads labeled 1-9, each with a
+// top and a bottom sample slot (18 slots, indexed (row * 3 + col) * 2,
+// +1 for the bottom).
 #pragma once
 
 #include <array>
@@ -20,7 +20,7 @@ public:
   MainComponent();
 
   // Assigns a sample to a slot: decodes it for playback and updates the
-  // slot display. Shared by --load and drag-and-drop.
+  // slot display. Shared by --load, drag-and-drop, and the file dialog.
   void load_sample(int idx, const juce::File& file);
 
   void paint(juce::Graphics& g) override;
@@ -28,9 +28,10 @@ public:
   bool keyPressed(const juce::KeyPress& key) override;
 
 private:
-  void toggle_play(int idx);
+  void transport_action(int idx, TransportAction action);
   void choose_sample(int idx);
   void timerCallback() override;
+  juce::Rectangle<int> pad_bounds(int row, int col) const;
 
   AudioEngine engine_ {kSlotCount};
   std::unique_ptr<juce::FileChooser> chooser_;

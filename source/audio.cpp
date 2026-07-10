@@ -51,14 +51,20 @@ AudioEngine::~AudioEngine()
   }
 }
 
-bool AudioEngine::load(int slot, const juce::File& file)
+std::optional<SampleInfo> AudioEngine::load(int slot, const juce::File& file)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   auto* reader = impl_->formats.createReaderFor(file);
   if (reader == nullptr) {
     std::fprintf(stderr, "audio: cannot load '%s'\n",
         file.getFullPathName().toRawUTF8());
-    return false;
+    return std::nullopt;
+  }
+  SampleInfo info;
+  info.sample_rate = reader->sampleRate;
+  if (reader->sampleRate > 0) {
+    info.duration_seconds =
+        static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
   }
   s.transport.stop();
   s.transport.setSource(nullptr);
@@ -66,27 +72,42 @@ bool AudioEngine::load(int slot, const juce::File& file)
       std::make_unique<juce::AudioFormatReaderSource>(reader, true);
   s.transport.setSource(
       s.reader_source.get(), 0, nullptr, reader->sampleRate);
-  return true;
+  return info;
 }
 
-void AudioEngine::start(int slot)
+void AudioEngine::play(int slot)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
-  if (s.reader_source == nullptr) {
-    return;
+  if (s.reader_source != nullptr) {
+    s.transport.start();
   }
-  s.transport.setPosition(0.0);
-  s.transport.start();
+}
+
+void AudioEngine::pause(int slot)
+{
+  impl_->slots.at(static_cast<size_t>(slot))->transport.stop();
 }
 
 void AudioEngine::stop(int slot)
 {
-  impl_->slots.at(static_cast<size_t>(slot))->transport.stop();
+  auto& s = *impl_->slots.at(static_cast<size_t>(slot));
+  s.transport.stop();
+  s.transport.setPosition(0.0);
 }
 
 bool AudioEngine::is_playing(int slot) const
 {
   return impl_->slots.at(static_cast<size_t>(slot))->transport.isPlaying();
+}
+
+double AudioEngine::position_fraction(int slot) const
+{
+  auto& s = *impl_->slots.at(static_cast<size_t>(slot));
+  const double length = s.transport.getLengthInSeconds();
+  if (length <= 0.0) {
+    return 0.0;
+  }
+  return juce::jlimit(0.0, 1.0, s.transport.getCurrentPosition() / length);
 }
 
 }  // namespace spdsx

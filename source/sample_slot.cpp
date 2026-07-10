@@ -9,9 +9,22 @@ const juce::Colour kSlotBgHover(0xff232b36);
 const juce::Colour kBorder(0xff313a46);
 const juce::Colour kBorderHover(0xff4f8fd9);
 const juce::Colour kBorderPlaying(0xff58c47a);
-const juce::Colour kPlaceholderText(0xff4c5866);
-const juce::Colour kNameText(0xffcfd8e3);
 const juce::Colour kBorderDrop(0xffd9a94f);
+const juce::Colour kPlaceholderText(0xff4c5866);
+const juce::Colour kNameText(0xffe6edf5);
+const juce::Colour kMetaText(0xff9aa7b4);
+const juce::Colour kInfoBarScrim(0xc20a0d11);
+const juce::Colour kPlayhead(0xffe6edf5);
+const juce::Colour kIcon(0xff8a97a6);
+const juce::Colour kIconOver(0xffffffff);
+const juce::Colour kIconDown(0xff4f8fd9);
+const juce::Colour kIconPlaying(0xff58c47a);
+const juce::Colour kIconPaused(0xffd9a94f);
+
+constexpr int kInfoBarHeight = 22;
+constexpr int kButtonSize = 14;
+constexpr int kButtonGap = 6;
+constexpr float kImageInset = 4.0f;
 
 bool looks_like_audio(const juce::String& path)
 {
@@ -25,32 +38,153 @@ bool looks_like_audio(const juce::String& path)
   return false;
 }
 
+juce::String format_meta(double duration_seconds, double sample_rate)
+{
+  juce::String duration;
+  if (duration_seconds < 10.0) {
+    duration = juce::String(duration_seconds, 2) + " s";
+  } else if (duration_seconds < 60.0) {
+    duration = juce::String(duration_seconds, 1) + " s";
+  } else {
+    auto total = static_cast<int>(duration_seconds + 0.5);
+    duration = juce::String(total / 60) + ":"
+        + juce::String(total % 60).paddedLeft('0', 2);
+  }
+  return duration + "  \xc2\xb7  " + juce::String(sample_rate / 1000.0, 1)
+      + " kHz";
+}
+
+juce::Path make_shape(TransportAction action)
+{
+  juce::Path p;
+  switch (action) {
+    case TransportAction::play:
+      p.addTriangle(0.0f, 0.0f, 0.0f, 1.0f, 0.9f, 0.5f);
+      break;
+    case TransportAction::pause:
+      p.addRectangle(0.0f, 0.0f, 0.32f, 1.0f);
+      p.addRectangle(0.68f, 0.0f, 0.32f, 1.0f);
+      break;
+    case TransportAction::stop:
+      p.addRectangle(0.0f, 0.0f, 1.0f, 1.0f);
+      break;
+  }
+  return p;
+}
+
 }  // namespace
 
 SampleSlot::SampleSlot(int index)
     : index_(index)
+    , play_button_("play", kIcon, kIconOver, kIconDown)
+    , pause_button_("pause", kIcon, kIconOver, kIconDown)
+    , stop_button_("stop", kIcon, kIconOver, kIconDown)
 {
   setMouseCursor(juce::MouseCursor::PointingHandCursor);
+
+  const std::pair<juce::ShapeButton*, TransportAction> buttons[] = {
+      {&play_button_, TransportAction::play},
+      {&pause_button_, TransportAction::pause},
+      {&stop_button_, TransportAction::stop},
+  };
+  for (auto [button, action] : buttons) {
+    button->setShape(make_shape(action), false, true, false);
+    button->onClick = [this, action = action]
+    {
+      if (on_transport) {
+        on_transport(index_, action);
+      }
+    };
+    button->setVisible(false);
+    addChildComponent(*button);
+  }
 }
 
-void SampleSlot::set_sample_name(const juce::String& name)
+void SampleSlot::set_sample(const juce::String& name,
+    double duration_seconds,
+    double sample_rate,
+    const juce::Image& image)
 {
   sample_name_ = name;
-  repaint();
-}
-
-void SampleSlot::set_image(const juce::Image& image)
-{
+  sample_meta_ = format_meta(duration_seconds, sample_rate);
   image_ = image;
+  play_state_ = PlayState::stopped;
+  position_ = 0.0;
+  play_button_.setVisible(true);
+  pause_button_.setVisible(true);
+  stop_button_.setVisible(true);
+  update_button_colours();
   repaint();
 }
 
-void SampleSlot::set_playing(bool playing)
+void SampleSlot::set_play_state(PlayState state)
 {
-  if (playing_ != playing) {
-    playing_ = playing;
+  if (play_state_ != state) {
+    play_state_ = state;
+    if (state == PlayState::stopped) {
+      position_ = 0.0;
+    }
+    update_button_colours();
     repaint();
   }
+}
+
+void SampleSlot::set_position(double fraction)
+{
+  if (std::abs(fraction - position_) > 1.0e-4) {
+    position_ = fraction;
+    repaint();
+  }
+}
+
+void SampleSlot::set_hovered(bool hovered)
+{
+  if (hovered_ != hovered) {
+    hovered_ = hovered;
+    repaint();
+  }
+}
+
+void SampleSlot::flash_transport_button(TransportAction action)
+{
+  auto* button = button_for(action);
+  button->setState(juce::Button::buttonDown);
+  juce::Timer::callAfterDelay(120,
+      [safe = juce::Component::SafePointer<juce::ShapeButton>(button)]
+      {
+        if (safe != nullptr) {
+          safe->setState(juce::Button::buttonNormal);
+        }
+      });
+}
+
+juce::ShapeButton* SampleSlot::button_for(TransportAction action)
+{
+  switch (action) {
+    case TransportAction::play:
+      return &play_button_;
+    case TransportAction::pause:
+      return &pause_button_;
+    case TransportAction::stop:
+      return &stop_button_;
+  }
+  return &play_button_;
+}
+
+void SampleSlot::update_button_colours()
+{
+  // The active state tints its button: green while playing, amber while
+  // paused.
+  auto play_normal =
+      play_state_ == PlayState::playing ? kIconPlaying : kIcon;
+  auto pause_normal =
+      play_state_ == PlayState::paused ? kIconPaused : kIcon;
+  play_button_.setColours(play_normal, kIconOver, kIconDown);
+  pause_button_.setColours(pause_normal, kIconOver, kIconDown);
+  stop_button_.setColours(kIcon, kIconOver, kIconDown);
+  play_button_.repaint();
+  pause_button_.repaint();
+  stop_button_.repaint();
 }
 
 void SampleSlot::paint(juce::Graphics& g)
@@ -61,47 +195,68 @@ void SampleSlot::paint(juce::Graphics& g)
 
   if (image_.isValid()) {
     g.drawImage(image_,
-        bounds.reduced(4.0f),
+        bounds.reduced(kImageInset),
         juce::RectanglePlacement::stretchToFit);
   }
 
   if (has_sample()) {
-    g.setColour(kNameText);
+    // Playhead, visible while playing or paused.
+    if (play_state_ != PlayState::stopped) {
+      const float span = bounds.getWidth() - 2.0f * kImageInset;
+      const float x =
+          kImageInset + span * static_cast<float>(position_);
+      g.setColour(kPlayhead);
+      g.fillRect(x - 1.0f, kImageInset, 2.0f,
+          bounds.getHeight() - 2.0f * kImageInset);
+    }
+
+    // Info bar: a scrim keeps the text legible over the spectrogram.
+    auto bar = getLocalBounds()
+                   .reduced(static_cast<int>(kImageInset))
+                   .removeFromBottom(kInfoBarHeight);
+    g.setColour(kInfoBarScrim);
+    g.fillRect(bar);
+
+    // Name on the left (ellipsized), duration/rate on the right, both
+    // clear of the buttons.
+    auto text_area = bar.reduced(6, 0);
+    text_area.removeFromRight(3 * kButtonSize + 3 * kButtonGap);
     g.setFont(11.0f);
+    g.setColour(kMetaText);
+    const auto meta_area =
+        text_area.removeFromRight(text_area.getWidth() * 2 / 5);
+    g.drawText(sample_meta_, meta_area, juce::Justification::centredRight);
+    g.setColour(kNameText);
     g.drawText(sample_name_,
-        getLocalBounds().reduced(8, 6),
-        juce::Justification::bottomLeft);
+        text_area.withTrimmedRight(6),
+        juce::Justification::centredLeft);
   } else {
     g.setColour(kPlaceholderText);
     g.setFont(13.0f);
     g.drawText(
-        "drop a .wav", getLocalBounds(), juce::Justification::centred);
+        "drop or click", getLocalBounds(), juce::Justification::centred);
   }
 
   g.setColour(drag_hover_
           ? kBorderDrop
-          : (playing_ ? kBorderPlaying
-                      : (hovered_ ? kBorderHover : kBorder)));
+          : (play_state_ == PlayState::playing
+                    ? kBorderPlaying
+                    : (hovered_ ? kBorderHover : kBorder)));
   g.drawRoundedRectangle(bounds.reduced(1.0f), 8.0f,
-      drag_hover_ || playing_ ? 2.0f : 1.0f);
+      drag_hover_ || play_state_ == PlayState::playing ? 2.0f : 1.0f);
 }
 
-void SampleSlot::mouseEnter(const juce::MouseEvent&)
+void SampleSlot::resized()
 {
-  hovered_ = true;
-  if (on_hover) {
-    on_hover(index_, true);
-  }
-  repaint();
-}
-
-void SampleSlot::mouseExit(const juce::MouseEvent&)
-{
-  hovered_ = false;
-  if (on_hover) {
-    on_hover(index_, false);
-  }
-  repaint();
+  auto bar = getLocalBounds()
+                 .reduced(static_cast<int>(kImageInset))
+                 .removeFromBottom(kInfoBarHeight);
+  auto buttons = bar.reduced(6, (kInfoBarHeight - kButtonSize) / 2);
+  stop_button_.setBounds(buttons.removeFromRight(kButtonSize));
+  buttons.removeFromRight(kButtonGap);
+  pause_button_.setBounds(buttons.removeFromRight(kButtonSize));
+  buttons.removeFromRight(kButtonGap);
+  play_button_.setBounds(buttons.removeFromRight(kButtonSize));
 }
 
 void SampleSlot::mouseUp(const juce::MouseEvent& event)

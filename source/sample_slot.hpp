@@ -7,6 +7,9 @@
 
 namespace spdsx {
 
+enum class PlayState { stopped, playing, paused };
+enum class TransportAction { play, pause, stop };
+
 class SampleSlot : public juce::Component,
                    public juce::FileDragAndDropTarget {
 public:
@@ -14,24 +17,34 @@ public:
 
   int index() const { return index_; }
 
-  // Focus follows the mouse: reports (index, entered) so the parent can
-  // route the spacebar to the slot under the pointer.
-  std::function<void(int, bool)> on_hover;
   // A file was dropped on this slot.
   std::function<void(int, const juce::File&)> on_drop;
-  // The slot was clicked (e.g. to browse for a sample).
+  // The slot body was clicked (e.g. to browse for a sample).
   std::function<void(int)> on_click;
+  // A transport button was pressed.
+  std::function<void(int, TransportAction)> on_transport;
 
-  void set_sample_name(const juce::String& name);
-  // An invalid image just leaves the slot without a spectrogram (e.g.
-  // files shorter than one FFT window).
-  void set_image(const juce::Image& image);
-  void set_playing(bool playing);
+  void set_sample(const juce::String& name,
+      double duration_seconds,
+      double sample_rate,
+      const juce::Image& image);
   bool has_sample() const { return sample_name_.isNotEmpty(); }
 
+  void set_play_state(PlayState state);
+  PlayState play_state() const { return play_state_; }
+  // Playhead position, 0..1; drawn while playing or paused.
+  void set_position(double fraction);
+
+  // Hover is polled by the parent (child buttons make enter/exit
+  // unreliable for this); drives the focus-follows-mouse highlight.
+  void set_hovered(bool hovered);
+
+  // Momentarily depresses the button for an action triggered from the
+  // keyboard, so the spacebar visibly activates play/pause.
+  void flash_transport_button(TransportAction action);
+
   void paint(juce::Graphics& g) override;
-  void mouseEnter(const juce::MouseEvent&) override;
-  void mouseExit(const juce::MouseEvent&) override;
+  void resized() override;
   void mouseUp(const juce::MouseEvent& event) override;
 
   bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -40,12 +53,21 @@ public:
   void filesDropped(const juce::StringArray& files, int, int) override;
 
 private:
+  juce::ShapeButton* button_for(TransportAction action);
+  void update_button_colours();
+
   int index_;
   juce::String sample_name_;
+  juce::String sample_meta_;
   juce::Image image_;
-  bool playing_ = false;
+  PlayState play_state_ = PlayState::stopped;
+  double position_ = 0.0;
   bool hovered_ = false;
   bool drag_hover_ = false;
+
+  juce::ShapeButton play_button_;
+  juce::ShapeButton pause_button_;
+  juce::ShapeButton stop_button_;
 };
 
 }  // namespace spdsx
