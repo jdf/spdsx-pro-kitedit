@@ -43,9 +43,6 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
     , browser_(configure_settings())
 {
-  last_sample_dir_ =
-      juce::File(settings_.getUserSettings()->getValue("lastSampleDir"));
-
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
   browser_.setVisible(browser_visible_);
@@ -57,7 +54,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     auto& slot = *slots_[static_cast<size_t>(i)];
     slot.on_drop = [this](int idx, const juce::File& file)
     { load_sample(idx, file); };
-    slot.on_click = [this](int idx) { choose_sample(idx); };
+    slot.on_click = [this](int idx) { trigger_slot(idx); };
     slot.on_transport = [this](int idx, TransportAction action)
     { transport_action(idx, action); };
     addAndMakeVisible(slot);
@@ -102,13 +99,6 @@ void MainComponent::load_sample(int idx, const juce::File& file)
   }
   undo_.beginNewTransaction("Load " + file.getFileName());
   undo_.perform(new SetSlotAction(model_, idx, file));
-  // Remember where samples come from — chooser picks and drags alike —
-  // separately from where kits are saved.
-  if (auto dir = file.getParentDirectory(); dir.isDirectory()) {
-    last_sample_dir_ = dir;
-    settings_.getUserSettings()->setValue(
-        "lastSampleDir", dir.getFullPathName());
-  }
 }
 
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
@@ -354,13 +344,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
   if (key == juce::KeyPress::spaceKey) {
     if (hovered_ >= 0) {
-      // Space triggers the slot under the mouse like a drum pad:
-      // retrigger from the top while playing, resume while paused.
-      auto& slot = *slots_[static_cast<size_t>(hovered_)];
-      if (slot.is_playable()) {
-        transport_action(hovered_, TransportAction::play);
-        slot.flash_transport_button(TransportAction::play);
-      }
+      trigger_slot(hovered_);
     }
     return true;
   }
@@ -396,25 +380,13 @@ void MainComponent::transport_action(int idx, TransportAction action)
   }
 }
 
-void MainComponent::choose_sample(int idx)
+void MainComponent::trigger_slot(int idx)
 {
-  // The chooser must outlive launchAsync, hence the member; opening a
-  // new one abandons any dialog already up. It starts in the app's own
-  // last-sample directory rather than the OS-shared last-used location,
-  // which saving a kit would have dragged off to kit territory.
-  auto start = last_sample_dir_.isDirectory()
-      ? last_sample_dir_
-      : juce::File::getSpecialLocation(juce::File::userMusicDirectory);
-  chooser_ = std::make_unique<juce::FileChooser>(
-      "Choose a sample", start, "*.wav");
-  chooser_->launchAsync(juce::FileBrowserComponent::openMode
-          | juce::FileBrowserComponent::canSelectFiles,
-      [this, idx](const juce::FileChooser& fc)
-      {
-        if (auto file = fc.getResult(); file != juce::File()) {
-          load_sample(idx, file);
-        }
-      });
+  auto& slot = *slots_[static_cast<size_t>(idx)];
+  if (slot.is_playable()) {
+    transport_action(idx, TransportAction::play);
+    slot.flash_transport_button(TransportAction::play);
+  }
 }
 
 void MainComponent::timerCallback()

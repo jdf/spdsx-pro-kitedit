@@ -53,7 +53,9 @@ private:
   juce::ApplicationProperties& configure_settings();
 
   void transport_action(int idx, TransportAction action);
-  void choose_sample(int idx);
+  // Drum-pad trigger (spacebar and slot-body clicks): retrigger from
+  // the top while playing, resume while paused, start when stopped.
+  void trigger_slot(int idx);
   void set_browser_visible(bool visible);
   void refresh_document_state();
   void timerCallback() override;
@@ -66,12 +68,10 @@ private:
   juce::ApplicationProperties settings_;
   KitDocument document_ {model_, undo_, settings_};
   AudioEngine engine_ {kSlotCount};
-  std::unique_ptr<juce::FileChooser> chooser_;
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   juce::Label name_label_;
   SampleBrowser browser_;
   bool browser_visible_ = true;
-  juce::File last_sample_dir_;
   int hovered_ = -1;
   bool could_undo_ = false;
   bool could_redo_ = false;

@@ -20,7 +20,7 @@ public:
 
   // A file was dropped on this slot.
   std::function<void(int, const juce::File&)> on_drop;
-  // The slot body was clicked (e.g. to browse for a sample).
+  // The slot body was clicked; triggers playback like the spacebar.
   std::function<void(int)> on_click;
   // A transport button was pressed.
   std::function<void(int, TransportAction)> on_transport;

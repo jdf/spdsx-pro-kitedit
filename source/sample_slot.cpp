@@ -88,8 +88,6 @@ SampleSlot::SampleSlot(int index)
     , pause_button_("pause", kIcon, kIconOver, kIconDown)
     , stop_button_("stop", kIcon, kIconOver, kIconDown)
 {
-  setMouseCursor(juce::MouseCursor::PointingHandCursor);
-
   const std::pair<juce::ShapeButton*, TransportAction> buttons[] = {
       {&play_button_, TransportAction::play},
       {&pause_button_, TransportAction::pause},
@@ -122,6 +120,8 @@ void SampleSlot::set_sample(const juce::String& name,
   play_button_.setVisible(true);
   pause_button_.setVisible(true);
   stop_button_.setVisible(true);
+  // The body is click-to-play only when there's something to play.
+  setMouseCursor(juce::MouseCursor::PointingHandCursor);
   update_button_colours();
   repaint();
 }
@@ -137,6 +137,7 @@ void SampleSlot::set_sample_missing(const juce::String& name)
   play_button_.setVisible(false);
   pause_button_.setVisible(false);
   stop_button_.setVisible(false);
+  setMouseCursor(juce::MouseCursor::NormalCursor);
   repaint();
 }
 
@@ -151,6 +152,7 @@ void SampleSlot::clear_sample()
   play_button_.setVisible(false);
   pause_button_.setVisible(false);
   stop_button_.setVisible(false);
+  setMouseCursor(juce::MouseCursor::NormalCursor);
   repaint();
 }
 
@@ -269,7 +271,7 @@ void SampleSlot::paint(juce::Graphics& g)
     g.setColour(kPlaceholderText);
     g.setFont(13.0f);
     g.drawText(
-        "drop or click", getLocalBounds(), juce::Justification::centred);
+        "drop a sample", getLocalBounds(), juce::Justification::centred);
   }
 
   g.setColour(drag_hover_
