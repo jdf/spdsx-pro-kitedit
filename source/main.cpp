@@ -15,7 +15,10 @@ public:
   {
   }
 
-  juce::StringArray getMenuBarNames() override { return {"File", "Edit"}; }
+  juce::StringArray getMenuBarNames() override
+  {
+    return {"File", "Edit", "View"};
+  }
 
   juce::PopupMenu getMenuForIndex(int, const juce::String& name) override
   {
@@ -29,6 +32,8 @@ public:
     } else if (name == "Edit") {
       menu.addCommandItem(&commands_, commands::undo);
       menu.addCommandItem(&commands_, commands::redo);
+    } else if (name == "View") {
+      menu.addCommandItem(&commands_, commands::toggle_browser);
     }
     return menu;
   }

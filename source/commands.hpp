@@ -12,6 +12,7 @@ enum : juce::CommandID {
   file_open,
   file_save,
   file_save_as,
+  toggle_browser,
 };
 
 }  // namespace spdsx::commands

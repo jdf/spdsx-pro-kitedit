@@ -11,6 +11,7 @@ namespace spdsx {
 namespace {
 
 constexpr int kHeaderHeight = 44;
+constexpr int kBrowserWidth = 260;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
 constexpr int kPadPadding = 8;
@@ -26,8 +27,7 @@ const juce::Colour kDirtyDot(0xffd9a94f);
 
 }  // namespace
 
-MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
-    : commands_(commands)
+juce::ApplicationProperties& MainComponent::configure_settings()
 {
   juce::PropertiesFile::Options options;
   options.applicationName = "spdsx-patchedit";
@@ -36,8 +36,20 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   options.folderName = "spdsx-patchedit";
   options.millisecondsBeforeSaving = 500;
   settings_.setStorageParameters(options);
+  return settings_;
+}
+
+MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
+    : commands_(commands)
+    , browser_(configure_settings())
+{
   last_sample_dir_ =
       juce::File(settings_.getUserSettings()->getValue("lastSampleDir"));
+
+  browser_visible_ =
+      settings_.getUserSettings()->getBoolValue("browserVisible", true);
+  browser_.setVisible(browser_visible_);
+  addChildComponent(browser_);
 
   setWantsKeyboardFocus(true);
   for (int i = 0; i < kSlotCount; ++i) {
@@ -107,7 +119,8 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::undo, commands::redo, commands::file_new,
-      commands::file_open, commands::file_save, commands::file_save_as});
+      commands::file_open, commands::file_save, commands::file_save_as,
+      commands::toggle_browser});
 }
 
 void MainComponent::getCommandInfo(
@@ -143,6 +156,12 @@ void MainComponent::getCommandInfo(
       info.addDefaultKeypress('s',
           juce::ModifierKeys::commandModifier
               | juce::ModifierKeys::shiftModifier);
+      break;
+    case commands::toggle_browser:
+      info.setInfo("Sample Browser",
+          "Show or hide the sample browser panel", "View", 0);
+      info.addDefaultKeypress('b', juce::ModifierKeys::commandModifier);
+      info.setTicked(browser_visible_);
       break;
     default:
       break;
@@ -186,9 +205,22 @@ bool MainComponent::perform(const InvocationInfo& info)
           [this](juce::FileBasedDocument::SaveResult)
           { refresh_document_state(); });
       return true;
+    case commands::toggle_browser:
+      set_browser_visible(!browser_visible_);
+      return true;
     default:
       return false;
   }
+}
+
+void MainComponent::set_browser_visible(bool visible)
+{
+  browser_visible_ = visible;
+  browser_.setVisible(visible);
+  settings_.getUserSettings()->setValue("browserVisible", visible);
+  commands_.commandStatusChanged();  // menu tick
+  resized();
+  repaint();
 }
 
 // Window title carries the kit name and an Edited marker; the header
@@ -275,14 +307,25 @@ void MainComponent::paint(juce::Graphics& g)
   }
 }
 
+juce::Rectangle<int> MainComponent::grid_area() const
+{
+  auto area = getLocalBounds();
+  area.removeFromTop(kHeaderHeight);
+  if (browser_visible_) {
+    area.removeFromLeft(kBrowserWidth);
+  }
+  return area;
+}
+
 juce::Rectangle<int> MainComponent::pad_bounds(int row, int col) const
 {
-  const int cell_w = (getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+  const auto area = grid_area();
+  const int cell_w =
+      (area.getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
   const int cell_h =
-      (getHeight() - kHeaderHeight - 2 * kGridPadding - 2 * kGridSpacing)
-      / 3;
-  return {kGridPadding + col * (cell_w + kGridSpacing),
-      kHeaderHeight + kGridPadding + row * (cell_h + kGridSpacing), cell_w,
+      (area.getHeight() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+  return {area.getX() + kGridPadding + col * (cell_w + kGridSpacing),
+      area.getY() + kGridPadding + row * (cell_h + kGridSpacing), cell_w,
       cell_h};
 }
 
@@ -292,6 +335,8 @@ void MainComponent::resized()
           .removeFromTop(kHeaderHeight)
           .withSizeKeepingCentre(
               juce::jmin(420, getWidth() - 120), 26));
+  browser_.setBounds(
+      0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto inner = pad_bounds(r, c).reduced(kPadPadding);

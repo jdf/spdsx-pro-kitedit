@@ -1,5 +1,7 @@
 #include "sample_slot.hpp"
 
+#include "audio_files.hpp"
+
 namespace spdsx {
 
 namespace {
@@ -26,16 +28,22 @@ constexpr int kButtonSize = 14;
 constexpr int kButtonGap = 6;
 constexpr float kImageInset = 4.0f;
 
-bool looks_like_audio(const juce::String& path)
+// Both drag flavors land here: a single audio file or nothing.
+juce::File dragged_browser_file(
+    const juce::DragAndDropTarget::SourceDetails& details)
 {
-  static const juce::StringArray kExtensions {
-      ".wav", ".aif", ".aiff", ".flac", ".ogg", ".mp3"};
-  for (const auto& ext : kExtensions) {
-    if (path.endsWithIgnoreCase(ext)) {
-      return true;
-    }
+  if (details.description.toString() != kSampleDragId) {
+    return {};
   }
-  return false;
+  auto* tree = dynamic_cast<juce::FileTreeComponent*>(
+      details.sourceComponent.get());
+  if (tree == nullptr || tree->getNumSelectedFiles() != 1) {
+    return {};
+  }
+  auto file = tree->getSelectedFile();
+  return file.existsAsFile() && looks_like_audio(file.getFullPathName())
+      ? file
+      : juce::File();
 }
 
 juce::String format_meta(double duration_seconds, double sample_rate)
@@ -331,6 +339,34 @@ void SampleSlot::filesDropped(const juce::StringArray& files, int, int)
   repaint();
   if (on_drop) {
     on_drop(index_, juce::File(files[0]));
+  }
+}
+
+bool SampleSlot::isInterestedInDragSource(const SourceDetails& details)
+{
+  return dragged_browser_file(details) != juce::File();
+}
+
+void SampleSlot::itemDragEnter(const SourceDetails&)
+{
+  drag_hover_ = true;
+  repaint();
+}
+
+void SampleSlot::itemDragExit(const SourceDetails&)
+{
+  drag_hover_ = false;
+  repaint();
+}
+
+void SampleSlot::itemDropped(const SourceDetails& details)
+{
+  drag_hover_ = false;
+  repaint();
+  if (auto file = dragged_browser_file(details);
+      file != juce::File() && on_drop)
+  {
+    on_drop(index_, file);
   }
 }
 

@@ -11,12 +11,14 @@
 #include "audio.hpp"
 #include "kit_document.hpp"
 #include "kit_model.hpp"
+#include "sample_browser.hpp"
 #include "sample_slot.hpp"
 
 namespace spdsx {
 
 class MainComponent : public juce::Component,
                       public juce::ApplicationCommandTarget,
+                      public juce::DragAndDropContainer,
                       private juce::Timer,
                       private KitModel::Listener {
 public:
@@ -46,10 +48,16 @@ private:
   void slot_changed(int idx) override;
   void kit_name_changed() override;
 
+  // Sets the settings storage parameters; must run before any member
+  // that reads settings in its constructor.
+  juce::ApplicationProperties& configure_settings();
+
   void transport_action(int idx, TransportAction action);
   void choose_sample(int idx);
+  void set_browser_visible(bool visible);
   void refresh_document_state();
   void timerCallback() override;
+  juce::Rectangle<int> grid_area() const;
   juce::Rectangle<int> pad_bounds(int row, int col) const;
 
   juce::ApplicationCommandManager& commands_;
@@ -61,6 +69,8 @@ private:
   std::unique_ptr<juce::FileChooser> chooser_;
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   juce::Label name_label_;
+  SampleBrowser browser_;
+  bool browser_visible_ = true;
   juce::File last_sample_dir_;
   int hovered_ = -1;
   bool could_undo_ = false;

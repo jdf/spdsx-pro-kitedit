@@ -40,6 +40,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/kit_document.cpp
     source/main.cpp
     source/main_component.cpp
+    source/sample_browser.cpp
     source/sample_slot.cpp
     source/spectro.cpp
 )

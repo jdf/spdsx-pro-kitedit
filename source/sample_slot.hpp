@@ -11,7 +11,8 @@ enum class PlayState { stopped, playing, paused };
 enum class TransportAction { play, pause, stop };
 
 class SampleSlot : public juce::Component,
-                   public juce::FileDragAndDropTarget {
+                   public juce::FileDragAndDropTarget,
+                   public juce::DragAndDropTarget {
 public:
   explicit SampleSlot(int index);
 
@@ -56,10 +57,17 @@ public:
   void resized() override;
   void mouseUp(const juce::MouseEvent& event) override;
 
+  // External drags (Finder).
   bool isInterestedInFileDrag(const juce::StringArray& files) override;
   void fileDragEnter(const juce::StringArray&, int, int) override;
   void fileDragExit(const juce::StringArray&) override;
   void filesDropped(const juce::StringArray& files, int, int) override;
+
+  // Internal drags (the sample browser panel).
+  bool isInterestedInDragSource(const SourceDetails& details) override;
+  void itemDragEnter(const SourceDetails&) override;
+  void itemDragExit(const SourceDetails&) override;
+  void itemDropped(const SourceDetails& details) override;
 
 private:
   juce::ShapeButton* button_for(TransportAction action);
