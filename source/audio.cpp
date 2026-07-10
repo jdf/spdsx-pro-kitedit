@@ -75,6 +75,14 @@ std::optional<SampleInfo> AudioEngine::load(int slot, const juce::File& file)
   return info;
 }
 
+void AudioEngine::clear(int slot)
+{
+  auto& s = *impl_->slots.at(static_cast<size_t>(slot));
+  s.transport.stop();
+  s.transport.setSource(nullptr);
+  s.reader_source.reset();
+}
+
 void AudioEngine::play(int slot)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));

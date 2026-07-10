@@ -108,12 +108,41 @@ void SampleSlot::set_sample(const juce::String& name,
   sample_name_ = name;
   sample_meta_ = format_meta(duration_seconds, sample_rate);
   image_ = image;
+  playable_ = true;
   play_state_ = PlayState::stopped;
   position_ = 0.0;
   play_button_.setVisible(true);
   pause_button_.setVisible(true);
   stop_button_.setVisible(true);
   update_button_colours();
+  repaint();
+}
+
+void SampleSlot::set_sample_missing(const juce::String& name)
+{
+  sample_name_ = name;
+  sample_meta_ = "missing";
+  image_ = juce::Image();
+  playable_ = false;
+  play_state_ = PlayState::stopped;
+  position_ = 0.0;
+  play_button_.setVisible(false);
+  pause_button_.setVisible(false);
+  stop_button_.setVisible(false);
+  repaint();
+}
+
+void SampleSlot::clear_sample()
+{
+  sample_name_.clear();
+  sample_meta_.clear();
+  image_ = juce::Image();
+  playable_ = false;
+  play_state_ = PlayState::stopped;
+  position_ = 0.0;
+  play_button_.setVisible(false);
+  pause_button_.setVisible(false);
+  stop_button_.setVisible(false);
   repaint();
 }
 
@@ -220,7 +249,7 @@ void SampleSlot::paint(juce::Graphics& g)
     auto text_area = bar.reduced(6, 0);
     text_area.removeFromRight(3 * kButtonSize + 3 * kButtonGap);
     g.setFont(11.0f);
-    g.setColour(kMetaText);
+    g.setColour(playable_ ? kMetaText : kBorderDrop);
     const auto meta_area =
         text_area.removeFromRight(text_area.getWidth() * 2 / 5);
     g.drawText(sample_meta_, meta_area, juce::Justification::centredRight);
@@ -265,8 +294,9 @@ void SampleSlot::resized()
 void SampleSlot::mouseUp(const juce::MouseEvent& event)
 {
   // Clicks anywhere across the control strip's vertical band belong to
-  // the transport, not to file browsing, even between the buttons.
-  if (has_sample()
+  // the transport, not to file browsing, even between the buttons. A
+  // missing sample has no transport, so it stays fully browsable.
+  if (is_playable()
       && event.getPosition().getY() >= info_bar_bounds().getY())
   {
     return;

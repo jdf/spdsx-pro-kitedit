@@ -34,9 +34,15 @@ MainComponent::MainComponent()
     { transport_action(idx, action); };
     addAndMakeVisible(slot);
   }
+  model_.add_listener(this);
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
   startTimerHz(30);
+}
+
+MainComponent::~MainComponent()
+{
+  model_.remove_listener(this);
 }
 
 void MainComponent::load_sample(int idx, const juce::File& file)
@@ -46,8 +52,27 @@ void MainComponent::load_sample(int idx, const juce::File& file)
         stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
     return;
   }
+  model_.set_slot(idx, file);
+}
+
+// The model is the source of truth: engine and slot display sync to it
+// here, whether the change came from a user gesture, undo, or a loaded
+// kit file.
+void MainComponent::slot_changed(int idx)
+{
+  const auto& file = model_.slot(idx);
+  auto& slot = *slots_[static_cast<size_t>(idx)];
+  if (file == juce::File()) {
+    engine_.clear(idx);
+    slot.clear_sample();
+    return;
+  }
   auto info = engine_.load(idx, file);
   if (!info) {
+    // Unreadable (moved, unmounted, not audio): keep the assignment
+    // visible so it survives a save/load round trip.
+    engine_.clear(idx);
+    slot.set_sample_missing(file.getFileName());
     return;
   }
   // Too-short files play fine but render no spectrogram; the slot just
@@ -59,8 +84,8 @@ void MainComponent::load_sample(int idx, const juce::File& file)
   {
     image = juce::ImageFileFormat::loadFrom(juce::File(png));
   }
-  slots_[static_cast<size_t>(idx)]->set_sample(file.getFileName(),
-      info->duration_seconds, info->sample_rate, image);
+  slot.set_sample(file.getFileName(), info->duration_seconds,
+      info->sample_rate, image);
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -113,7 +138,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
       // Space triggers the slot under the mouse like a drum pad:
       // retrigger from the top while playing, resume while paused.
       auto& slot = *slots_[static_cast<size_t>(hovered_)];
-      if (slot.has_sample()) {
+      if (slot.is_playable()) {
         transport_action(hovered_, TransportAction::play);
         slot.flash_transport_button(TransportAction::play);
       }
@@ -126,7 +151,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 void MainComponent::transport_action(int idx, TransportAction action)
 {
   auto& slot = *slots_[static_cast<size_t>(idx)];
-  if (!slot.has_sample()) {
+  if (!slot.is_playable()) {
     return;
   }
   switch (action) {

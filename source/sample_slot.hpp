@@ -28,7 +28,16 @@ public:
       double duration_seconds,
       double sample_rate,
       const juce::Image& image);
+  // The slot is assigned a file that can't be read (e.g. a .kit whose
+  // sample moved): shows the name flagged as missing, no transport.
+  void set_sample_missing(const juce::String& name);
+  // Back to an empty slot.
+  void clear_sample();
+
+  // A file is assigned, readable or not.
   bool has_sample() const { return sample_name_.isNotEmpty(); }
+  // A readable sample is loaded and can be played.
+  bool is_playable() const { return has_sample() && playable_; }
 
   void set_play_state(PlayState state);
   PlayState play_state() const { return play_state_; }
@@ -62,6 +71,7 @@ private:
   juce::String sample_meta_;
   juce::Image image_;
   PlayState play_state_ = PlayState::stopped;
+  bool playable_ = false;
   double position_ = 0.0;
   bool hovered_ = false;
   bool drag_hover_ = false;

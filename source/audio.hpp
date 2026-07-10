@@ -22,6 +22,8 @@ public:
 
   // Loads (or replaces) the sound for a slot. Empty on decode failure.
   std::optional<SampleInfo> load(int slot, const juce::File& file);
+  // Drops the slot's sound, if any.
+  void clear(int slot);
   // Starts or resumes from the current position; no-op for empty slots.
   void play(int slot);
   // Stops, keeping the position (resume with play).
