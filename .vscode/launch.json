@@ -15,8 +15,8 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit",
       "args": [
-        "--load", "0", "../specs/test.wav",
-        "--load", "9", "../specs/levels.wav"
+        "--load", "0", "../specgram/test.wav",
+        "--load", "9", "../specgram/levels.wav"
       ],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "cmake build"
