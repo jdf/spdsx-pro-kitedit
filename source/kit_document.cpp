@@ -38,6 +38,17 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
     return juce::Result::fail(
         file.getFileName() + " is not a valid .kit file");
   }
+  // Unversioned files predate the version field: flat_slots-era kits
+  // and the first pad-shaped kits alike; the structural fallback below
+  // handles both.
+  const int version = parsed.getProperty("version", 0);
+  if (version > static_cast<int>(KitFormat::current)) {
+    return juce::Result::fail(file.getFileName()
+        + " was saved by a newer version of spdsx-patchedit (format v"
+        + juce::String(version) + "; this build reads up to v"
+        + juce::String(static_cast<int>(KitFormat::current)) + ")");
+  }
+
   auto name = parsed.getProperty("name", "Untitled Kit").toString();
   model_.set_name(name.isNotEmpty() ? name : "Untitled Kit");
 
@@ -80,6 +91,7 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
 juce::Result KitDocument::saveDocument(const juce::File& file)
 {
   auto* obj = new juce::DynamicObject();
+  obj->setProperty("version", static_cast<int>(KitFormat::current));
   obj->setProperty("name", model_.name());
   juce::Array<juce::var> pads;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {

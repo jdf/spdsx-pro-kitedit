@@ -13,6 +13,20 @@
 
 namespace spdsx {
 
+// The .kit schema version, written to every saved file. Bump when the
+// schema changes; loadDocument understands every older version and
+// refuses files stamped newer than current.
+enum class KitFormat : int {
+  // The original flat 18-entry "slots" array. Files of this era carry
+  // no version field on disk.
+  flat_slots = 1,
+  // Pad-shaped: nine {"samples": [top, bottom]} objects, ready for
+  // per-pad properties. First version stamped on disk.
+  pads = 2,
+
+  current = pads,
+};
+
 class KitDocument : public juce::FileBasedDocument {
 public:
   // settings persists "where kits live" across sessions, kept separate
