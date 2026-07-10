@@ -2,22 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "main_component.hpp"
+
 namespace spdsx {
-
-// Placeholder until the pad grid lands.
-class PlaceholderComponent : public juce::Component {
-public:
-  PlaceholderComponent() { setSize(960, 720); }
-
-  void paint(juce::Graphics& g) override
-  {
-    g.fillAll(juce::Colour(0xff12161b));
-    g.setColour(juce::Colour(0xff4c5866));
-    g.setFont(24.0f);
-    g.drawText(
-        "spdsx-patchedit", getLocalBounds(), juce::Justification::centred);
-  }
-};
 
 class MainWindow : public juce::DocumentWindow {
 public:
@@ -27,7 +14,7 @@ public:
             juce::DocumentWindow::allButtons)
   {
     setUsingNativeTitleBar(true);
-    setContentOwned(new PlaceholderComponent(), true);
+    setContentOwned(new MainComponent(), true);
     setResizable(true, true);
     centreWithSize(getWidth(), getHeight());
     setVisible(true);
@@ -36,6 +23,15 @@ public:
   void closeButtonPressed() override
   {
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
+  }
+
+  // The grid handles the spacebar; hand it the keyboard whenever the
+  // window becomes active.
+  void activeWindowStatusChanged() override
+  {
+    if (isActiveWindow() && getContentComponent() != nullptr) {
+      getContentComponent()->grabKeyboardFocus();
+    }
   }
 };
 

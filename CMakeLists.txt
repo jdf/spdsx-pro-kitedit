@@ -37,6 +37,8 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit")
 
 target_sources(spdsx-patchedit PRIVATE
     source/main.cpp
+    source/main_component.cpp
+    source/sample_slot.cpp
     source/spectro.cpp
 )
 target_compile_definitions(spdsx-patchedit PRIVATE
