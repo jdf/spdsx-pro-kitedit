@@ -9,6 +9,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "audio.hpp"
+#include "kit_document.hpp"
 #include "kit_model.hpp"
 #include "sample_slot.hpp"
 
@@ -28,6 +29,9 @@ public:
   // drag-and-drop, and the file dialog.
   void load_sample(int idx, const juce::File& file);
 
+  // The document, for app-level flows (quit interception).
+  KitDocument& document() { return document_; }
+
   void paint(juce::Graphics& g) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
@@ -40,21 +44,26 @@ public:
 
 private:
   void slot_changed(int idx) override;
+  void kit_name_changed() override;
 
   void transport_action(int idx, TransportAction action);
   void choose_sample(int idx);
+  void refresh_document_state();
   void timerCallback() override;
   juce::Rectangle<int> pad_bounds(int row, int col) const;
 
   juce::ApplicationCommandManager& commands_;
   KitModel model_;
   juce::UndoManager undo_;
+  KitDocument document_ {model_, undo_};
   AudioEngine engine_ {kSlotCount};
   std::unique_ptr<juce::FileChooser> chooser_;
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
+  juce::Label name_label_;
   int hovered_ = -1;
   bool could_undo_ = false;
   bool could_redo_ = false;
+  bool shown_dirty_ = false;
 };
 
 }  // namespace spdsx

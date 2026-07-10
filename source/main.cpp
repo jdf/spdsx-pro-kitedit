@@ -15,12 +15,18 @@ public:
   {
   }
 
-  juce::StringArray getMenuBarNames() override { return {"Edit"}; }
+  juce::StringArray getMenuBarNames() override { return {"File", "Edit"}; }
 
   juce::PopupMenu getMenuForIndex(int, const juce::String& name) override
   {
     juce::PopupMenu menu;
-    if (name == "Edit") {
+    if (name == "File") {
+      menu.addCommandItem(&commands_, commands::file_new);
+      menu.addCommandItem(&commands_, commands::file_open);
+      menu.addSeparator();
+      menu.addCommandItem(&commands_, commands::file_save);
+      menu.addCommandItem(&commands_, commands::file_save_as);
+    } else if (name == "Edit") {
       menu.addCommandItem(&commands_, commands::undo);
       menu.addCommandItem(&commands_, commands::redo);
     }
@@ -73,7 +79,7 @@ public:
 
   void initialise(const juce::String&) override
   {
-    auto* content = new MainComponent(command_manager);
+    content = new MainComponent(command_manager);
     command_manager.registerAllCommandsForTarget(content);
     command_manager.setFirstCommandTarget(content);
 
@@ -103,6 +109,23 @@ public:
 #endif
   }
 
+  // Give the user a chance to save (or bail out) before quitting with
+  // unsaved changes.
+  void systemRequestedQuit() override
+  {
+    if (content == nullptr) {
+      quit();
+      return;
+    }
+    content->document().saveIfNeededAndUserAgreesAsync(
+        [](juce::FileBasedDocument::SaveResult result)
+        {
+          if (result == juce::FileBasedDocument::savedOk) {
+            juce::JUCEApplication::quit();
+          }
+        });
+  }
+
   void shutdown() override
   {
 #if JUCE_MAC
@@ -113,6 +136,7 @@ public:
     }
 #endif
     command_manager.setFirstCommandTarget(nullptr);
+    content = nullptr;
     window.reset();
     menu.reset();
   }
@@ -121,6 +145,7 @@ private:
   juce::ApplicationCommandManager command_manager;
   std::unique_ptr<MainWindow> window;
   std::unique_ptr<MainMenu> menu;
+  MainComponent* content = nullptr;  // owned by window
 };
 
 }  // namespace spdsx

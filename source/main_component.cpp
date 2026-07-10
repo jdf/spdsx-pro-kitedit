@@ -10,6 +10,7 @@ namespace spdsx {
 
 namespace {
 
+constexpr int kHeaderHeight = 44;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
 constexpr int kPadPadding = 8;
@@ -20,6 +21,8 @@ const juce::Colour kWindowBg(0xff12161b);
 const juce::Colour kPadBg(0xff161b22);
 const juce::Colour kPadBorder(0xff242d38);
 const juce::Colour kPadLabel(0xff8a97a6);
+const juce::Colour kKitName(0xffe6edf5);
+const juce::Colour kDirtyDot(0xffd9a94f);
 
 }  // namespace
 
@@ -37,6 +40,26 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     { transport_action(idx, action); };
     addAndMakeVisible(slot);
   }
+  // The kit name, click-to-edit in place.
+  name_label_.setText(model_.name(), juce::dontSendNotification);
+  name_label_.setFont(juce::Font(juce::FontOptions(17.0f)).boldened());
+  name_label_.setColour(juce::Label::textColourId, kKitName);
+  name_label_.setJustificationType(juce::Justification::centred);
+  name_label_.setEditable(true, false, false);
+  name_label_.onTextChange = [this]
+  {
+    auto text = name_label_.getText().trim();
+    if (text.isEmpty()) {
+      name_label_.setText(model_.name(), juce::dontSendNotification);
+    } else {
+      model_.set_name(text);
+    }
+  };
+  // Hand the keyboard back to the grid when editing ends, so the
+  // spacebar keeps working.
+  name_label_.onEditorHide = [this] { grabKeyboardFocus(); };
+  addAndMakeVisible(name_label_);
+
   model_.add_listener(this);
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
@@ -66,7 +89,8 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
 
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
-  ids.addArray({commands::undo, commands::redo});
+  ids.addArray({commands::undo, commands::redo, commands::file_new,
+      commands::file_open, commands::file_save, commands::file_save_as});
 }
 
 void MainComponent::getCommandInfo(
@@ -85,6 +109,24 @@ void MainComponent::getCommandInfo(
               | juce::ModifierKeys::shiftModifier);
       info.setActive(undo_.canRedo());
       break;
+    case commands::file_new:
+      info.setInfo("New Kit", "Start a fresh untitled kit", "File", 0);
+      info.addDefaultKeypress('n', juce::ModifierKeys::commandModifier);
+      break;
+    case commands::file_open:
+      info.setInfo("Open...", "Open a .kit file", "File", 0);
+      info.addDefaultKeypress('o', juce::ModifierKeys::commandModifier);
+      break;
+    case commands::file_save:
+      info.setInfo("Save", "Save the kit", "File", 0);
+      info.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
+      break;
+    case commands::file_save_as:
+      info.setInfo("Save As...", "Save the kit to a new file", "File", 0);
+      info.addDefaultKeypress('s',
+          juce::ModifierKeys::commandModifier
+              | juce::ModifierKeys::shiftModifier);
+      break;
     default:
       break;
   }
@@ -97,9 +139,60 @@ bool MainComponent::perform(const InvocationInfo& info)
       return undo_.undo();
     case commands::redo:
       return undo_.redo();
+    case commands::file_new:
+      document_.saveIfNeededAndUserAgreesAsync(
+          [this](juce::FileBasedDocument::SaveResult result)
+          {
+            if (result == juce::FileBasedDocument::savedOk) {
+              document_.reset_to_untitled();
+              refresh_document_state();
+            }
+          });
+      return true;
+    case commands::file_open:
+      document_.saveIfNeededAndUserAgreesAsync(
+          [this](juce::FileBasedDocument::SaveResult result)
+          {
+            if (result == juce::FileBasedDocument::savedOk) {
+              document_.loadFromUserSpecifiedFileAsync(
+                  true, [this](juce::Result) { refresh_document_state(); });
+            }
+          });
+      return true;
+    case commands::file_save:
+      document_.saveAsync(true, true,
+          [this](juce::FileBasedDocument::SaveResult)
+          { refresh_document_state(); });
+      return true;
+    case commands::file_save_as:
+      document_.saveAsInteractiveAsync(true,
+          [this](juce::FileBasedDocument::SaveResult)
+          { refresh_document_state(); });
+      return true;
     default:
       return false;
   }
+}
+
+// Window title carries the kit name and an Edited marker; the header
+// dot repaints with it.
+void MainComponent::refresh_document_state()
+{
+  shown_dirty_ = document_.hasChangedSinceSaved();
+  if (auto* window =
+          dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent()))
+  {
+    window->setName(
+        model_.name() + (shown_dirty_ ? " \xe2\x80\x94 Edited" : ""));
+  }
+  repaint(0, 0, getWidth(), kHeaderHeight);
+}
+
+void MainComponent::kit_name_changed()
+{
+  name_label_.setText(model_.name(), juce::dontSendNotification);
+  document_.changed();
+  refresh_document_state();
 }
 
 // The model is the source of truth: engine and slot display sync to it
@@ -107,6 +200,7 @@ bool MainComponent::perform(const InvocationInfo& info)
 // kit file.
 void MainComponent::slot_changed(int idx)
 {
+  document_.changed();
   const auto& file = model_.slot(idx);
   auto& slot = *slots_[static_cast<size_t>(idx)];
   if (file == juce::File()) {
@@ -138,6 +232,15 @@ void MainComponent::slot_changed(int idx)
 void MainComponent::paint(juce::Graphics& g)
 {
   g.fillAll(kWindowBg);
+
+  // Dirty indicator: a dot in the header (the title bar also carries an
+  // "Edited" marker).
+  if (document_.hasChangedSinceSaved()) {
+    g.setColour(kDirtyDot);
+    g.fillEllipse(static_cast<float>(getWidth()) - 26.0f,
+        kHeaderHeight / 2.0f - 4.0f, 8.0f, 8.0f);
+  }
+
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto pad = pad_bounds(r, c);
@@ -158,13 +261,20 @@ void MainComponent::paint(juce::Graphics& g)
 juce::Rectangle<int> MainComponent::pad_bounds(int row, int col) const
 {
   const int cell_w = (getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
-  const int cell_h = (getHeight() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+  const int cell_h =
+      (getHeight() - kHeaderHeight - 2 * kGridPadding - 2 * kGridSpacing)
+      / 3;
   return {kGridPadding + col * (cell_w + kGridSpacing),
-      kGridPadding + row * (cell_h + kGridSpacing), cell_w, cell_h};
+      kHeaderHeight + kGridPadding + row * (cell_h + kGridSpacing), cell_w,
+      cell_h};
 }
 
 void MainComponent::resized()
 {
+  name_label_.setBounds(getLocalBounds()
+          .removeFromTop(kHeaderHeight)
+          .withSizeKeepingCentre(
+              juce::jmin(420, getWidth() - 120), 26));
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto inner = pad_bounds(r, c).reduced(kPadPadding);
@@ -247,6 +357,11 @@ void MainComponent::timerCallback()
     could_undo_ = undo_.canUndo();
     could_redo_ = undo_.canRedo();
     commands_.commandStatusChanged();
+  }
+
+  // Dirty state changes on async save completions too; poll it.
+  if (document_.hasChangedSinceSaved() != shown_dirty_) {
+    refresh_document_state();
   }
 
   // Focus follows the mouse. Polled rather than event-driven: the
