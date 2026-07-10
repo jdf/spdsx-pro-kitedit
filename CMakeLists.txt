@@ -43,14 +43,21 @@ FetchContent_MakeAvailable(Slint)
 
 # miniaudio is header-only; its vcpkg port ships no CMake config.
 find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
+# specgram comes from the overlay port in ports/, which builds the sibling
+# specs checkout.
+find_package(specgram CONFIG REQUIRED)
 
 add_executable(spdsx-patchedit
     source/main.cpp
     source/audio.cpp
+    source/spectro.cpp
 )
 slint_target_sources(spdsx-patchedit ui/app-window.slint)
 target_include_directories(spdsx-patchedit PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
-target_link_libraries(spdsx-patchedit PRIVATE Slint::Slint)
+target_link_libraries(spdsx-patchedit PRIVATE
+    Slint::Slint
+    specgram::specgram
+)
 if(APPLE)
     # miniaudio's Core Audio backend.
     target_link_libraries(spdsx-patchedit PRIVATE

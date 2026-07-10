@@ -7,13 +7,13 @@
 
 #include "app-window.h"
 #include "audio.hpp"
+#include "spectro.hpp"
 
 namespace {
 
 constexpr int kSlotCount = 18;
 
-void load_sample(const AppWindow& ui,
-    spdsx::AudioEngine& engine,
+void load_sample(spdsx::AudioEngine& engine,
     slint::VectorModel<SlotData>& slots,
     int idx,
     const std::string& path)
@@ -31,8 +31,14 @@ void load_sample(const AppWindow& ui,
       slint::SharedString(std::filesystem::path(path).filename().string());
   row.has_sample = true;
   row.playing = false;
+  // Too-short files play fine but render no spectrogram; leave the image
+  // empty in that case.
+  if (auto png = spdsx::render_spectrogram(path, idx); !png.empty()) {
+    row.spectrogram = slint::Image::load_from_path(slint::SharedString(png));
+  } else {
+    row.spectrogram = slint::Image {};
+  }
   slots.set_row_data(static_cast<size_t>(idx), row);
-  (void)ui;
 }
 
 }  // namespace
@@ -53,7 +59,7 @@ int main(int argc, char** argv)
   // drag and drop. May be repeated.
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--load" && i + 2 < argc) {
-      load_sample(*ui, engine, *slots, std::atoi(argv[i + 1]), argv[i + 2]);
+      load_sample(engine, *slots, std::atoi(argv[i + 1]), argv[i + 2]);
       i += 2;
     } else {
       std::fprintf(stderr, "usage: %s [--load <slot> <file.wav>]...\n", argv[0]);

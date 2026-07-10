@@ -2,6 +2,12 @@
   "name": "spdsx-patchedit",
   "version": "0.1.0",
   "dependencies": [
-    "miniaudio"
-  ]
+    "miniaudio",
+    "specgram"
+  ],
+  "vcpkg-configuration": {
+    "overlay-ports": [
+      "./ports"
+    ]
+  }
 }
