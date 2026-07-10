@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <memory>
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -8,13 +9,14 @@ namespace spdsx {
 
 class MainWindow : public juce::DocumentWindow {
 public:
-  MainWindow()
+  // Takes ownership of content.
+  explicit MainWindow(MainComponent* content)
       : juce::DocumentWindow("SPD-SX Patch Edit",
             juce::Colour(0xff12161b),
             juce::DocumentWindow::allButtons)
   {
     setUsingNativeTitleBar(true);
-    setContentOwned(new MainComponent(), true);
+    setContentOwned(content, true);
     setResizable(true, true);
     centreWithSize(getWidth(), getHeight());
     setVisible(true);
@@ -45,7 +47,24 @@ public:
 
   void initialise(const juce::String&) override
   {
-    window = std::make_unique<MainWindow>();
+    auto* content = new MainComponent();
+    // --load <slot> <wav> pre-fills a slot; useful for testing without
+    // drag and drop. May be repeated. Slot indices are
+    // (row * 3 + col) * 2, +1 for the bottom slot.
+    auto args = getCommandLineParameterArray();
+    for (int i = 0; i < args.size(); ++i) {
+      if (args[i] == "--load" && i + 2 < args.size()) {
+        content->load_sample(args[i + 1].getIntValue(),
+            juce::File::getCurrentWorkingDirectory().getChildFile(
+                args[i + 2]));
+        i += 2;
+      } else {
+        std::fprintf(stderr, "unrecognized argument '%s'\n"
+                             "usage: spdsx-patchedit [--load <slot> <file.wav>]...\n",
+            args[i].toRawUTF8());
+      }
+    }
+    window = std::make_unique<MainWindow>(content);
   }
   void shutdown() override { window.reset(); }
 

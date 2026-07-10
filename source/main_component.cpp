@@ -29,6 +29,31 @@ MainComponent::MainComponent()
     addAndMakeVisible(slot);
   }
   setSize(960, 720);
+  // Sounds end on the audio thread; poll so the playing highlight clears
+  // when a sample runs out on its own.
+  startTimerHz(10);
+}
+
+void MainComponent::load_sample(int idx, const juce::File& file)
+{
+  if (idx < 0 || idx >= kSlotCount) {
+    std::fprintf(
+        stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
+    return;
+  }
+  if (!engine_.load(idx, file)) {
+    return;
+  }
+  auto& slot = *slots_[static_cast<size_t>(idx)];
+  slot.set_sample_name(file.getFileName());
+  slot.set_playing(false);
+}
+
+void MainComponent::timerCallback()
+{
+  for (int i = 0; i < kSlotCount; ++i) {
+    slots_[static_cast<size_t>(i)]->set_playing(engine_.is_playing(i));
+  }
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -66,9 +91,17 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 
 void MainComponent::toggle_play(int idx)
 {
-  // Stub until the audio engine lands: prove the spacebar reaches the
-  // slot under the mouse.
-  std::printf("toggle slot %d\n", idx);
+  auto& slot = *slots_[static_cast<size_t>(idx)];
+  if (!slot.has_sample()) {
+    return;
+  }
+  if (engine_.is_playing(idx)) {
+    engine_.stop(idx);
+    slot.set_playing(false);
+  } else {
+    engine_.start(idx);
+    slot.set_playing(true);
+  }
 }
 
 }  // namespace spdsx
