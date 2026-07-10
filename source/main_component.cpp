@@ -110,15 +110,12 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
   if (key == juce::KeyPress::spaceKey) {
     if (hovered_ >= 0) {
-      // Space toggles play/pause on the slot under the mouse, lighting
-      // the matching button.
+      // Space triggers the slot under the mouse like a drum pad:
+      // retrigger from the top while playing, resume while paused.
       auto& slot = *slots_[static_cast<size_t>(hovered_)];
       if (slot.has_sample()) {
-        auto action = slot.play_state() == PlayState::playing
-            ? TransportAction::pause
-            : TransportAction::play;
-        transport_action(hovered_, action);
-        slot.flash_transport_button(action);
+        transport_action(hovered_, TransportAction::play);
+        slot.flash_transport_button(TransportAction::play);
       }
     }
     return true;
@@ -134,6 +131,11 @@ void MainComponent::transport_action(int idx, TransportAction action)
   }
   switch (action) {
     case TransportAction::play:
+      // Play during playback retriggers from the top (drum-pad style);
+      // from paused it resumes, from stopped it starts at the top.
+      if (slot.play_state() == PlayState::playing) {
+        engine_.stop(idx);
+      }
       engine_.play(idx);
       slot.set_play_state(PlayState::playing);
       break;
