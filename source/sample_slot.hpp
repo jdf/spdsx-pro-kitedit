@@ -55,6 +55,7 @@ public:
 private:
   juce::ShapeButton* button_for(TransportAction action);
   void update_button_colours();
+  juce::Rectangle<int> info_bar_bounds() const;
 
   int index_;
   juce::String sample_name_;

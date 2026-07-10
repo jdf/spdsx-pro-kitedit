@@ -211,9 +211,7 @@ void SampleSlot::paint(juce::Graphics& g)
     }
 
     // Info bar: a scrim keeps the text legible over the spectrogram.
-    auto bar = getLocalBounds()
-                   .reduced(static_cast<int>(kImageInset))
-                   .removeFromBottom(kInfoBarHeight);
+    auto bar = info_bar_bounds();
     g.setColour(kInfoBarScrim);
     g.fillRect(bar);
 
@@ -246,11 +244,16 @@ void SampleSlot::paint(juce::Graphics& g)
       drag_hover_ || play_state_ == PlayState::playing ? 2.0f : 1.0f);
 }
 
+juce::Rectangle<int> SampleSlot::info_bar_bounds() const
+{
+  return getLocalBounds()
+      .reduced(static_cast<int>(kImageInset))
+      .removeFromBottom(kInfoBarHeight);
+}
+
 void SampleSlot::resized()
 {
-  auto bar = getLocalBounds()
-                 .reduced(static_cast<int>(kImageInset))
-                 .removeFromBottom(kInfoBarHeight);
+  auto bar = info_bar_bounds();
   auto buttons = bar.reduced(6, (kInfoBarHeight - kButtonSize) / 2);
   stop_button_.setBounds(buttons.removeFromRight(kButtonSize));
   buttons.removeFromRight(kButtonGap);
@@ -261,6 +264,13 @@ void SampleSlot::resized()
 
 void SampleSlot::mouseUp(const juce::MouseEvent& event)
 {
+  // Clicks anywhere across the control strip's vertical band belong to
+  // the transport, not to file browsing, even between the buttons.
+  if (has_sample()
+      && event.getPosition().getY() >= info_bar_bounds().getY())
+  {
+    return;
+  }
   if (!event.mouseWasDraggedSinceMouseDown()
       && contains(event.getPosition()) && on_click)
   {
