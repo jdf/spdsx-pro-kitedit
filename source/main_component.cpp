@@ -28,6 +28,8 @@ MainComponent::MainComponent()
         hovered_ = -1;
       }
     };
+    slot.on_drop = [this](int idx, const juce::File& file)
+    { load_sample(idx, file); };
     addAndMakeVisible(slot);
   }
   setSize(960, 720);

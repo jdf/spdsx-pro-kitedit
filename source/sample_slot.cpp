@@ -11,6 +11,19 @@ const juce::Colour kBorderHover(0xff4f8fd9);
 const juce::Colour kBorderPlaying(0xff58c47a);
 const juce::Colour kPlaceholderText(0xff4c5866);
 const juce::Colour kNameText(0xffcfd8e3);
+const juce::Colour kBorderDrop(0xffd9a94f);
+
+bool looks_like_audio(const juce::String& path)
+{
+  static const juce::StringArray kExtensions {
+      ".wav", ".aif", ".aiff", ".flac", ".ogg", ".mp3"};
+  for (const auto& ext : kExtensions) {
+    if (path.endsWithIgnoreCase(ext)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 }  // namespace
 
@@ -42,7 +55,7 @@ void SampleSlot::set_playing(bool playing)
 void SampleSlot::paint(juce::Graphics& g)
 {
   auto bounds = getLocalBounds().toFloat();
-  g.setColour(hovered_ ? kSlotBgHover : kSlotBg);
+  g.setColour(hovered_ || drag_hover_ ? kSlotBgHover : kSlotBg);
   g.fillRoundedRectangle(bounds, 8.0f);
 
   if (image_.isValid()) {
@@ -64,10 +77,12 @@ void SampleSlot::paint(juce::Graphics& g)
         "drop a .wav", getLocalBounds(), juce::Justification::centred);
   }
 
-  g.setColour(
-      playing_ ? kBorderPlaying : (hovered_ ? kBorderHover : kBorder));
-  g.drawRoundedRectangle(
-      bounds.reduced(1.0f), 8.0f, playing_ ? 2.0f : 1.0f);
+  g.setColour(drag_hover_
+          ? kBorderDrop
+          : (playing_ ? kBorderPlaying
+                      : (hovered_ ? kBorderHover : kBorder)));
+  g.drawRoundedRectangle(bounds.reduced(1.0f), 8.0f,
+      drag_hover_ || playing_ ? 2.0f : 1.0f);
 }
 
 void SampleSlot::mouseEnter(const juce::MouseEvent&)
@@ -86,6 +101,32 @@ void SampleSlot::mouseExit(const juce::MouseEvent&)
     on_hover(index_, false);
   }
   repaint();
+}
+
+bool SampleSlot::isInterestedInFileDrag(const juce::StringArray& files)
+{
+  return files.size() == 1 && looks_like_audio(files[0]);
+}
+
+void SampleSlot::fileDragEnter(const juce::StringArray&, int, int)
+{
+  drag_hover_ = true;
+  repaint();
+}
+
+void SampleSlot::fileDragExit(const juce::StringArray&)
+{
+  drag_hover_ = false;
+  repaint();
+}
+
+void SampleSlot::filesDropped(const juce::StringArray& files, int, int)
+{
+  drag_hover_ = false;
+  repaint();
+  if (on_drop) {
+    on_drop(index_, juce::File(files[0]));
+  }
 }
 
 }  // namespace spdsx

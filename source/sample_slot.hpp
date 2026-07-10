@@ -7,7 +7,8 @@
 
 namespace spdsx {
 
-class SampleSlot : public juce::Component {
+class SampleSlot : public juce::Component,
+                   public juce::FileDragAndDropTarget {
 public:
   explicit SampleSlot(int index);
 
@@ -16,6 +17,8 @@ public:
   // Focus follows the mouse: reports (index, entered) so the parent can
   // route the spacebar to the slot under the pointer.
   std::function<void(int, bool)> on_hover;
+  // A file was dropped on this slot.
+  std::function<void(int, const juce::File&)> on_drop;
 
   void set_sample_name(const juce::String& name);
   // An invalid image just leaves the slot without a spectrogram (e.g.
@@ -28,12 +31,18 @@ public:
   void mouseEnter(const juce::MouseEvent&) override;
   void mouseExit(const juce::MouseEvent&) override;
 
+  bool isInterestedInFileDrag(const juce::StringArray& files) override;
+  void fileDragEnter(const juce::StringArray&, int, int) override;
+  void fileDragExit(const juce::StringArray&) override;
+  void filesDropped(const juce::StringArray& files, int, int) override;
+
 private:
   int index_;
   juce::String sample_name_;
   juce::Image image_;
   bool playing_ = false;
   bool hovered_ = false;
+  bool drag_hover_ = false;
 };
 
 }  // namespace spdsx
