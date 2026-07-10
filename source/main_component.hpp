@@ -15,12 +15,13 @@
 namespace spdsx {
 
 class MainComponent : public juce::Component,
+                      public juce::ApplicationCommandTarget,
                       private juce::Timer,
                       private KitModel::Listener {
 public:
   static constexpr int kSlotCount = KitModel::kSlotCount;
 
-  MainComponent();
+  explicit MainComponent(juce::ApplicationCommandManager& commands);
   ~MainComponent() override;
 
   // Assigns a sample to a slot, via the model. Shared by --load,
@@ -31,6 +32,12 @@ public:
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
 
+  ApplicationCommandTarget* getNextCommandTarget() override;
+  void getAllCommands(juce::Array<juce::CommandID>& ids) override;
+  void getCommandInfo(juce::CommandID id,
+      juce::ApplicationCommandInfo& info) override;
+  bool perform(const InvocationInfo& info) override;
+
 private:
   void slot_changed(int idx) override;
 
@@ -39,11 +46,15 @@ private:
   void timerCallback() override;
   juce::Rectangle<int> pad_bounds(int row, int col) const;
 
+  juce::ApplicationCommandManager& commands_;
   KitModel model_;
+  juce::UndoManager undo_;
   AudioEngine engine_ {kSlotCount};
   std::unique_ptr<juce::FileChooser> chooser_;
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   int hovered_ = -1;
+  bool could_undo_ = false;
+  bool could_redo_ = false;
 };
 
 }  // namespace spdsx

@@ -2,6 +2,8 @@
 
 #include <cstdio>
 
+#include "actions.hpp"
+#include "commands.hpp"
 #include "spectro.hpp"
 
 namespace spdsx {
@@ -21,7 +23,8 @@ const juce::Colour kPadLabel(0xff8a97a6);
 
 }  // namespace
 
-MainComponent::MainComponent()
+MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
+    : commands_(commands)
 {
   setWantsKeyboardFocus(true);
   for (int i = 0; i < kSlotCount; ++i) {
@@ -52,7 +55,51 @@ void MainComponent::load_sample(int idx, const juce::File& file)
         stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
     return;
   }
-  model_.set_slot(idx, file);
+  undo_.beginNewTransaction("Load " + file.getFileName());
+  undo_.perform(new SetSlotAction(model_, idx, file));
+}
+
+juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
+{
+  return nullptr;
+}
+
+void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
+{
+  ids.addArray({commands::undo, commands::redo});
+}
+
+void MainComponent::getCommandInfo(
+    juce::CommandID id, juce::ApplicationCommandInfo& info)
+{
+  switch (id) {
+    case commands::undo:
+      info.setInfo("Undo", "Undo the last change", "Edit", 0);
+      info.addDefaultKeypress('z', juce::ModifierKeys::commandModifier);
+      info.setActive(undo_.canUndo());
+      break;
+    case commands::redo:
+      info.setInfo("Redo", "Redo the last undone change", "Edit", 0);
+      info.addDefaultKeypress('z',
+          juce::ModifierKeys::commandModifier
+              | juce::ModifierKeys::shiftModifier);
+      info.setActive(undo_.canRedo());
+      break;
+    default:
+      break;
+  }
+}
+
+bool MainComponent::perform(const InvocationInfo& info)
+{
+  switch (info.commandID) {
+    case commands::undo:
+      return undo_.undo();
+    case commands::redo:
+      return undo_.redo();
+    default:
+      return false;
+  }
 }
 
 // The model is the source of truth: engine and slot display sync to it
@@ -195,6 +242,13 @@ void MainComponent::choose_sample(int idx)
 
 void MainComponent::timerCallback()
 {
+  // Keep menu enablement in step with the undo history.
+  if (undo_.canUndo() != could_undo_ || undo_.canRedo() != could_redo_) {
+    could_undo_ = undo_.canUndo();
+    could_redo_ = undo_.canRedo();
+    commands_.commandStatusChanged();
+  }
+
   // Focus follows the mouse. Polled rather than event-driven: the
   // transport buttons are child components, and enter/exit pairs across
   // parent/child boundaries are easy to get wrong.
