@@ -1,5 +1,6 @@
 // Sample playback: one sound per slot, play/pause/stop/replace.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_AUDIO_H_
+#define SPDSX_PATCHEDIT_SOURCE_AUDIO_H_
 
 #include <memory>
 #include <optional>
@@ -41,3 +42,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_AUDIO_H_

@@ -1,4 +1,4 @@
-#include "spectro.hpp"
+#include "spectro.h"
 
 #include <atomic>
 #include <filesystem>

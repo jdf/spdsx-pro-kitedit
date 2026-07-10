@@ -1,6 +1,6 @@
-#include "sample_browser.hpp"
+#include "sample_browser.h"
 
-#include "audio_files.hpp"
+#include "audio_files.h"
 
 namespace spdsx {
 

@@ -3,8 +3,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "commands.hpp"
-#include "main_component.hpp"
+#include "commands.h"
+#include "main_component.h"
 
 namespace spdsx {
 

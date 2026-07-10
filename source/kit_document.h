@@ -5,11 +5,12 @@
 // each with a two-entry samples array (top, bottom) of absolute sample
 // paths or null. Samples are referenced, not copied. Kits saved in the
 // earlier flat-"slots" format still load.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_KIT_DOCUMENT_H_
+#define SPDSX_PATCHEDIT_SOURCE_KIT_DOCUMENT_H_
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
-#include "kit_model.hpp"
+#include "kit_model.h"
 
 namespace spdsx {
 
@@ -53,3 +54,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_KIT_DOCUMENT_H_

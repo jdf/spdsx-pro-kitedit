@@ -1,18 +1,19 @@
 // The main window content: a 3x3 grid of pads labeled 1-9, each with a
 // top and a bottom sample slot (18 slots, indexed (row * 3 + col) * 2,
 // +1 for the bottom).
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_MAIN_COMPONENT_H_
+#define SPDSX_PATCHEDIT_SOURCE_MAIN_COMPONENT_H_
 
 #include <array>
 #include <memory>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "audio.hpp"
-#include "kit_document.hpp"
-#include "kit_model.hpp"
-#include "sample_browser.hpp"
-#include "sample_slot.hpp"
+#include "audio.h"
+#include "kit_document.h"
+#include "kit_model.h"
+#include "sample_browser.h"
+#include "sample_slot.h"
 
 namespace spdsx {
 
@@ -79,3 +80,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_MAIN_COMPONENT_H_

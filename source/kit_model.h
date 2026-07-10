@@ -1,7 +1,8 @@
 // The kit: a name and nine pads, each carrying a top and bottom sample.
 // This is the source of truth the UI and audio engine react to, the unit
 // that undo mutates, and the thing that gets serialized to .kit files.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_H_
+#define SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_H_
 
 #include <array>
 #include <utility>
@@ -78,3 +79,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_H_

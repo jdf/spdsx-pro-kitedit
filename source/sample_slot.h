@@ -1,5 +1,6 @@
 // One sample slot: the top or bottom half of a pad in the 3x3 grid.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_SAMPLE_SLOT_H_
+#define SPDSX_PATCHEDIT_SOURCE_SAMPLE_SLOT_H_
 
 #include <functional>
 
@@ -90,3 +91,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_SAMPLE_SLOT_H_

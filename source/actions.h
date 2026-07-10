@@ -1,9 +1,10 @@
 // Undoable mutations of the kit model.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_ACTIONS_H_
+#define SPDSX_PATCHEDIT_SOURCE_ACTIONS_H_
 
 #include <juce_data_structures/juce_data_structures.h>
 
-#include "kit_model.hpp"
+#include "kit_model.h"
 
 namespace spdsx {
 
@@ -42,3 +43,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_ACTIONS_H_

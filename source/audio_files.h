@@ -1,6 +1,7 @@
 // What counts as a loadable audio file, shared by the drop targets, the
 // sample browser's filter, and drag payload identification.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_AUDIO_FILES_H_
+#define SPDSX_PATCHEDIT_SOURCE_AUDIO_FILES_H_
 
 #include <juce_core/juce_core.h>
 
@@ -25,3 +26,5 @@ inline bool LooksLikeAudio(const juce::String& path)
 }
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_AUDIO_FILES_H_

@@ -36,13 +36,13 @@ find_package(specgram CONFIG REQUIRED)
 juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit")
 
 target_sources(spdsx-patchedit PRIVATE
-    source/audio.cpp
-    source/kit_document.cpp
-    source/main.cpp
-    source/main_component.cpp
-    source/sample_browser.cpp
-    source/sample_slot.cpp
-    source/spectro.cpp
+    source/audio.cc
+    source/kit_document.cc
+    source/main.cc
+    source/main_component.cc
+    source/sample_browser.cc
+    source/sample_slot.cc
+    source/spectro.cc
 )
 target_compile_definitions(spdsx-patchedit PRIVATE
     JUCE_WEB_BROWSER=0

@@ -1,10 +1,10 @@
-#include "main_component.hpp"
+#include "main_component.h"
 
 #include <cstdio>
 
-#include "actions.hpp"
-#include "commands.hpp"
-#include "spectro.hpp"
+#include "actions.h"
+#include "commands.h"
+#include "spectro.h"
 
 namespace spdsx {
 

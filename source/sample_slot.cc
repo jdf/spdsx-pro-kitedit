@@ -1,6 +1,6 @@
-#include "sample_slot.hpp"
+#include "sample_slot.h"
 
-#include "audio_files.hpp"
+#include "audio_files.h"
 
 namespace spdsx {
 

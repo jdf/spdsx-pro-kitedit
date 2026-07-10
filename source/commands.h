@@ -1,5 +1,6 @@
 // Application command IDs, shared by menus and command targets.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_COMMANDS_H_
+#define SPDSX_PATCHEDIT_SOURCE_COMMANDS_H_
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -16,3 +17,5 @@ enum : juce::CommandID {
 };
 
 }  // namespace spdsx::commands
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_COMMANDS_H_

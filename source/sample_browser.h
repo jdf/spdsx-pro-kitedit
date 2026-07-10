@@ -1,6 +1,7 @@
 // Left panel: a directory tree showing folders and audio files, from
 // which samples drag onto slots.
-#pragma once
+#ifndef SPDSX_PATCHEDIT_SOURCE_SAMPLE_BROWSER_H_
+#define SPDSX_PATCHEDIT_SOURCE_SAMPLE_BROWSER_H_
 
 #include <memory>
 
@@ -31,3 +32,5 @@ private:
 };
 
 }  // namespace spdsx
+
+#endif  // SPDSX_PATCHEDIT_SOURCE_SAMPLE_BROWSER_H_

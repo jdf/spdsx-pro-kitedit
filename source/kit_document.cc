@@ -1,4 +1,4 @@
-#include "kit_document.hpp"
+#include "kit_document.h"
 
 namespace spdsx {
 
