@@ -41,8 +41,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Slint)
 
-add_executable(spdsx-patchedit source/main.cpp)
+# miniaudio is header-only; its vcpkg port ships no CMake config.
+find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
+
+add_executable(spdsx-patchedit
+    source/main.cpp
+    source/audio.cpp
+)
 slint_target_sources(spdsx-patchedit ui/app-window.slint)
+target_include_directories(spdsx-patchedit PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
 target_link_libraries(spdsx-patchedit PRIVATE Slint::Slint)
+if(APPLE)
+    # miniaudio's Core Audio backend.
+    target_link_libraries(spdsx-patchedit PRIVATE
+        "-framework CoreFoundation"
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+    )
+endif()
 
 install(TARGETS spdsx-patchedit RUNTIME)
