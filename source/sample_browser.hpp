@@ -17,8 +17,8 @@ public:
   void paint(juce::Graphics& g) override;
 
 private:
-  void set_root(const juce::File& root, bool persist);
-  void choose_root();
+  void SetRoot(const juce::File& root, bool persist);
+  void ChooseRoot();
 
   juce::ApplicationProperties& settings_;
   juce::TimeSliceThread scan_thread_ {"sample-browser-scan"};

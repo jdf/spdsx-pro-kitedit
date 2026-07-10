@@ -18,7 +18,7 @@ juce::String KitDocument::getDocumentTitle()
   return model_.name();
 }
 
-void KitDocument::reset_to_untitled()
+void KitDocument::ResetToUntitled()
 {
   model_.set_name("Untitled Kit");
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -42,11 +42,11 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
   // and the first pad-shaped kits alike; the structural fallback below
   // handles both.
   const int version = parsed.getProperty("version", 0);
-  if (version > static_cast<int>(KitFormat::current)) {
+  if (version > static_cast<int>(KitFormat::kCurrent)) {
     return juce::Result::fail(file.getFileName()
         + " was saved by a newer version of spdsx-patchedit (format v"
         + juce::String(version) + "; this build reads up to v"
-        + juce::String(static_cast<int>(KitFormat::current)) + ")");
+        + juce::String(static_cast<int>(KitFormat::kCurrent)) + ")");
   }
 
   auto name = parsed.getProperty("name", "Untitled Kit").toString();
@@ -91,7 +91,7 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
 juce::Result KitDocument::saveDocument(const juce::File& file)
 {
   auto* obj = new juce::DynamicObject();
-  obj->setProperty("version", static_cast<int>(KitFormat::current));
+  obj->setProperty("version", static_cast<int>(KitFormat::kCurrent));
   obj->setProperty("name", model_.name());
   juce::Array<juce::var> pads;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {

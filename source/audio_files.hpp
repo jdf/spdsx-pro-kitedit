@@ -12,7 +12,7 @@ inline constexpr const char* kAudioFileWildcard =
 // Drag-and-drop description for samples dragged from the browser panel.
 inline constexpr const char* kSampleDragId = "sample-browser-file";
 
-inline bool looks_like_audio(const juce::String& path)
+inline bool LooksLikeAudio(const juce::String& path)
 {
   static const juce::StringArray kExtensions {
       ".wav", ".aif", ".aiff", ".flac", ".ogg", ".mp3"};

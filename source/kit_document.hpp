@@ -19,12 +19,12 @@ namespace spdsx {
 enum class KitFormat : int {
   // The original flat 18-entry "slots" array. Files of this era carry
   // no version field on disk.
-  flat_slots = 1,
+  kFlatSlots = 1,
   // Pad-shaped: nine {"samples": [top, bottom]} objects, ready for
   // per-pad properties. First version stamped on disk.
-  pads = 2,
+  kPads = 2,
 
-  current = pads,
+  kCurrent = kPads,
 };
 
 class KitDocument : public juce::FileBasedDocument {
@@ -38,7 +38,7 @@ public:
   juce::String getDocumentTitle() override;
 
   // Resets to a fresh untitled kit (File > New, after any save prompt).
-  void reset_to_untitled();
+  void ResetToUntitled();
 
 protected:
   juce::Result loadDocument(const juce::File& file) override;

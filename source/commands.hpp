@@ -6,13 +6,13 @@
 namespace spdsx::commands {
 
 enum : juce::CommandID {
-  undo = 1,
-  redo,
-  file_new,
-  file_open,
-  file_save,
-  file_save_as,
-  toggle_browser,
+  kUndo = 1,
+  kRedo,
+  kFileNew,
+  kFileOpen,
+  kFileSave,
+  kFileSaveAs,
+  kToggleBrowser,
 };
 
 }  // namespace spdsx::commands

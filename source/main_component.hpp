@@ -29,7 +29,7 @@ public:
 
   // Assigns a sample to a slot, via the model. Shared by --load,
   // drag-and-drop, and the file dialog.
-  void load_sample(int idx, const juce::File& file);
+  void LoadSample(int idx, const juce::File& file);
 
   // The document, for app-level flows (quit interception).
   KitDocument& document() { return document_; }
@@ -45,22 +45,22 @@ public:
   bool perform(const InvocationInfo& info) override;
 
 private:
-  void sample_changed(int pad, int layer) override;
-  void kit_name_changed() override;
+  void SampleChanged(int pad, int layer) override;
+  void KitNameChanged() override;
 
   // Sets the settings storage parameters; must run before any member
   // that reads settings in its constructor.
-  juce::ApplicationProperties& configure_settings();
+  juce::ApplicationProperties& ConfigureSettings();
 
-  void transport_action(int idx, TransportAction action);
+  void ApplyTransportAction(int idx, TransportAction action);
   // Drum-pad trigger (spacebar and slot-body clicks): retrigger from
   // the top while playing, resume while paused, start when stopped.
-  void trigger_slot(int idx);
-  void set_browser_visible(bool visible);
-  void refresh_document_state();
+  void TriggerSlot(int idx);
+  void SetBrowserVisible(bool visible);
+  void RefreshDocumentState();
   void timerCallback() override;
-  juce::Rectangle<int> grid_area() const;
-  juce::Rectangle<int> pad_bounds(int row, int col) const;
+  juce::Rectangle<int> GridArea() const;
+  juce::Rectangle<int> PadBounds(int row, int col) const;
 
   juce::ApplicationCommandManager& commands_;
   KitModel model_;

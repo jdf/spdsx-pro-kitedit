@@ -29,7 +29,7 @@ constexpr int kButtonGap = 6;
 constexpr float kImageInset = 4.0f;
 
 // Both drag flavors land here: a single audio file or nothing.
-juce::File dragged_browser_file(
+juce::File DraggedBrowserFile(
     const juce::DragAndDropTarget::SourceDetails& details)
 {
   if (details.description.toString() != kSampleDragId) {
@@ -41,12 +41,12 @@ juce::File dragged_browser_file(
     return {};
   }
   auto file = tree->getSelectedFile();
-  return file.existsAsFile() && looks_like_audio(file.getFullPathName())
+  return file.existsAsFile() && LooksLikeAudio(file.getFullPathName())
       ? file
       : juce::File();
 }
 
-juce::String format_meta(double duration_seconds, double sample_rate)
+juce::String FormatMeta(double duration_seconds, double sample_rate)
 {
   juce::String duration;
   if (duration_seconds < 10.0) {
@@ -62,18 +62,18 @@ juce::String format_meta(double duration_seconds, double sample_rate)
       + " kHz";
 }
 
-juce::Path make_shape(TransportAction action)
+juce::Path MakeShape(TransportAction action)
 {
   juce::Path p;
   switch (action) {
-    case TransportAction::play:
+    case TransportAction::kPlay:
       p.addTriangle(0.0f, 0.0f, 0.0f, 1.0f, 0.9f, 0.5f);
       break;
-    case TransportAction::pause:
+    case TransportAction::kPause:
       p.addRectangle(0.0f, 0.0f, 0.32f, 1.0f);
       p.addRectangle(0.68f, 0.0f, 0.32f, 1.0f);
       break;
-    case TransportAction::stop:
+    case TransportAction::kStop:
       p.addRectangle(0.0f, 0.0f, 1.0f, 1.0f);
       break;
   }
@@ -89,12 +89,12 @@ SampleSlot::SampleSlot(int index)
     , stop_button_("stop", kIcon, kIconOver, kIconDown)
 {
   const std::pair<juce::ShapeButton*, TransportAction> buttons[] = {
-      {&play_button_, TransportAction::play},
-      {&pause_button_, TransportAction::pause},
-      {&stop_button_, TransportAction::stop},
+      {&play_button_, TransportAction::kPlay},
+      {&pause_button_, TransportAction::kPause},
+      {&stop_button_, TransportAction::kStop},
   };
   for (auto [button, action] : buttons) {
-    button->setShape(make_shape(action), false, true, false);
+    button->setShape(MakeShape(action), false, true, false);
     button->onClick = [this, action = action]
     {
       if (on_transport) {
@@ -106,33 +106,33 @@ SampleSlot::SampleSlot(int index)
   }
 }
 
-void SampleSlot::set_sample(const juce::String& name,
+void SampleSlot::SetSample(const juce::String& name,
     double duration_seconds,
     double sample_rate,
     const juce::Image& image)
 {
   sample_name_ = name;
-  sample_meta_ = format_meta(duration_seconds, sample_rate);
+  sample_meta_ = FormatMeta(duration_seconds, sample_rate);
   image_ = image;
   playable_ = true;
-  play_state_ = PlayState::stopped;
+  play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(true);
   pause_button_.setVisible(true);
   stop_button_.setVisible(true);
   // The body is click-to-play only when there's something to play.
   setMouseCursor(juce::MouseCursor::PointingHandCursor);
-  update_button_colours();
+  UpdateButtonColours();
   repaint();
 }
 
-void SampleSlot::set_sample_missing(const juce::String& name)
+void SampleSlot::SetSampleMissing(const juce::String& name)
 {
   sample_name_ = name;
   sample_meta_ = "missing";
   image_ = juce::Image();
   playable_ = false;
-  play_state_ = PlayState::stopped;
+  play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(false);
   pause_button_.setVisible(false);
@@ -141,13 +141,13 @@ void SampleSlot::set_sample_missing(const juce::String& name)
   repaint();
 }
 
-void SampleSlot::clear_sample()
+void SampleSlot::ClearSample()
 {
   sample_name_.clear();
   sample_meta_.clear();
   image_ = juce::Image();
   playable_ = false;
-  play_state_ = PlayState::stopped;
+  play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(false);
   pause_button_.setVisible(false);
@@ -160,10 +160,10 @@ void SampleSlot::set_play_state(PlayState state)
 {
   if (play_state_ != state) {
     play_state_ = state;
-    if (state == PlayState::stopped) {
+    if (state == PlayState::kStopped) {
       position_ = 0.0;
     }
-    update_button_colours();
+    UpdateButtonColours();
     repaint();
   }
 }
@@ -184,9 +184,9 @@ void SampleSlot::set_hovered(bool hovered)
   }
 }
 
-void SampleSlot::flash_transport_button(TransportAction action)
+void SampleSlot::FlashTransportButton(TransportAction action)
 {
-  auto* button = button_for(action);
+  auto* button = ButtonFor(action);
   button->setState(juce::Button::buttonDown);
   juce::Timer::callAfterDelay(120,
       [safe = juce::Component::SafePointer<juce::ShapeButton>(button)]
@@ -197,27 +197,27 @@ void SampleSlot::flash_transport_button(TransportAction action)
       });
 }
 
-juce::ShapeButton* SampleSlot::button_for(TransportAction action)
+juce::ShapeButton* SampleSlot::ButtonFor(TransportAction action)
 {
   switch (action) {
-    case TransportAction::play:
+    case TransportAction::kPlay:
       return &play_button_;
-    case TransportAction::pause:
+    case TransportAction::kPause:
       return &pause_button_;
-    case TransportAction::stop:
+    case TransportAction::kStop:
       return &stop_button_;
   }
   return &play_button_;
 }
 
-void SampleSlot::update_button_colours()
+void SampleSlot::UpdateButtonColours()
 {
   // The active state tints its button: green while playing, amber while
   // paused.
   auto play_normal =
-      play_state_ == PlayState::playing ? kIconPlaying : kIcon;
+      play_state_ == PlayState::kPlaying ? kIconPlaying : kIcon;
   auto pause_normal =
-      play_state_ == PlayState::paused ? kIconPaused : kIcon;
+      play_state_ == PlayState::kPaused ? kIconPaused : kIcon;
   play_button_.setColours(play_normal, kIconOver, kIconDown);
   pause_button_.setColours(pause_normal, kIconOver, kIconDown);
   stop_button_.setColours(kIcon, kIconOver, kIconDown);
@@ -240,7 +240,7 @@ void SampleSlot::paint(juce::Graphics& g)
 
   if (has_sample()) {
     // Playhead, visible while playing or paused.
-    if (play_state_ != PlayState::stopped) {
+    if (play_state_ != PlayState::kStopped) {
       const float span = bounds.getWidth() - 2.0f * kImageInset;
       const float x =
           kImageInset + span * static_cast<float>(position_);
@@ -250,7 +250,7 @@ void SampleSlot::paint(juce::Graphics& g)
     }
 
     // Info bar: a scrim keeps the text legible over the spectrogram.
-    auto bar = info_bar_bounds();
+    auto bar = InfoBarBounds();
     g.setColour(kInfoBarScrim);
     g.fillRect(bar);
 
@@ -276,14 +276,14 @@ void SampleSlot::paint(juce::Graphics& g)
 
   g.setColour(drag_hover_
           ? kBorderDrop
-          : (play_state_ == PlayState::playing
+          : (play_state_ == PlayState::kPlaying
                     ? kBorderPlaying
                     : (hovered_ ? kBorderHover : kBorder)));
   g.drawRoundedRectangle(bounds.reduced(1.0f), 8.0f,
-      drag_hover_ || play_state_ == PlayState::playing ? 2.0f : 1.0f);
+      drag_hover_ || play_state_ == PlayState::kPlaying ? 2.0f : 1.0f);
 }
 
-juce::Rectangle<int> SampleSlot::info_bar_bounds() const
+juce::Rectangle<int> SampleSlot::InfoBarBounds() const
 {
   return getLocalBounds()
       .reduced(static_cast<int>(kImageInset))
@@ -292,7 +292,7 @@ juce::Rectangle<int> SampleSlot::info_bar_bounds() const
 
 void SampleSlot::resized()
 {
-  auto bar = info_bar_bounds();
+  auto bar = InfoBarBounds();
   auto buttons = bar.reduced(6, (kInfoBarHeight - kButtonSize) / 2);
   stop_button_.setBounds(buttons.removeFromRight(kButtonSize));
   buttons.removeFromRight(kButtonGap);
@@ -307,7 +307,7 @@ void SampleSlot::mouseUp(const juce::MouseEvent& event)
   // the transport, not to file browsing, even between the buttons. A
   // missing sample has no transport, so it stays fully browsable.
   if (is_playable()
-      && event.getPosition().getY() >= info_bar_bounds().getY())
+      && event.getPosition().getY() >= InfoBarBounds().getY())
   {
     return;
   }
@@ -320,7 +320,7 @@ void SampleSlot::mouseUp(const juce::MouseEvent& event)
 
 bool SampleSlot::isInterestedInFileDrag(const juce::StringArray& files)
 {
-  return files.size() == 1 && looks_like_audio(files[0]);
+  return files.size() == 1 && LooksLikeAudio(files[0]);
 }
 
 void SampleSlot::fileDragEnter(const juce::StringArray&, int, int)
@@ -346,7 +346,7 @@ void SampleSlot::filesDropped(const juce::StringArray& files, int, int)
 
 bool SampleSlot::isInterestedInDragSource(const SourceDetails& details)
 {
-  return dragged_browser_file(details) != juce::File();
+  return DraggedBrowserFile(details) != juce::File();
 }
 
 void SampleSlot::itemDragEnter(const SourceDetails&)
@@ -365,7 +365,7 @@ void SampleSlot::itemDropped(const SourceDetails& details)
 {
   drag_hover_ = false;
   repaint();
-  if (auto file = dragged_browser_file(details);
+  if (auto file = DraggedBrowserFile(details);
       file != juce::File() && on_drop)
   {
     on_drop(index_, file);

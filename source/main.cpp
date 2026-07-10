@@ -24,16 +24,16 @@ public:
   {
     juce::PopupMenu menu;
     if (name == "File") {
-      menu.addCommandItem(&commands_, commands::file_new);
-      menu.addCommandItem(&commands_, commands::file_open);
+      menu.addCommandItem(&commands_, commands::kFileNew);
+      menu.addCommandItem(&commands_, commands::kFileOpen);
       menu.addSeparator();
-      menu.addCommandItem(&commands_, commands::file_save);
-      menu.addCommandItem(&commands_, commands::file_save_as);
+      menu.addCommandItem(&commands_, commands::kFileSave);
+      menu.addCommandItem(&commands_, commands::kFileSaveAs);
     } else if (name == "Edit") {
-      menu.addCommandItem(&commands_, commands::undo);
-      menu.addCommandItem(&commands_, commands::redo);
+      menu.addCommandItem(&commands_, commands::kUndo);
+      menu.addCommandItem(&commands_, commands::kRedo);
     } else if (name == "View") {
-      menu.addCommandItem(&commands_, commands::toggle_browser);
+      menu.addCommandItem(&commands_, commands::kToggleBrowser);
     }
     return menu;
   }
@@ -94,7 +94,7 @@ public:
     auto args = getCommandLineParameterArray();
     for (int i = 0; i < args.size(); ++i) {
       if (args[i] == "--load" && i + 2 < args.size()) {
-        content->load_sample(args[i + 1].getIntValue(),
+        content->LoadSample(args[i + 1].getIntValue(),
             juce::File::getCurrentWorkingDirectory().getChildFile(
                 args[i + 2]));
         i += 2;

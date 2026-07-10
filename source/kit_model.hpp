@@ -26,8 +26,8 @@ public:
   class Listener {
   public:
     virtual ~Listener() = default;
-    virtual void kit_name_changed() {}
-    virtual void sample_changed(int pad, int layer)
+    virtual void KitNameChanged() {}
+    virtual void SampleChanged(int pad, int layer)
     {
       (void)pad;
       (void)layer;
@@ -39,7 +39,7 @@ public:
   {
     if (name_ != name) {
       name_ = name;
-      listeners_.call([](Listener& l) { l.kit_name_changed(); });
+      listeners_.call([](Listener& l) { l.KitNameChanged(); });
     }
   }
 
@@ -61,12 +61,12 @@ public:
     if (current != file) {
       current = file;
       listeners_.call(
-          [pad, layer](Listener& l) { l.sample_changed(pad, layer); });
+          [pad, layer](Listener& l) { l.SampleChanged(pad, layer); });
     }
   }
 
-  void add_listener(Listener* listener) { listeners_.add(listener); }
-  void remove_listener(Listener* listener)
+  void AddListener(Listener* listener) { listeners_.add(listener); }
+  void RemoveListener(Listener* listener)
   {
     listeners_.remove(listener);
   }

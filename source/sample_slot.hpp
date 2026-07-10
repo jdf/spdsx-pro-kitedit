@@ -7,8 +7,8 @@
 
 namespace spdsx {
 
-enum class PlayState { stopped, playing, paused };
-enum class TransportAction { play, pause, stop };
+enum class PlayState { kStopped, kPlaying, kPaused };
+enum class TransportAction { kPlay, kPause, kStop };
 
 class SampleSlot : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -25,15 +25,15 @@ public:
   // A transport button was pressed.
   std::function<void(int, TransportAction)> on_transport;
 
-  void set_sample(const juce::String& name,
+  void SetSample(const juce::String& name,
       double duration_seconds,
       double sample_rate,
       const juce::Image& image);
   // The slot is assigned a file that can't be read (e.g. a .kit whose
   // sample moved): shows the name flagged as missing, no transport.
-  void set_sample_missing(const juce::String& name);
+  void SetSampleMissing(const juce::String& name);
   // Back to an empty slot.
-  void clear_sample();
+  void ClearSample();
 
   // A file is assigned, readable or not.
   bool has_sample() const { return sample_name_.isNotEmpty(); }
@@ -51,7 +51,7 @@ public:
 
   // Momentarily depresses the button for an action triggered from the
   // keyboard, so the spacebar visibly activates play/pause.
-  void flash_transport_button(TransportAction action);
+  void FlashTransportButton(TransportAction action);
 
   void paint(juce::Graphics& g) override;
   void resized() override;
@@ -70,15 +70,15 @@ public:
   void itemDropped(const SourceDetails& details) override;
 
 private:
-  juce::ShapeButton* button_for(TransportAction action);
-  void update_button_colours();
-  juce::Rectangle<int> info_bar_bounds() const;
+  juce::ShapeButton* ButtonFor(TransportAction action);
+  void UpdateButtonColours();
+  juce::Rectangle<int> InfoBarBounds() const;
 
   int index_;
   juce::String sample_name_;
   juce::String sample_meta_;
   juce::Image image_;
-  PlayState play_state_ = PlayState::stopped;
+  PlayState play_state_ = PlayState::kStopped;
   bool playable_ = false;
   double position_ = 0.0;
   bool hovered_ = false;

@@ -38,13 +38,13 @@ SampleBrowser::SampleBrowser(juce::ApplicationProperties& settings)
   addAndMakeVisible(root_label_);
 
   root_button_.setTooltip("Choose the sample folder");
-  root_button_.onClick = [this] { choose_root(); };
+  root_button_.onClick = [this] { ChooseRoot(); };
   addAndMakeVisible(root_button_);
 
   scan_thread_.startThread();
   auto saved = juce::File(
       settings_.getUserSettings()->getValue("sampleBrowserRoot"));
-  set_root(saved.isDirectory()
+  SetRoot(saved.isDirectory()
           ? saved
           : juce::File::getSpecialLocation(juce::File::userMusicDirectory),
       false);
@@ -56,7 +56,7 @@ SampleBrowser::~SampleBrowser()
   scan_thread_.stopThread(2000);
 }
 
-void SampleBrowser::set_root(const juce::File& root, bool persist)
+void SampleBrowser::SetRoot(const juce::File& root, bool persist)
 {
   contents_->setDirectory(root, true, true);
   root_label_.setText(root.getFileName(), juce::dontSendNotification);
@@ -67,7 +67,7 @@ void SampleBrowser::set_root(const juce::File& root, bool persist)
   }
 }
 
-void SampleBrowser::choose_root()
+void SampleBrowser::ChooseRoot()
 {
   chooser_ = std::make_unique<juce::FileChooser>(
       "Choose the sample folder", contents_->getDirectory());
@@ -76,7 +76,7 @@ void SampleBrowser::choose_root()
       [this](const juce::FileChooser& fc)
       {
         if (auto dir = fc.getResult(); dir.isDirectory()) {
-          set_root(dir, true);
+          SetRoot(dir, true);
         }
       });
 }

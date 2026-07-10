@@ -51,7 +51,7 @@ AudioEngine::~AudioEngine()
   }
 }
 
-std::optional<SampleInfo> AudioEngine::load(int slot, const juce::File& file)
+std::optional<SampleInfo> AudioEngine::Load(int slot, const juce::File& file)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   auto* reader = impl_->formats.createReaderFor(file);
@@ -75,7 +75,7 @@ std::optional<SampleInfo> AudioEngine::load(int slot, const juce::File& file)
   return info;
 }
 
-void AudioEngine::clear(int slot)
+void AudioEngine::Clear(int slot)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   s.transport.stop();
@@ -83,7 +83,7 @@ void AudioEngine::clear(int slot)
   s.reader_source.reset();
 }
 
-void AudioEngine::play(int slot)
+void AudioEngine::Play(int slot)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   if (s.reader_source != nullptr) {
@@ -91,24 +91,24 @@ void AudioEngine::play(int slot)
   }
 }
 
-void AudioEngine::pause(int slot)
+void AudioEngine::Pause(int slot)
 {
   impl_->slots.at(static_cast<size_t>(slot))->transport.stop();
 }
 
-void AudioEngine::stop(int slot)
+void AudioEngine::Stop(int slot)
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   s.transport.stop();
   s.transport.setPosition(0.0);
 }
 
-bool AudioEngine::is_playing(int slot) const
+bool AudioEngine::IsPlaying(int slot) const
 {
   return impl_->slots.at(static_cast<size_t>(slot))->transport.isPlaying();
 }
 
-double AudioEngine::position_fraction(int slot) const
+double AudioEngine::PositionFraction(int slot) const
 {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   const double length = s.transport.getLengthInSeconds();

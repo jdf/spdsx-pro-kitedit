@@ -27,7 +27,7 @@ const juce::Colour kDirtyDot(0xffd9a94f);
 
 }  // namespace
 
-juce::ApplicationProperties& MainComponent::configure_settings()
+juce::ApplicationProperties& MainComponent::ConfigureSettings()
 {
   juce::PropertiesFile::Options options;
   options.applicationName = "spdsx-patchedit";
@@ -41,7 +41,7 @@ juce::ApplicationProperties& MainComponent::configure_settings()
 
 MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
-    , browser_(configure_settings())
+    , browser_(ConfigureSettings())
 {
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
@@ -53,10 +53,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     slots_[static_cast<size_t>(i)] = std::make_unique<SampleSlot>(i);
     auto& slot = *slots_[static_cast<size_t>(i)];
     slot.on_drop = [this](int idx, const juce::File& file)
-    { load_sample(idx, file); };
-    slot.on_click = [this](int idx) { trigger_slot(idx); };
+    { LoadSample(idx, file); };
+    slot.on_click = [this](int idx) { TriggerSlot(idx); };
     slot.on_transport = [this](int idx, TransportAction action)
-    { transport_action(idx, action); };
+    { ApplyTransportAction(idx, action); };
     addAndMakeVisible(slot);
   }
   // The kit name, click-to-edit in place.
@@ -79,7 +79,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   name_label_.onEditorHide = [this] { grabKeyboardFocus(); };
   addAndMakeVisible(name_label_);
 
-  model_.add_listener(this);
+  model_.AddListener(this);
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
   startTimerHz(30);
@@ -87,10 +87,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
 
 MainComponent::~MainComponent()
 {
-  model_.remove_listener(this);
+  model_.RemoveListener(this);
 }
 
-void MainComponent::load_sample(int idx, const juce::File& file)
+void MainComponent::LoadSample(int idx, const juce::File& file)
 {
   if (idx < 0 || idx >= kSlotCount) {
     std::fprintf(
@@ -109,46 +109,46 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
 
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
-  ids.addArray({commands::undo, commands::redo, commands::file_new,
-      commands::file_open, commands::file_save, commands::file_save_as,
-      commands::toggle_browser});
+  ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
+      commands::kFileOpen, commands::kFileSave, commands::kFileSaveAs,
+      commands::kToggleBrowser});
 }
 
 void MainComponent::getCommandInfo(
     juce::CommandID id, juce::ApplicationCommandInfo& info)
 {
   switch (id) {
-    case commands::undo:
+    case commands::kUndo:
       info.setInfo("Undo", "Undo the last change", "Edit", 0);
       info.addDefaultKeypress('z', juce::ModifierKeys::commandModifier);
       info.setActive(undo_.canUndo());
       break;
-    case commands::redo:
+    case commands::kRedo:
       info.setInfo("Redo", "Redo the last undone change", "Edit", 0);
       info.addDefaultKeypress('z',
           juce::ModifierKeys::commandModifier
               | juce::ModifierKeys::shiftModifier);
       info.setActive(undo_.canRedo());
       break;
-    case commands::file_new:
+    case commands::kFileNew:
       info.setInfo("New Kit", "Start a fresh untitled kit", "File", 0);
       info.addDefaultKeypress('n', juce::ModifierKeys::commandModifier);
       break;
-    case commands::file_open:
+    case commands::kFileOpen:
       info.setInfo("Open...", "Open a .kit file", "File", 0);
       info.addDefaultKeypress('o', juce::ModifierKeys::commandModifier);
       break;
-    case commands::file_save:
+    case commands::kFileSave:
       info.setInfo("Save", "Save the kit", "File", 0);
       info.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
       break;
-    case commands::file_save_as:
+    case commands::kFileSaveAs:
       info.setInfo("Save As...", "Save the kit to a new file", "File", 0);
       info.addDefaultKeypress('s',
           juce::ModifierKeys::commandModifier
               | juce::ModifierKeys::shiftModifier);
       break;
-    case commands::toggle_browser:
+    case commands::kToggleBrowser:
       info.setInfo("Sample Browser",
           "Show or hide the sample browser panel", "View", 0);
       info.addDefaultKeypress('b', juce::ModifierKeys::commandModifier);
@@ -162,49 +162,49 @@ void MainComponent::getCommandInfo(
 bool MainComponent::perform(const InvocationInfo& info)
 {
   switch (info.commandID) {
-    case commands::undo:
+    case commands::kUndo:
       return undo_.undo();
-    case commands::redo:
+    case commands::kRedo:
       return undo_.redo();
-    case commands::file_new:
+    case commands::kFileNew:
       document_.saveIfNeededAndUserAgreesAsync(
           [this](juce::FileBasedDocument::SaveResult result)
           {
             if (result == juce::FileBasedDocument::savedOk) {
-              document_.reset_to_untitled();
-              refresh_document_state();
+              document_.ResetToUntitled();
+              RefreshDocumentState();
             }
           });
       return true;
-    case commands::file_open:
+    case commands::kFileOpen:
       document_.saveIfNeededAndUserAgreesAsync(
           [this](juce::FileBasedDocument::SaveResult result)
           {
             if (result == juce::FileBasedDocument::savedOk) {
               document_.loadFromUserSpecifiedFileAsync(
-                  true, [this](juce::Result) { refresh_document_state(); });
+                  true, [this](juce::Result) { RefreshDocumentState(); });
             }
           });
       return true;
-    case commands::file_save:
+    case commands::kFileSave:
       document_.saveAsync(true, true,
           [this](juce::FileBasedDocument::SaveResult)
-          { refresh_document_state(); });
+          { RefreshDocumentState(); });
       return true;
-    case commands::file_save_as:
+    case commands::kFileSaveAs:
       document_.saveAsInteractiveAsync(true,
           [this](juce::FileBasedDocument::SaveResult)
-          { refresh_document_state(); });
+          { RefreshDocumentState(); });
       return true;
-    case commands::toggle_browser:
-      set_browser_visible(!browser_visible_);
+    case commands::kToggleBrowser:
+      SetBrowserVisible(!browser_visible_);
       return true;
     default:
       return false;
   }
 }
 
-void MainComponent::set_browser_visible(bool visible)
+void MainComponent::SetBrowserVisible(bool visible)
 {
   browser_visible_ = visible;
   browser_.setVisible(visible);
@@ -216,7 +216,7 @@ void MainComponent::set_browser_visible(bool visible)
 
 // Window title carries the kit name and an Edited marker; the header
 // dot repaints with it.
-void MainComponent::refresh_document_state()
+void MainComponent::RefreshDocumentState()
 {
   shown_dirty_ = document_.hasChangedSinceSaved();
   if (auto* window =
@@ -228,34 +228,34 @@ void MainComponent::refresh_document_state()
   repaint(0, 0, getWidth(), kHeaderHeight);
 }
 
-void MainComponent::kit_name_changed()
+void MainComponent::KitNameChanged()
 {
   name_label_.setText(model_.name(), juce::dontSendNotification);
   document_.changed();
-  refresh_document_state();
+  RefreshDocumentState();
 }
 
 // The model is the source of truth: engine and slot display sync to it
 // here, whether the change came from a user gesture, undo, or a loaded
 // kit file. The pad-shaped model maps to the flat slot components as
 // idx = pad * 2 + layer.
-void MainComponent::sample_changed(int pad, int layer)
+void MainComponent::SampleChanged(int pad, int layer)
 {
   document_.changed();
   const int idx = pad * KitModel::kLayersPerPad + layer;
   const auto& file = model_.sample(pad, layer);
   auto& slot = *slots_[static_cast<size_t>(idx)];
   if (file == juce::File()) {
-    engine_.clear(idx);
-    slot.clear_sample();
+    engine_.Clear(idx);
+    slot.ClearSample();
     return;
   }
-  auto info = engine_.load(idx, file);
+  auto info = engine_.Load(idx, file);
   if (!info) {
     // Unreadable (moved, unmounted, not audio): keep the assignment
     // visible so it survives a save/load round trip.
-    engine_.clear(idx);
-    slot.set_sample_missing(file.getFileName());
+    engine_.Clear(idx);
+    slot.SetSampleMissing(file.getFileName());
     return;
   }
   // Too-short files play fine but render no spectrogram; the slot just
@@ -267,7 +267,7 @@ void MainComponent::sample_changed(int pad, int layer)
   {
     image = juce::ImageFileFormat::loadFrom(juce::File(png));
   }
-  slot.set_sample(file.getFileName(), info->duration_seconds,
+  slot.SetSample(file.getFileName(), info->duration_seconds,
       info->sample_rate, image);
 }
 
@@ -285,7 +285,7 @@ void MainComponent::paint(juce::Graphics& g)
 
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
-      auto pad = pad_bounds(r, c);
+      auto pad = PadBounds(r, c);
       g.setColour(kPadBg);
       g.fillRoundedRectangle(pad.toFloat(), 10.0f);
       g.setColour(kPadBorder);
@@ -300,7 +300,7 @@ void MainComponent::paint(juce::Graphics& g)
   }
 }
 
-juce::Rectangle<int> MainComponent::grid_area() const
+juce::Rectangle<int> MainComponent::GridArea() const
 {
   auto area = getLocalBounds();
   area.removeFromTop(kHeaderHeight);
@@ -310,9 +310,9 @@ juce::Rectangle<int> MainComponent::grid_area() const
   return area;
 }
 
-juce::Rectangle<int> MainComponent::pad_bounds(int row, int col) const
+juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const
 {
-  const auto area = grid_area();
+  const auto area = GridArea();
   const int cell_w =
       (area.getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
   const int cell_h =
@@ -332,7 +332,7 @@ void MainComponent::resized()
       0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
-      auto inner = pad_bounds(r, c).reduced(kPadPadding);
+      auto inner = PadBounds(r, c).reduced(kPadPadding);
       inner.removeFromTop(kPadHeader);
       const int slot_h = (inner.getHeight() - kSlotSpacing) / 2;
       const auto pad = static_cast<size_t>((r * 3 + c) * 2);
@@ -347,48 +347,48 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
   if (key == juce::KeyPress::spaceKey) {
     if (hovered_ >= 0) {
-      trigger_slot(hovered_);
+      TriggerSlot(hovered_);
     }
     return true;
   }
   return false;
 }
 
-void MainComponent::transport_action(int idx, TransportAction action)
+void MainComponent::ApplyTransportAction(int idx, TransportAction action)
 {
   auto& slot = *slots_[static_cast<size_t>(idx)];
   if (!slot.is_playable()) {
     return;
   }
   switch (action) {
-    case TransportAction::play:
+    case TransportAction::kPlay:
       // Play during playback retriggers from the top (drum-pad style);
       // from paused it resumes, from stopped it starts at the top.
-      if (slot.play_state() == PlayState::playing) {
-        engine_.stop(idx);
+      if (slot.play_state() == PlayState::kPlaying) {
+        engine_.Stop(idx);
       }
-      engine_.play(idx);
-      slot.set_play_state(PlayState::playing);
+      engine_.Play(idx);
+      slot.set_play_state(PlayState::kPlaying);
       break;
-    case TransportAction::pause:
-      if (slot.play_state() == PlayState::playing) {
-        engine_.pause(idx);
-        slot.set_play_state(PlayState::paused);
+    case TransportAction::kPause:
+      if (slot.play_state() == PlayState::kPlaying) {
+        engine_.Pause(idx);
+        slot.set_play_state(PlayState::kPaused);
       }
       break;
-    case TransportAction::stop:
-      engine_.stop(idx);
-      slot.set_play_state(PlayState::stopped);
+    case TransportAction::kStop:
+      engine_.Stop(idx);
+      slot.set_play_state(PlayState::kStopped);
       break;
   }
 }
 
-void MainComponent::trigger_slot(int idx)
+void MainComponent::TriggerSlot(int idx)
 {
   auto& slot = *slots_[static_cast<size_t>(idx)];
   if (slot.is_playable()) {
-    transport_action(idx, TransportAction::play);
-    slot.flash_transport_button(TransportAction::play);
+    ApplyTransportAction(idx, TransportAction::kPlay);
+    slot.FlashTransportButton(TransportAction::kPlay);
   }
 }
 
@@ -403,7 +403,7 @@ void MainComponent::timerCallback()
 
   // Dirty state changes on async save completions too; poll it.
   if (document_.hasChangedSinceSaved() != shown_dirty_) {
-    refresh_document_state();
+    RefreshDocumentState();
   }
 
   // Focus follows the mouse. Polled rather than event-driven: the
@@ -425,12 +425,12 @@ void MainComponent::timerCallback()
   // thinks it's playing while its transport has stopped just ran out.
   for (int i = 0; i < kSlotCount; ++i) {
     auto& slot = *slots_[static_cast<size_t>(i)];
-    if (slot.play_state() == PlayState::playing) {
-      if (engine_.is_playing(i)) {
-        slot.set_position(engine_.position_fraction(i));
+    if (slot.play_state() == PlayState::kPlaying) {
+      if (engine_.IsPlaying(i)) {
+        slot.set_position(engine_.PositionFraction(i));
       } else {
-        engine_.stop(i);
-        slot.set_play_state(PlayState::stopped);
+        engine_.Stop(i);
+        slot.set_play_state(PlayState::kStopped);
       }
     }
   }
