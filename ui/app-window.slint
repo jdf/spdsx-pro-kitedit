@@ -73,6 +73,29 @@ export component AppWindow inherits Window {
     property <length> grid-padding: 14px;
     property <length> grid-spacing: 14px;
     property <length> slot-spacing: 8px;
+    property <length> cell-w: (root.width - 2 * grid-padding - 2 * grid-spacing) / 3;
+    property <length> cell-h: (root.height - 2 * grid-padding - 2 * grid-spacing) / 3;
+
+    // Maps a point in window coordinates to the slot under it, mirroring
+    // the grid layout below (points in a spacing gap snap to the cell
+    // before the gap). Called from C++ when a file lands on the window.
+    public pure function slot-at(x: length, y: length) -> int {
+        if (x < grid-padding || y < grid-padding
+            || x > root.width - grid-padding
+            || y > root.height - grid-padding) {
+            return -1;
+        }
+        return (row-at(y) * 3 + col-at(x)) * 2 + (bottom-at(y) ? 1 : 0);
+    }
+    pure function col-at(x: length) -> int {
+        return min(2, Math.floor((x - grid-padding) / (cell-w + grid-spacing)));
+    }
+    pure function row-at(y: length) -> int {
+        return min(2, Math.floor((y - grid-padding) / (cell-h + grid-spacing)));
+    }
+    pure function bottom-at(y: length) -> bool {
+        return y - grid-padding - row-at(y) * (cell-h + grid-spacing) > cell-h / 2;
+    }
 
     forward-focus: keys;
     keys := FocusScope {

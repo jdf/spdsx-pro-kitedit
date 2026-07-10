@@ -9,6 +9,10 @@
 #include "audio.hpp"
 #include "spectro.hpp"
 
+#ifdef __APPLE__
+#  include "macdrop.hpp"
+#endif
+
 namespace {
 
 constexpr int kSlotCount = 18;
@@ -102,6 +106,22 @@ int main(int argc, char** argv)
         }
       });
 
-  ui->run();
+  ui->show();
+
+#ifdef __APPLE__
+  // Must run after show(): the shim needs the native window to exist.
+  spdsx::install_file_drop_handler(
+      [&](double x, double y, std::string path)
+      {
+        int idx = ui->invoke_slot_at(static_cast<float>(x),
+            static_cast<float>(y));
+        if (idx >= 0) {
+          load_sample(engine, *slots, idx, path);
+        }
+      });
+#endif
+
+  slint::run_event_loop();
+  ui->hide();
   return 0;
 }

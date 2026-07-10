@@ -52,6 +52,10 @@ add_executable(spdsx-patchedit
     source/audio.cpp
     source/spectro.cpp
 )
+if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(spdsx-patchedit PRIVATE source/macdrop.mm)
+endif()
 slint_target_sources(spdsx-patchedit ui/app-window.slint)
 target_include_directories(spdsx-patchedit PRIVATE "${MINIAUDIO_INCLUDE_DIRS}")
 target_link_libraries(spdsx-patchedit PRIVATE
@@ -59,11 +63,12 @@ target_link_libraries(spdsx-patchedit PRIVATE
     specgram::specgram
 )
 if(APPLE)
-    # miniaudio's Core Audio backend.
+    # Core Audio for miniaudio's backend; Cocoa for the drop shim.
     target_link_libraries(spdsx-patchedit PRIVATE
         "-framework CoreFoundation"
         "-framework CoreAudio"
         "-framework AudioToolbox"
+        "-framework Cocoa"
     )
 endif()
 
