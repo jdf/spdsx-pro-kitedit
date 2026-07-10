@@ -7,7 +7,7 @@ The main window is a 3x3 grid mirroring the SPD-SX's pad layout, with a
 top and a bottom sample slot per pad — 18 slots in all. Drag audio
 files (wav/aiff/flac/ogg/mp3) from Finder onto a slot to assign them;
 each loaded sample shows as a spectrogram rendered by
-[specgram](../specs).
+[specgram](https://github.com/jdf/specgram).
 
 ## Interaction
 
@@ -39,9 +39,7 @@ afterwards.
 
 The spectrogram renderer is consumed as a vcpkg dependency through the
 overlay port in [ports/specgram](ports/specgram), which builds a pinned
-commit of the sibling `specs` checkout (expected at
-`/Users/jdf/hax/specs`; adjust the `URL` and `REF` in the portfile to
-taste).
+commit of [jdf/specgram](https://github.com/jdf/specgram).
 
 ## History
 

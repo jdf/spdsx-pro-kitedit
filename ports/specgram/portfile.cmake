@@ -1,9 +1,8 @@
-# specgram lives in a sibling checkout on this machine rather than on a
-# public remote, so the port fetches a pinned commit from that local
-# repository. Bump REF when specs gains commits the app needs.
+# Bump REF when specgram gains commits the app needs (and push specgram
+# first, so the ref is fetchable).
 vcpkg_from_git(
     OUT_SOURCE_PATH SOURCE_PATH
-    URL file:///Users/jdf/hax/specs
+    URL https://github.com/jdf/specgram.git
     REF aae73bce080622abe05bc4bc8c2ab0df31c94c15
 )
 
