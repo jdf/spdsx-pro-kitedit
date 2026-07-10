@@ -30,6 +30,7 @@ MainComponent::MainComponent()
     };
     slot.on_drop = [this](int idx, const juce::File& file)
     { load_sample(idx, file); };
+    slot.on_click = [this](int idx) { choose_sample(idx); };
     addAndMakeVisible(slot);
   }
   setSize(960, 720);
@@ -101,6 +102,22 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     return true;
   }
   return false;
+}
+
+void MainComponent::choose_sample(int idx)
+{
+  // The chooser must outlive launchAsync, hence the member; opening a
+  // new one abandons any dialog already up.
+  chooser_ = std::make_unique<juce::FileChooser>(
+      "Choose a sample", juce::File(), "*.wav");
+  chooser_->launchAsync(juce::FileBrowserComponent::openMode
+          | juce::FileBrowserComponent::canSelectFiles,
+      [this, idx](const juce::FileChooser& fc)
+      {
+        if (auto file = fc.getResult(); file != juce::File()) {
+          load_sample(idx, file);
+        }
+      });
 }
 
 void MainComponent::toggle_play(int idx)

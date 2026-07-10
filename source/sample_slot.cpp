@@ -30,6 +30,7 @@ bool looks_like_audio(const juce::String& path)
 SampleSlot::SampleSlot(int index)
     : index_(index)
 {
+  setMouseCursor(juce::MouseCursor::PointingHandCursor);
 }
 
 void SampleSlot::set_sample_name(const juce::String& name)
@@ -101,6 +102,15 @@ void SampleSlot::mouseExit(const juce::MouseEvent&)
     on_hover(index_, false);
   }
   repaint();
+}
+
+void SampleSlot::mouseUp(const juce::MouseEvent& event)
+{
+  if (!event.mouseWasDraggedSinceMouseDown()
+      && contains(event.getPosition()) && on_click)
+  {
+    on_click(index_);
+  }
 }
 
 bool SampleSlot::isInterestedInFileDrag(const juce::StringArray& files)

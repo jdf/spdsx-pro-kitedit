@@ -19,6 +19,8 @@ public:
   std::function<void(int, bool)> on_hover;
   // A file was dropped on this slot.
   std::function<void(int, const juce::File&)> on_drop;
+  // The slot was clicked (e.g. to browse for a sample).
+  std::function<void(int)> on_click;
 
   void set_sample_name(const juce::String& name);
   // An invalid image just leaves the slot without a spectrogram (e.g.
@@ -30,6 +32,7 @@ public:
   void paint(juce::Graphics& g) override;
   void mouseEnter(const juce::MouseEvent&) override;
   void mouseExit(const juce::MouseEvent&) override;
+  void mouseUp(const juce::MouseEvent& event) override;
 
   bool isInterestedInFileDrag(const juce::StringArray& files) override;
   void fileDragEnter(const juce::StringArray&, int, int) override;

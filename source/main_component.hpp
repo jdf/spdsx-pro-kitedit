@@ -29,9 +29,11 @@ public:
 
 private:
   void toggle_play(int idx);
+  void choose_sample(int idx);
   void timerCallback() override;
 
   AudioEngine engine_ {kSlotCount};
+  std::unique_ptr<juce::FileChooser> chooser_;
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   int hovered_ = -1;
 };
