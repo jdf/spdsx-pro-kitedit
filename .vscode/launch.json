@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "spdsx-patchedit",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "cmake build"
+    },
+    {
+      "name": "spdsx-patchedit (test samples)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit",
+      "args": [
+        "--load", "0", "../specs/test.wav",
+        "--load", "9", "../specs/levels.wav"
+      ],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "cmake build"
+    }
+  ]
+}

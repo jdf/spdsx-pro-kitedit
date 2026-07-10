@@ -1,0 +1,19 @@
+{
+  // clangd is the C++ brain here; keep cpptools from fighting it.
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build",
+    "--header-insertion=never"
+  ],
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  },
+  "[objective-cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  },
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": true,
+  "files.associations": {
+    "*.mm": "objective-cpp"
+  }
+}

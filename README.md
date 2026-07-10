@@ -30,7 +30,7 @@ Requires CMake ≥ 3.25, Ninja, and a [vcpkg](https://vcpkg.io) checkout
 ```
 cmake --preset default
 cmake --build --preset default
-./build/spdsx-patchedit_artefacts/Release/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit
+./build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit
 ```
 
 The first configure builds the vcpkg dependencies (JUCE and specgram's
