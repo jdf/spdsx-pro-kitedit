@@ -98,7 +98,8 @@ void MainComponent::load_sample(int idx, const juce::File& file)
     return;
   }
   undo_.beginNewTransaction("Load " + file.getFileName());
-  undo_.perform(new SetSlotAction(model_, idx, file));
+  undo_.perform(new SetSampleAction(model_, idx / KitModel::kLayersPerPad,
+      idx % KitModel::kLayersPerPad, file));
 }
 
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
@@ -236,11 +237,13 @@ void MainComponent::kit_name_changed()
 
 // The model is the source of truth: engine and slot display sync to it
 // here, whether the change came from a user gesture, undo, or a loaded
-// kit file.
-void MainComponent::slot_changed(int idx)
+// kit file. The pad-shaped model maps to the flat slot components as
+// idx = pad * 2 + layer.
+void MainComponent::sample_changed(int pad, int layer)
 {
   document_.changed();
-  const auto& file = model_.slot(idx);
+  const int idx = pad * KitModel::kLayersPerPad + layer;
+  const auto& file = model_.sample(pad, layer);
   auto& slot = *slots_[static_cast<size_t>(idx)];
   if (file == juce::File()) {
     engine_.clear(idx);

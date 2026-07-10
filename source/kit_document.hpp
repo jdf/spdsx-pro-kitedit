@@ -1,9 +1,10 @@
 // .kit file persistence via juce::FileBasedDocument, which supplies the
 // dirty flag, save/open prompts, and "discard changes?" flows.
 //
-// The format is human-readable JSON: a kit name and an array of 18 slot
-// entries (interleaved top/bottom in slot-index order), each an absolute
-// sample path or null. Samples are referenced, not copied.
+// The format is human-readable JSON: a kit name and an array of 9 pads,
+// each with a two-entry samples array (top, bottom) of absolute sample
+// paths or null. Samples are referenced, not copied. Kits saved in the
+// earlier flat-"slots" format still load.
 #pragma once
 
 #include <juce_gui_extra/juce_gui_extra.h>

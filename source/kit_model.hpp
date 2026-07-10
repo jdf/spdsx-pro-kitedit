@@ -1,23 +1,37 @@
-// The kit: a name and 18 sample assignments. This is the source of
-// truth the UI and audio engine react to, the unit that undo mutates,
-// and the thing that gets serialized to .kit files.
+// The kit: a name and nine pads, each carrying a top and bottom sample.
+// This is the source of truth the UI and audio engine react to, the unit
+// that undo mutates, and the thing that gets serialized to .kit files.
 #pragma once
 
 #include <array>
+#include <utility>
 
 #include <juce_core/juce_core.h>
 
 namespace spdsx {
 
+struct Pad {
+  // top, bottom; an empty File means the layer holds no sample.
+  std::pair<juce::File, juce::File> samples;
+  // There will be other per-pad properties coming soon.
+};
+
 class KitModel {
 public:
-  static constexpr int kSlotCount = 18;
+  static constexpr int kPadCount = 9;
+  static constexpr int kLayersPerPad = 2;
+  // The UI still sizes its flat slot arrays from this.
+  static constexpr int kSlotCount = kPadCount * kLayersPerPad;
 
   class Listener {
   public:
     virtual ~Listener() = default;
     virtual void kit_name_changed() {}
-    virtual void slot_changed(int idx) { (void)idx; }
+    virtual void sample_changed(int pad, int layer)
+    {
+      (void)pad;
+      (void)layer;
+    }
   };
 
   const juce::String& name() const { return name_; }
@@ -29,17 +43,25 @@ public:
     }
   }
 
-  // An empty File means the slot holds no sample.
-  const juce::File& slot(int idx) const
+  const Pad& pad(int idx) const
   {
-    return slots_.at(static_cast<size_t>(idx));
+    return pads_.at(static_cast<size_t>(idx));
   }
-  void set_slot(int idx, const juce::File& file)
+
+  // layer 0 is the top sample, 1 the bottom.
+  const juce::File& sample(int pad, int layer) const
   {
-    auto& current = slots_.at(static_cast<size_t>(idx));
+    const auto& samples = pads_.at(static_cast<size_t>(pad)).samples;
+    return layer == 0 ? samples.first : samples.second;
+  }
+  void set_sample(int pad, int layer, const juce::File& file)
+  {
+    auto& samples = pads_.at(static_cast<size_t>(pad)).samples;
+    auto& current = layer == 0 ? samples.first : samples.second;
     if (current != file) {
       current = file;
-      listeners_.call([idx](Listener& l) { l.slot_changed(idx); });
+      listeners_.call(
+          [pad, layer](Listener& l) { l.sample_changed(pad, layer); });
     }
   }
 
@@ -51,7 +73,7 @@ public:
 
 private:
   juce::String name_ {"Untitled Kit"};
-  std::array<juce::File, kSlotCount> slots_;
+  std::array<Pad, kPadCount> pads_;
   juce::ListenerList<Listener> listeners_;
 };
 

@@ -45,7 +45,7 @@ public:
   bool perform(const InvocationInfo& info) override;
 
 private:
-  void slot_changed(int idx) override;
+  void sample_changed(int pad, int layer) override;
   void kit_name_changed() override;
 
   // Sets the settings storage parameters; must run before any member

@@ -21,8 +21,10 @@ juce::String KitDocument::getDocumentTitle()
 void KitDocument::reset_to_untitled()
 {
   model_.set_name("Untitled Kit");
-  for (int i = 0; i < KitModel::kSlotCount; ++i) {
-    model_.set_slot(i, juce::File());
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      model_.set_sample(pad, layer, juce::File());
+    }
   }
   undo_.clearUndoHistory();
   setFile(juce::File());
@@ -38,16 +40,36 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
   }
   auto name = parsed.getProperty("name", "Untitled Kit").toString();
   model_.set_name(name.isNotEmpty() ? name : "Untitled Kit");
-  const auto* slots = parsed.getProperty("slots", {}).getArray();
-  for (int i = 0; i < KitModel::kSlotCount; ++i) {
-    juce::var entry;
-    if (slots != nullptr && i < slots->size()) {
-      entry = (*slots)[i];
+
+  // Tolerates short arrays and non-string entries throughout; unreadable
+  // paths surface as "missing" slots rather than failing the load.
+  auto to_file = [](const juce::var& entry)
+  {
+    return entry.isString() ? juce::File(entry.toString()) : juce::File();
+  };
+  const auto* pads = parsed.getProperty("pads", {}).getArray();
+  const auto* legacy_slots = parsed.getProperty("slots", {}).getArray();
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      juce::var entry;
+      if (pads != nullptr) {
+        if (pad < pads->size()) {
+          const auto* samples =
+              (*pads)[pad].getProperty("samples", {}).getArray();
+          if (samples != nullptr && layer < samples->size()) {
+            entry = (*samples)[layer];
+          }
+        }
+      } else if (legacy_slots != nullptr) {
+        // Kits from before the pad-shaped format: a flat 18-entry array
+        // in (pad * 2 + layer) order.
+        const int idx = pad * KitModel::kLayersPerPad + layer;
+        if (idx < legacy_slots->size()) {
+          entry = (*legacy_slots)[idx];
+        }
+      }
+      model_.set_sample(pad, layer, to_file(entry));
     }
-    // Tolerates short arrays and non-string entries; unreadable paths
-    // surface as "missing" slots rather than failing the load.
-    model_.set_slot(
-        i, entry.isString() ? juce::File(entry.toString()) : juce::File());
   }
   // A freshly loaded kit starts with a clean history; undoing into a
   // different document's edits would be nonsense.
@@ -59,14 +81,20 @@ juce::Result KitDocument::saveDocument(const juce::File& file)
 {
   auto* obj = new juce::DynamicObject();
   obj->setProperty("name", model_.name());
-  juce::Array<juce::var> slots;
-  for (int i = 0; i < KitModel::kSlotCount; ++i) {
-    const auto& sample = model_.slot(i);
-    slots.add(sample == juce::File()
-            ? juce::var()
-            : juce::var(sample.getFullPathName()));
+  juce::Array<juce::var> pads;
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    auto* pad_obj = new juce::DynamicObject();
+    juce::Array<juce::var> samples;
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      const auto& sample = model_.sample(pad, layer);
+      samples.add(sample == juce::File()
+              ? juce::var()
+              : juce::var(sample.getFullPathName()));
+    }
+    pad_obj->setProperty("samples", samples);
+    pads.add(juce::var(pad_obj));
   }
-  obj->setProperty("slots", slots);
+  obj->setProperty("pads", pads);
   if (!file.replaceWithText(
           juce::JSON::toString(juce::var(obj)) + "\n"))
   {
