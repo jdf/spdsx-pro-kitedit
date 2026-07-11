@@ -1,0 +1,4 @@
+# Point clangd at the preset's build directory; keeps IntelliSense
+# working when this folder is part of a multi-root workspace.
+CompileFlags:
+  CompilationDatabase: build

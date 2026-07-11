@@ -1,10 +1,9 @@
 {
   // clangd is the C++ brain here; keep cpptools from fighting it.
   "C_Cpp.intelliSenseEngine": "disabled",
-  "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}/build",
-    "--header-insertion=never"
-  ],
+  // The compile database location lives in each project's .clangd file,
+  // so one clangd instance serves every folder of a multi-root workspace.
+  "clangd.arguments": ["--header-insertion=never"],
   "[cpp]": {
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
   },
