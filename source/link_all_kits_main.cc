@@ -131,6 +131,41 @@ int RunSelfTest() {
         c.index, c.group, ok ? "MATCH" : "MISMATCH", ToHex(built).c_str());
   }
 
+  std::printf("\n--- parameter writes (kit name, pad wave) ---\n");
+  auto check = [&](bool ok, const char* what, const Bytes& built) {
+    all_ok = all_ok && ok;
+    std::printf("%-8s %-22s %s\n", ok ? "MATCH" : "MISMATCH", what,
+        ToHex(built).c_str());
+  };
+  // Nibble encoding (captured: sample 127 -> 00 00 07 0f, 203 -> 00 00 0c 0b).
+  check(spdsx::device::NibbleEncode(127) == FromHex("00 00 07 0f"),
+      "nibble(127)", spdsx::device::NibbleEncode(127));
+  check(spdsx::device::NibbleEncode(203) == FromHex("00 00 0c 0b"),
+      "nibble(203)", spdsx::device::NibbleEncode(203));
+  // Kit-name char writes (kit 129 -> 'Z' at index 0 and 15).
+  auto name_msg = [](int i) {
+    return spdsx::device::Dt1(spdsx::device::KitNameAddr(i), {0x5a});
+  };
+  check(name_msg(0) == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 00 5a 20 f7"),
+      "name[0]='Z'", name_msg(0));
+  check(name_msg(15) == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 0f 5a 11 f7"),
+      "name[15]='Z'", name_msg(15));
+  // Pad-7 focus and top/bottom wave assignment (127 / 203).
+  const Bytes focus = spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
+      {spdsx::device::SelectValue(ObjectKind::kPad, 7)});
+  check(focus == FromHex("f0 41 10 00 00 00 00 16 12 28 00 00 00 06 52 f7"),
+      "focus pad7", focus);
+  const Bytes top = spdsx::device::Dt1(
+      spdsx::device::PadWaveAddr(spdsx::device::PadSlot::kTop),
+      spdsx::device::NibbleEncode(127));
+  check(top == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"),
+      "pad7 top wave 127", top);
+  const Bytes bot = spdsx::device::Dt1(
+      spdsx::device::PadWaveAddr(spdsx::device::PadSlot::kBottom),
+      spdsx::device::NibbleEncode(203));
+  check(bot == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"),
+      "pad7 bottom wave 203", bot);
+
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
   return all_ok ? 0 : 1;
 }

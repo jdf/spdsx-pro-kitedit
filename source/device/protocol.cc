@@ -80,4 +80,26 @@ Bytes PadLinkAddr(ObjectKind kind, int index, int kit) {
   return addr;
 }
 
+Bytes NibbleEncode(int value) {
+  if (value < 0 || value > 0xFFFF) {
+    throw std::out_of_range("nibble-encoded value must be 0-65535");
+  }
+  return {static_cast<uint8_t>((value >> 12) & 0x0F),
+      static_cast<uint8_t>((value >> 8) & 0x0F),
+      static_cast<uint8_t>((value >> 4) & 0x0F),
+      static_cast<uint8_t>(value & 0x0F)};
+}
+
+Bytes KitNameAddr(int i) {
+  if (i < 0 || i >= kKitNameLength) {
+    throw std::out_of_range("kit-name index 0-15");
+  }
+  return {0x06, 0x00, 0x00, static_cast<uint8_t>(i)};
+}
+
+Bytes PadWaveAddr(PadSlot slot) {
+  const uint8_t param = slot == PadSlot::kTop ? 0x4C : 0x4D;
+  return {0x06, 0x00, param, 0x01};
+}
+
 }  // namespace spdsx::device

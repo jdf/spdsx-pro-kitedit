@@ -107,4 +107,24 @@ void SpdsxDevice::SetPadLink(int kit, ObjectKind kind, int index, int group,
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
+void SpdsxDevice::SetKitName(int kit, const std::string& name,
+    double pace_seconds) {
+  SelectKit(kit);  // current-kit-relative; replies, drains
+  for (int i = 0; i < kKitNameLength; ++i) {
+    const uint8_t ch = i < static_cast<int>(name.size())
+        ? static_cast<uint8_t>(name[i])
+        : 0x20;  // space-pad
+    Send(Dt1(KitNameAddr(i), {ch}));
+    std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+  }
+}
+
+void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
+    double pace_seconds) {
+  SelectKit(kit);
+  SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
+  Send(Dt1(PadWaveAddr(slot), NibbleEncode(sample)));
+  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+}
+
 }  // namespace spdsx::device

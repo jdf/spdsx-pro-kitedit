@@ -41,6 +41,15 @@ class SpdsxDevice {
   void SetPadLink(int kit, ObjectKind kind, int index, int group,
       double pace_seconds = 0.02);
 
+  // Selects the kit, then writes its 16-char name (space-padded/truncated).
+  void SetKitName(int kit, const std::string& name, double pace_seconds = 0.02);
+
+  // Selects the kit, focuses the pad, then assigns a wave (sample number) to
+  // one of its slots. NOTE: message bytes match captures, but the full
+  // sequence has not yet been driven against hardware.
+  void SetPadWave(int kit, int pad, PadSlot slot, int sample,
+      double pace_seconds = 0.02);
+
  private:
   SerialPort port_;
 };
