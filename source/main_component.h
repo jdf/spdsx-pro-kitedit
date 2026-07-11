@@ -6,6 +6,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -21,6 +22,7 @@ class MainComponent : public juce::Component,
                       public juce::ApplicationCommandTarget,
                       public juce::DragAndDropContainer,
                       private juce::Timer,
+                      private juce::MidiInputCallback,
                       private KitModel::Listener {
 public:
   static constexpr int kSlotCount = KitModel::kSlotCount;
@@ -53,8 +55,15 @@ private:
   // that reads settings in its constructor.
   juce::ApplicationProperties& ConfigureSettings();
 
+  // Opens every available MIDI input so a physical pad hit triggers its
+  // grid pad. The SPD-SX PRO sends note-on on channel 10, pads 1-9 on
+  // notes 60-68.
+  void OpenMidiInputs();
+  void handleIncomingMidiMessage(
+      juce::MidiInput* source, const juce::MidiMessage& message) override;
+
   void ApplyTransportAction(int idx, TransportAction action);
-  // Drum-pad trigger (spacebar and slot-body clicks): retrigger from
+  // Drum-pad trigger (spacebar, slot-body clicks, MIDI): retrigger from
   // the top while playing, resume while paused, start when stopped.
   void TriggerSlot(int idx);
   void SetBrowserVisible(bool visible);
@@ -72,6 +81,7 @@ private:
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   juce::Label name_label_;
   SampleBrowser browser_;
+  std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;
   bool browser_visible_ = true;
   int hovered_ = -1;
   bool could_undo_ = false;

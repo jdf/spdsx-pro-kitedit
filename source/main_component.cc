@@ -10,6 +10,11 @@ namespace spdsx {
 
 namespace {
 
+// The SPD-SX PRO sends pad hits as note-on on channel 10, pads 1-9 on
+// notes 60-68.
+constexpr int kMidiChannel = 10;
+constexpr int kMidiNoteBase = 60;
+
 constexpr int kHeaderHeight = 44;
 constexpr int kBrowserWidth = 260;
 constexpr int kGridPadding = 14;
@@ -80,6 +85,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addAndMakeVisible(name_label_);
 
   model_.AddListener(this);
+  OpenMidiInputs();
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
   startTimerHz(30);
@@ -390,6 +396,40 @@ void MainComponent::TriggerSlot(int idx)
     ApplyTransportAction(idx, TransportAction::kPlay);
     slot.FlashTransportButton(TransportAction::kPlay);
   }
+}
+
+void MainComponent::OpenMidiInputs()
+{
+  for (const auto& info : juce::MidiInput::getAvailableDevices()) {
+    if (auto in = juce::MidiInput::openDevice(info.identifier, this)) {
+      in->start();
+      std::fprintf(stderr, "midi: listening on '%s'\n", info.name.toRawUTF8());
+      midi_inputs_.push_back(std::move(in));
+    }
+  }
+}
+
+void MainComponent::handleIncomingMidiMessage(
+    juce::MidiInput*, const juce::MidiMessage& message)
+{
+  // Runs on the MIDI thread; marshal to the message thread before touching
+  // the audio engine or UI.
+  if (!message.isNoteOn() || message.getChannel() != kMidiChannel) {
+    return;
+  }
+  const int pad = message.getNoteNumber() - kMidiNoteBase;
+  if (pad < 0 || pad >= KitModel::kPadCount) {
+    return;
+  }
+  juce::Component::SafePointer<MainComponent> safe(this);
+  juce::MessageManager::callAsync(
+      [safe, pad]
+      {
+        if (safe != nullptr) {
+          // Trigger the pad's top slot.
+          safe->TriggerSlot(pad * KitModel::kLayersPerPad);
+        }
+      });
 }
 
 void MainComponent::timerCallback()
