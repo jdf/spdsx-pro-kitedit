@@ -54,3 +54,18 @@ target_link_libraries(spdsx-patchedit PRIVATE
     specgram::specgram
     juce::juce_recommended_config_flags
 )
+
+# ---- Device protocol (SPD-SX PRO serial) ----
+# JUCE-free: pure protocol + POSIX/macOS serial, ported from spdsx-py. Kept
+# separate so it stays testable and could move to its own project later.
+add_library(spdsx_device STATIC
+    source/device/protocol.cc
+    source/device/serial_port.cc
+    source/device/spdsx_device.cc
+)
+target_include_directories(spdsx_device PUBLIC source)
+
+# link_all_kits: CLI that verifies the port (--selftest / --dry-run) and can
+# drive the device for real.
+add_executable(link_all_kits source/link_all_kits_main.cc)
+target_link_libraries(link_all_kits PRIVATE spdsx_device)
