@@ -36,6 +36,11 @@ public:
   // Playback position as a fraction of the sample length, 0..1.
   double PositionFraction(int slot) const;
 
+  // Auditions a file on a dedicated preview channel (browser autoplay),
+  // separate from the slots. No-op on decode failure.
+  void PreviewFile(const juce::File& file);
+  void StopPreview();
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

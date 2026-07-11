@@ -62,8 +62,12 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     slot.on_click = [this](int idx) { TriggerSlot(idx); };
     slot.on_transport = [this](int idx, TransportAction action)
     { ApplyTransportAction(idx, action); };
+    slot.on_slot_move = [this](int from, int to, bool copy)
+    { MoveSample(from, to, copy); };
     addAndMakeVisible(slot);
   }
+  browser_.on_preview = [this](const juce::File& file)
+  { engine_.PreviewFile(file); };
   // The kit name, click-to-edit in place.
   name_label_.setText(model_.name(), juce::dontSendNotification);
   name_label_.setFont(juce::Font(juce::FontOptions(17.0f)).boldened());
@@ -117,7 +121,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
       commands::kFileOpen, commands::kFileSave, commands::kFileSaveAs,
-      commands::kToggleBrowser});
+      commands::kToggleBrowser, commands::kToggleAutoplay});
 }
 
 void MainComponent::getCommandInfo(
@@ -159,6 +163,12 @@ void MainComponent::getCommandInfo(
           "Show or hide the sample browser panel", "View", 0);
       info.addDefaultKeypress('b', juce::ModifierKeys::commandModifier);
       info.setTicked(browser_visible_);
+      break;
+    case commands::kToggleAutoplay:
+      info.setInfo("Auto-play While Browsing",
+          "Audition samples as you select them in the browser", "View", 0);
+      info.setTicked(settings_.getUserSettings()->getBoolValue(
+          "autoplayBrowsing", false));
       break;
     default:
       break;
@@ -205,6 +215,16 @@ bool MainComponent::perform(const InvocationInfo& info)
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);
       return true;
+    case commands::kToggleAutoplay: {
+      auto* s = settings_.getUserSettings();
+      const bool on = !s->getBoolValue("autoplayBrowsing", false);
+      s->setValue("autoplayBrowsing", on);
+      if (!on) {
+        engine_.StopPreview();
+      }
+      commands_.commandStatusChanged();  // refresh the menu tick
+      return true;
+    }
     default:
       return false;
   }
@@ -395,6 +415,22 @@ void MainComponent::TriggerSlot(int idx)
   if (slot.is_playable()) {
     ApplyTransportAction(idx, TransportAction::kPlay);
     slot.FlashTransportButton(TransportAction::kPlay);
+  }
+}
+
+void MainComponent::MoveSample(int from, int to, bool copy)
+{
+  if (from == to || from < 0 || to < 0) {
+    return;
+  }
+  const auto& file = model_.sample(
+      from / KitModel::kLayersPerPad, from % KitModel::kLayersPerPad);
+  undo_.beginNewTransaction(copy ? "Duplicate sample" : "Move sample");
+  undo_.perform(new SetSampleAction(model_, to / KitModel::kLayersPerPad,
+      to % KitModel::kLayersPerPad, file));
+  if (!copy) {
+    undo_.perform(new SetSampleAction(model_, from / KitModel::kLayersPerPad,
+        from % KitModel::kLayersPerPad, juce::File()));
   }
 }
 

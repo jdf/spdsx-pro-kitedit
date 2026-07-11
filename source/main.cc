@@ -34,6 +34,7 @@ public:
       menu.addCommandItem(&commands_, commands::kRedo);
     } else if (name == "View") {
       menu.addCommandItem(&commands_, commands::kToggleBrowser);
+      menu.addCommandItem(&commands_, commands::kToggleAutoplay);
     }
     return menu;
   }

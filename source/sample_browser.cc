@@ -30,6 +30,7 @@ SampleBrowser::SampleBrowser(juce::ApplicationProperties& settings)
   tree_->setColour(
       juce::DirectoryContentsDisplayComponent::highlightColourId,
       juce::Colour(0xff31517a));
+  tree_->addListener(this);
   addAndMakeVisible(*tree_);
 
   root_label_.setFont(juce::Font(juce::FontOptions(12.0f)));
@@ -52,8 +53,21 @@ SampleBrowser::SampleBrowser(juce::ApplicationProperties& settings)
 
 SampleBrowser::~SampleBrowser()
 {
+  tree_->removeListener(this);
   // The scan thread walks contents_; stop it before members go away.
   scan_thread_.stopThread(2000);
+}
+
+void SampleBrowser::selectionChanged()
+{
+  if (!settings_.getUserSettings()->getBoolValue("autoplayBrowsing", false)) {
+    return;
+  }
+  const juce::File file = tree_->getSelectedFile();
+  if (file.existsAsFile() && LooksLikeAudio(file.getFullPathName())
+      && on_preview) {
+    on_preview(file);
+  }
 }
 
 void SampleBrowser::SetRoot(const juce::File& root, bool persist)

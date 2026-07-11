@@ -20,6 +20,7 @@ struct AudioEngine::Impl {
   juce::MixerAudioSource mixer;
   juce::AudioFormatManager formats;
   std::vector<std::unique_ptr<Slot>> slots;
+  Slot preview;
 };
 
 AudioEngine::AudioEngine(int slot_count)
@@ -37,6 +38,7 @@ AudioEngine::AudioEngine(int slot_count)
     impl_->mixer.addInputSource(&slot->transport, false);
     impl_->slots.push_back(std::move(slot));
   }
+  impl_->mixer.addInputSource(&impl_->preview.transport, false);
   impl_->player.setSource(&impl_->mixer);
   impl_->device_manager.addAudioCallback(&impl_->player);
 }
@@ -49,6 +51,7 @@ AudioEngine::~AudioEngine()
   for (auto& slot : impl_->slots) {
     slot->transport.setSource(nullptr);
   }
+  impl_->preview.transport.setSource(nullptr);
 }
 
 std::optional<SampleInfo> AudioEngine::Load(int slot, const juce::File& file)
@@ -106,6 +109,28 @@ void AudioEngine::Stop(int slot)
 bool AudioEngine::IsPlaying(int slot) const
 {
   return impl_->slots.at(static_cast<size_t>(slot))->transport.isPlaying();
+}
+
+void AudioEngine::PreviewFile(const juce::File& file)
+{
+  auto* reader = impl_->formats.createReaderFor(file);
+  if (reader == nullptr) {
+    return;
+  }
+  auto& s = impl_->preview;
+  s.transport.stop();
+  s.transport.setSource(nullptr);
+  s.reader_source =
+      std::make_unique<juce::AudioFormatReaderSource>(reader, true);
+  s.transport.setSource(
+      s.reader_source.get(), 0, nullptr, reader->sampleRate);
+  s.transport.setPosition(0.0);
+  s.transport.start();
+}
+
+void AudioEngine::StopPreview()
+{
+  impl_->preview.transport.stop();
 }
 
 double AudioEngine::PositionFraction(int slot) const

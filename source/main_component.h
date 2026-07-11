@@ -66,6 +66,9 @@ private:
   // Drum-pad trigger (spacebar, slot-body clicks, MIDI): retrigger from
   // the top while playing, resume while paused, start when stopped.
   void TriggerSlot(int idx);
+  // Moves (or, when copy=true, duplicates) a slot's sample to another
+  // slot as a single undoable action.
+  void MoveSample(int from, int to, bool copy);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
   void timerCallback() override;

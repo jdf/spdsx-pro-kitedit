@@ -14,6 +14,7 @@ enum : juce::CommandID {
   kFileSave,
   kFileSaveAs,
   kToggleBrowser,
+  kToggleAutoplay,
 };
 
 }  // namespace spdsx::commands

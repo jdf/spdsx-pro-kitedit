@@ -46,6 +46,17 @@ juce::File DraggedBrowserFile(
       : juce::File();
 }
 
+// Slot-to-slot drags carry "spdsx-slot:<index>". Returns the source slot
+// index, or -1 if this isn't a slot drag.
+const juce::String kSlotDragPrefix = "spdsx-slot:";
+int DraggedSlotIndex(const juce::DragAndDropTarget::SourceDetails& details)
+{
+  const juce::String d = details.description.toString();
+  return d.startsWith(kSlotDragPrefix)
+      ? d.substring(kSlotDragPrefix.length()).getIntValue()
+      : -1;
+}
+
 juce::String FormatMeta(double duration_seconds, double sample_rate)
 {
   juce::String duration;
@@ -318,6 +329,20 @@ void SampleSlot::mouseUp(const juce::MouseEvent& event)
   }
 }
 
+void SampleSlot::mouseDrag(const juce::MouseEvent& event)
+{
+  // Start dragging this slot's sample once the pointer moves past a small
+  // threshold; the drop target reads "spdsx-slot:<index>".
+  if (!has_sample() || event.getDistanceFromDragStart() < 5) {
+    return;
+  }
+  auto* container =
+      juce::DragAndDropContainer::findParentDragContainerFor(this);
+  if (container != nullptr && !container->isDragAndDropActive()) {
+    container->startDragging(kSlotDragPrefix + juce::String(index_), this);
+  }
+}
+
 bool SampleSlot::isInterestedInFileDrag(const juce::StringArray& files)
 {
   return files.size() == 1 && LooksLikeAudio(files[0]);
@@ -346,7 +371,11 @@ void SampleSlot::filesDropped(const juce::StringArray& files, int, int)
 
 bool SampleSlot::isInterestedInDragSource(const SourceDetails& details)
 {
-  return DraggedBrowserFile(details) != juce::File();
+  if (DraggedBrowserFile(details) != juce::File()) {
+    return true;
+  }
+  const int from = DraggedSlotIndex(details);
+  return from >= 0 && from != index_;
 }
 
 void SampleSlot::itemDragEnter(const SourceDetails&)
@@ -369,6 +398,13 @@ void SampleSlot::itemDropped(const SourceDetails& details)
       file != juce::File() && on_drop)
   {
     on_drop(index_, file);
+    return;
+  }
+  const int from = DraggedSlotIndex(details);
+  if (from >= 0 && from != index_ && on_slot_move) {
+    // Option-drag duplicates; a plain drag moves.
+    const bool copy = juce::ModifierKeys::getCurrentModifiers().isAltDown();
+    on_slot_move(from, index_, copy);
   }
 }
 

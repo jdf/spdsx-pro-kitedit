@@ -25,6 +25,9 @@ public:
   std::function<void(int)> on_click;
   // A transport button was pressed.
   std::function<void(int, TransportAction)> on_transport;
+  // A sample was dragged from slot `from` onto this slot; copy=true
+  // duplicates (option-drag), false moves.
+  std::function<void(int from, int to, bool copy)> on_slot_move;
 
   void SetSample(const juce::String& name,
       double duration_seconds,
@@ -57,6 +60,7 @@ public:
   void paint(juce::Graphics& g) override;
   void resized() override;
   void mouseUp(const juce::MouseEvent& event) override;
+  void mouseDrag(const juce::MouseEvent& event) override;
 
   // External drags (Finder).
   bool isInterestedInFileDrag(const juce::StringArray& files) override;
