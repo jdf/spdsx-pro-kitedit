@@ -49,18 +49,56 @@ SampleBrowser::SampleBrowser(juce::ApplicationProperties& settings)
           ? saved
           : juce::File::getSpecialLocation(juce::File::userMusicDirectory),
       false);
+  pending_tree_state_ =
+      settings_.getUserSettings()->getXmlValue("sampleBrowserTree");
+  if (pending_tree_state_ != nullptr) {
+    startTimer(100);
+  }
 }
 
 SampleBrowser::~SampleBrowser()
 {
+  SaveTreeState();
   tree_->removeListener(this);
   // The scan thread walks contents_; stop it before members go away.
   scan_thread_.stopThread(2000);
 }
 
+void SampleBrowser::SaveTreeState()
+{
+  if (auto xml = tree_->getOpennessState(true)) {
+    settings_.getUserSettings()->setValue("sampleBrowserTree", xml.get());
+  }
+}
+
+void SampleBrowser::timerCallback()
+{
+  if (pending_tree_state_ == nullptr || ++restore_attempts_ > 50) {
+    stopTimer();
+    pending_tree_state_.reset();
+    return;
+  }
+  // Restoring selection fires selectionChanged; don't let a relaunch
+  // autoplay whatever was selected last time.
+  restoring_ = true;
+  tree_->restoreOpennessState(*pending_tree_state_, true);
+  restoring_ = false;
+  // Done once the tree reproduces the saved state (folders that no
+  // longer exist can never match; the attempt cap covers those).
+  if (auto now = tree_->getOpennessState(true);
+      now != nullptr && now->isEquivalentTo(pending_tree_state_.get(), true))
+  {
+    stopTimer();
+    pending_tree_state_.reset();
+  }
+}
+
 void SampleBrowser::selectionChanged()
 {
-  if (!settings_.getUserSettings()->getBoolValue("autoplayBrowsing", false)) {
+  if (restoring_
+      || !settings_.getUserSettings()->getBoolValue(
+          "autoplayBrowsing", false))
+  {
     return;
   }
   const juce::File file = tree_->getSelectedFile();
@@ -78,6 +116,9 @@ void SampleBrowser::SetRoot(const juce::File& root, bool persist)
   if (persist) {
     settings_.getUserSettings()->setValue(
         "sampleBrowserRoot", root.getFullPathName());
+    // A saved tree state describes the old root; stop chasing it.
+    stopTimer();
+    pending_tree_state_.reset();
   }
 }
 

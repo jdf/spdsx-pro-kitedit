@@ -11,7 +11,8 @@
 namespace spdsx {
 
 class SampleBrowser : public juce::Component,
-                      private juce::FileBrowserListener {
+                      private juce::FileBrowserListener,
+                      private juce::Timer {
 public:
   explicit SampleBrowser(juce::ApplicationProperties& settings);
   ~SampleBrowser() override;
@@ -32,6 +33,13 @@ private:
   void SetRoot(const juce::File& root, bool persist);
   void ChooseRoot();
 
+  // The tree populates through async directory scans, so restoring which
+  // folders were open can't happen in one shot: each pass opens what
+  // exists, which kicks off the scans that create the next level. The
+  // timer re-applies the saved state until it converges (or gives up).
+  void timerCallback() override;
+  void SaveTreeState();
+
   juce::ApplicationProperties& settings_;
   juce::TimeSliceThread scan_thread_ {"sample-browser-scan"};
   std::unique_ptr<juce::WildcardFileFilter> filter_;
@@ -40,6 +48,10 @@ private:
   juce::Label root_label_;
   juce::TextButton root_button_ {"..."};
   std::unique_ptr<juce::FileChooser> chooser_;
+  // Saved openness/scroll/selection being re-applied at startup.
+  std::unique_ptr<juce::XmlElement> pending_tree_state_;
+  int restore_attempts_ = 0;
+  bool restoring_ = false;
 };
 
 }  // namespace spdsx
