@@ -10,12 +10,15 @@ namespace {
 constexpr uint8_t kFrameHead[] = {0x0d, 0x60, 0xe0};
 constexpr uint8_t kFrameTail[] = {0x01, 0x00, 0x00, 0x00};
 constexpr uint8_t kChDt1 = 0x07;
+constexpr uint8_t kChBulk = 0x08;
 constexpr uint8_t kChControl = 0x09;
 constexpr size_t kFrameHeaderSize = 20;
 constexpr uint32_t kMaxFrameLen = 4096;
+// Bulk block frames carry ~64KB payloads; headroom over that.
+constexpr uint32_t kMaxBulkFrameLen = 1 << 17;
 
 // hdr[3] selects a channel by message family: 41 10 = DT1 params,
-// 41 6a = control/status.
+// 41 6a = control/status, 41 6c = bulk block transfer.
 uint8_t ChannelFor(const Bytes& payload) {
   if (payload.size() >= 3 && payload[1] == 0x41) {
     if (payload[2] == 0x10) {
@@ -23,6 +26,9 @@ uint8_t ChannelFor(const Bytes& payload) {
     }
     if (payload[2] == 0x6A) {
       return kChControl;
+    }
+    if (payload[2] == 0x6C) {
+      return kChBulk;
     }
   }
   return kChDt1;
@@ -138,6 +144,36 @@ void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
   SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
   Send(Dt1(PadWaveAddr(slot), NibbleEncode(sample)));
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+}
+
+Bytes SpdsxDevice::DumpBank(uint8_t bank, const BlockCallback& on_block,
+    double idle_timeout, double block_timeout) {
+  port_.Write(Wrap(BulkReadRequest(bank)));
+  Bytes image;
+  for (;;) {
+    // A short wait for the next block's header (its absence ends the
+    // stream), then a longer one for the ~64KB body.
+    const Bytes hdr = port_.ReadExact(kFrameHeaderSize, idle_timeout);
+    if (hdr.size() < kFrameHeaderSize) {
+      break;  // silence: bank finished streaming
+    }
+    const uint32_t len = static_cast<uint32_t>(hdr[16])
+        | (static_cast<uint32_t>(hdr[17]) << 8)
+        | (static_cast<uint32_t>(hdr[18]) << 16)
+        | (static_cast<uint32_t>(hdr[19]) << 24);
+    if (len == 0 || len > kMaxBulkFrameLen) {
+      break;  // not a block frame we understand
+    }
+    const Bytes payload = port_.ReadExact(len, block_timeout);
+    if (payload.size() < 4 || payload[2] != 0x6C || payload[3] != 0x02) {
+      continue;  // interleaved control frame; ignore
+    }
+    image.insert(image.end(), payload.begin(), payload.end());
+    if (on_block) {
+      on_block(payload);
+    }
+  }
+  return image;
 }
 
 }  // namespace spdsx::device

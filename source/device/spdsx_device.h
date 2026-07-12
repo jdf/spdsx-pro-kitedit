@@ -8,6 +8,7 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_SPDSX_DEVICE_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_SPDSX_DEVICE_H_
 
+#include <functional>
 #include <string>
 
 #include "device/protocol.h"
@@ -54,6 +55,17 @@ class SpdsxDevice {
   // sequence has not yet been driven against hardware.
   void SetPadWave(int kit, int pad, PadSlot slot, int sample,
       double pace_seconds = 0.02);
+
+  using BlockCallback = std::function<void(const Bytes& block)>;
+
+  // Streams a whole bank (0x10/0x20/0x30/0x40) and returns the reassembled
+  // image: the block-frame payloads concatenated with their headers, the
+  // same layout SplitBulkImage parses and the RE image cache stores. Reads
+  // blocks until the device goes idle for idle_timeout. on_block, if given,
+  // fires per block (for progress). NOTE: the request/streaming protocol is
+  // reconstructed from captures but has NOT been driven live yet.
+  Bytes DumpBank(uint8_t bank, const BlockCallback& on_block = {},
+      double idle_timeout = 2.0, double block_timeout = 15.0);
 
  private:
   SerialPort port_;

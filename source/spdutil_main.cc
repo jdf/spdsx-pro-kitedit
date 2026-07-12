@@ -5,6 +5,8 @@
 //
 //   ping        open the port and ping the device (read-only)
 //   info        serial port, ping status, firmware version query
+//   dump        stream a memory bank (or all) to an image file; or
+//               --verify an existing image's block structure offline
 //   padlink     put triggers/pads into a pad-link group across kits
 //   selftest    offline byte-exact message checks (no device needed)
 //
@@ -21,7 +23,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -35,6 +39,7 @@
 namespace {
 
 using spdsx::device::Bytes;
+using spdsx::device::BulkBlock;
 using spdsx::device::ObjectKind;
 
 std::string ToHex(const Bytes& b) {
@@ -151,6 +156,13 @@ int RunSelfTest() {
     std::printf("%-8s %-22s %s\n", ok ? "MATCH" : "MISMATCH", what,
         ToHex(built).c_str());
   };
+  // Bulk-read request (captured: stream-a-bank on the 41 6c family).
+  check(spdsx::device::BulkReadRequest(0x10)
+          == FromHex("f0 41 6c 03 05 00 00 00 00 10 00 00 00 00 00 00 f7"),
+      "bulk read bank 0x10", spdsx::device::BulkReadRequest(0x10));
+  check(spdsx::device::BulkReadRequest(0x20)
+          == FromHex("f0 41 6c 03 05 00 00 00 00 20 00 00 00 00 00 00 f7"),
+      "bulk read bank 0x20", spdsx::device::BulkReadRequest(0x20));
   // Nibble encoding (captured: sample 127 -> 00 00 07 0f, 203 -> 00 00 0c 0b).
   check(spdsx::device::NibbleEncode(127) == FromHex("00 00 07 0f"),
       "nibble(127)", spdsx::device::NibbleEncode(127));
@@ -179,6 +191,23 @@ int RunSelfTest() {
       spdsx::device::NibbleEncode(203));
   check(bot == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"),
       "pad7 bottom wave 203", bot);
+
+  std::printf("\n--- bulk image split ---\n");
+  // A synthetic two-block image: bank 0x10 then 0x20, so the splitter's
+  // boundary + bank-id logic is checked without the cached image file.
+  Bytes img = FromHex("f0 41 6c 02 00 00 00 00 10 aa bb cc f7");
+  const Bytes second = FromHex("f0 41 6c 02 00 00 00 00 20 de ad f7");
+  img.insert(img.end(), second.begin(), second.end());
+  const auto blocks = spdsx::device::SplitBulkImage(img);
+  const bool split_ok = blocks.size() == 2 && blocks[0].bank == 0x10
+      && blocks[0].offset == 0 && blocks[0].length == 13
+      && blocks[1].bank == 0x20 && blocks[1].offset == 13
+      && blocks[1].length == 12;
+  all_ok = all_ok && split_ok;
+  std::printf("%-8s split: %zu blocks, banks 0x%02x/0x%02x\n",
+      split_ok ? "OK" : "FAIL", blocks.size(),
+      blocks.empty() ? 0 : blocks[0].bank,
+      blocks.size() < 2 ? 0 : blocks[1].bank);
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
   return all_ok ? 0 : 1;
@@ -243,6 +272,12 @@ int Usage() {
       "\n"
       "  ping        open the port and ping the device (read-only)\n"
       "  info        serial port, ping status, firmware version\n"
+      "  dump        stream device memory to an image file:\n"
+      "                --bank 0xNN      0x10 kits, 0x20 samples,\n"
+      "                                 0x30 meta, 0x40 config (repeatable)\n"
+      "                --all            all four banks\n"
+      "                --out FILE       write the reassembled image\n"
+      "                --verify FILE    offline: report a file's blocks\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -294,6 +329,100 @@ int RunInfo(const std::string& port_arg) {
         ToPrintable(version).c_str());
   }
   return 0;
+}
+
+const char* BankName(uint8_t bank) {
+  switch (bank) {
+    case spdsx::device::kBankKits:
+      return "kits/settings";
+    case spdsx::device::kBankSamples:
+      return "sample audio";
+    case spdsx::device::kBankMeta:
+      return "metadata";
+    case spdsx::device::kBankConfig:
+      return "config";
+    default:
+      return "unknown";
+  }
+}
+
+// Reports an image's block structure: count and total bytes per bank.
+void ReportBlocks(const Bytes& image) {
+  const std::vector<BulkBlock> blocks = spdsx::device::SplitBulkImage(image);
+  std::printf("%zu bytes, %zu block(s):\n", image.size(), blocks.size());
+  std::map<uint8_t, std::pair<int, size_t>> by_bank;  // bank -> (count, bytes)
+  for (const auto& b : blocks) {
+    auto& e = by_bank[b.bank];
+    e.first += 1;
+    e.second += b.length;
+  }
+  for (const auto& [bank, stats] : by_bank) {
+    std::printf("  bank 0x%02x (%-13s): %3d block(s), %8zu bytes\n", bank,
+        BankName(bank), stats.first, stats.second);
+  }
+}
+
+bool WriteFile(const std::string& path, const Bytes& data) {
+  std::ofstream out(path, std::ios::binary);
+  out.write(reinterpret_cast<const char*>(data.data()),
+      static_cast<std::streamsize>(data.size()));
+  return out.good();
+}
+
+Bytes ReadFile(const std::string& path) {
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
+  if (!in) {
+    throw std::runtime_error("cannot open " + path);
+  }
+  const auto size = in.tellg();
+  in.seekg(0);
+  Bytes data(static_cast<size_t>(size));
+  in.read(reinterpret_cast<char*>(data.data()), size);
+  return data;
+}
+
+int RunDump(const std::string& port_arg, const std::vector<uint8_t>& banks,
+    const std::string& out_path, const std::string& verify_path) {
+  // Offline: just report an existing image's structure.
+  if (!verify_path.empty()) {
+    ReportBlocks(ReadFile(verify_path));
+    return 0;
+  }
+
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s\n", port.c_str());
+
+  Bytes image;
+  for (uint8_t bank : banks) {
+    std::printf("streaming bank 0x%02x (%s)... ", bank, BankName(bank));
+    std::fflush(stdout);
+    int blocks = 0;
+    size_t bytes = 0;
+    const Bytes bank_image = dev.DumpBank(bank,
+        [&](const Bytes& block)
+        {
+          ++blocks;
+          bytes += block.size();
+        });
+    std::printf("%d block(s), %zu bytes\n", blocks, bytes);
+    if (bank_image.empty()) {
+      std::printf(
+          "  (no data — streaming protocol may need work; see notes)\n");
+    }
+    image.insert(image.end(), bank_image.begin(), bank_image.end());
+  }
+
+  std::printf("\n");
+  ReportBlocks(image);
+  if (!out_path.empty()) {
+    if (!WriteFile(out_path, image)) {
+      std::fprintf(stderr, "error: couldn't write %s\n", out_path.c_str());
+      return 1;
+    }
+    std::printf("wrote %s\n", out_path.c_str());
+  }
+  return image.empty() ? 1 : 0;
 }
 
 int RunPadLink(const std::string& port_arg, int group,
@@ -392,6 +521,9 @@ int main(int argc, char** argv) {
   int group = -1;
   std::vector<std::pair<ObjectKind, int>> objects;
   std::vector<KitRange> ranges;
+  std::vector<uint8_t> banks;
+  std::string out_path;
+  std::string verify_path;
   bool dry_run = false;
   bool verbose = false;
 
@@ -414,6 +546,16 @@ int main(int argc, char** argv) {
         objects.emplace_back(ObjectKind::kPad, std::atoi(next().c_str()));
       } else if (arg == "--range") {
         ranges.push_back(ParseRange(next()));
+      } else if (arg == "--bank") {
+        banks.push_back(
+            static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0)));
+      } else if (arg == "--all") {
+        banks = {spdsx::device::kBankKits, spdsx::device::kBankSamples,
+            spdsx::device::kBankMeta, spdsx::device::kBankConfig};
+      } else if (arg == "--out") {
+        out_path = next();
+      } else if (arg == "--verify") {
+        verify_path = next();
       } else if (arg == "--dry-run") {
         dry_run = true;
       } else if (arg == "--verbose") {
@@ -433,6 +575,12 @@ int main(int argc, char** argv) {
     }
     if (command == "info") {
       return RunInfo(port);
+    }
+    if (command == "dump") {
+      if (verify_path.empty() && banks.empty()) {
+        banks = {spdsx::device::kBankKits};  // the useful default
+      }
+      return RunDump(port, banks, out_path, verify_path);
     }
     if (command == "padlink") {
       if (group < 0) {

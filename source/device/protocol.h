@@ -4,6 +4,7 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_PROTOCOL_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_PROTOCOL_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -65,6 +66,34 @@ Bytes KitNameAddr(int i);
 // (select the kit and focus the pad first). Top slot uses param 0x4c, bottom
 // 0x4d; the trailing 0x01 selects the wave-number field.
 Bytes PadWaveAddr(PadSlot slot);
+
+// ---- Bulk block transfer (device-state read) ----
+//
+// The whole ~8MB device image streams on the 41 6c family (channel 0x08),
+// banked: 0x10 = kit/settings, 0x20 = sample audio, 0x30/0x40 = small
+// metadata/config. The app streams a bank with this request, and the device
+// replies with a series of `f0 41 6c 02 ...~64KB... f7` block frames.
+inline constexpr uint8_t kBankKits = 0x10;
+inline constexpr uint8_t kBankSamples = 0x20;
+inline constexpr uint8_t kBankMeta = 0x30;
+inline constexpr uint8_t kBankConfig = 0x40;
+
+// Bulk-read (stream-a-bank) request, from capture:
+//   f0 41 6c 03 05 00 00 00 00 <bank> 00 00 00 00 00 00 f7
+Bytes BulkReadRequest(uint8_t bank);
+
+// One reply block located within a reassembled image (the concatenation of
+// the block frames' payloads, headers included — same layout the RE
+// parse_capture.py produces and the re-cache image stores).
+struct BulkBlock {
+  uint8_t bank;    // payload byte 8
+  size_t offset;   // start of the `f0 41 6c 02` marker in the image
+  size_t length;   // full payload length through its terminating f7
+};
+
+// Splits a reassembled image into its blocks by scanning for the
+// `f0 41 6c 02` markers. Each block runs to the next marker (or end).
+std::vector<BulkBlock> SplitBulkImage(const Bytes& image);
 
 }  // namespace spdsx::device
 

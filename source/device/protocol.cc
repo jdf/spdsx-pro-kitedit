@@ -1,5 +1,6 @@
 #include "device/protocol.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace spdsx::device {
@@ -100,6 +101,38 @@ Bytes KitNameAddr(int i) {
 Bytes PadWaveAddr(PadSlot slot) {
   const uint8_t param = slot == PadSlot::kTop ? 0x4C : 0x4D;
   return {0x06, 0x00, param, 0x01};
+}
+
+Bytes BulkReadRequest(uint8_t bank) {
+  return {0xF0, 0x41, 0x6C, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00, bank, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0xF7};
+}
+
+std::vector<BulkBlock> SplitBulkImage(const Bytes& image) {
+  static const Bytes kMarker = {0xF0, 0x41, 0x6C, 0x02};
+  std::vector<BulkBlock> blocks;
+  size_t i = 0;
+  while (i + kMarker.size() <= image.size()) {
+    if (!std::equal(kMarker.begin(), kMarker.end(), image.begin() + i)) {
+      ++i;
+      continue;
+    }
+    // Bank id is payload byte 8 (past `f0 41 6c 02 00 00 00 00`).
+    const uint8_t bank = i + 8 < image.size() ? image[i + 8] : 0;
+    // The block runs to the next marker, or the end of the image.
+    size_t next = i + kMarker.size();
+    while (next + kMarker.size() <= image.size()
+        && !std::equal(kMarker.begin(), kMarker.end(), image.begin() + next))
+    {
+      ++next;
+    }
+    if (next + kMarker.size() > image.size()) {
+      next = image.size();
+    }
+    blocks.push_back({bank, i, next - i});
+    i = next;
+  }
+  return blocks;
 }
 
 }  // namespace spdsx::device
