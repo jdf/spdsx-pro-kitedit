@@ -103,6 +103,9 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       slider->setRange(1, 127, 1);
       // One undo step per adjustment, not one per drag pixel.
       slider->setChangeNotificationOnlyOnRelease(true);
+      // No room for a permanent readout; a bubble shows the value
+      // while dragging.
+      slider->setPopupDisplayEnabled(true, false, this);
       slider->onValueChange = [this, pad] { ApplyLayerParams(pad); };
       addAndMakeVisible(*slider);
       return slider;
@@ -122,10 +125,19 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   velocity_slider_.setValue(
       settings_.getUserSettings()->getIntValue("uiVelocity", 100),
       juce::dontSendNotification);
-  velocity_slider_.onValueChange = [this]
+  // Same velocity-colour fill as the fade bars.
+  auto tint_velocity_slider = [this]
+  {
+    velocity_slider_.setColour(juce::Slider::trackColourId,
+        VelocityColour(static_cast<int>(velocity_slider_.getValue()))
+            .withAlpha(0.5f));
+  };
+  tint_velocity_slider();
+  velocity_slider_.onValueChange = [this, tint_velocity_slider]
   {
     settings_.getUserSettings()->setValue(
         "uiVelocity", static_cast<int>(velocity_slider_.getValue()));
+    tint_velocity_slider();
   };
   addAndMakeVisible(velocity_slider_);
   velocity_caption_.setText("VEL", juce::dontSendNotification);
@@ -867,6 +879,13 @@ void MainComponent::UpdatePadWidgets(int pad)
   fade_end_sliders_[p]->setRange(params.fade_point, 127, 1);
   fade_end_sliders_[p]->setValue(
       params.fade_end, juce::dontSendNotification);
+  // The default LookAndFeel's bar fill is indistinguishable from our
+  // background; paint each bar in its value's velocity colour (the
+  // same blue->amber->red language the pad flashes use).
+  fade_point_sliders_[p]->setColour(juce::Slider::trackColourId,
+      VelocityColour(params.fade_point).withAlpha(0.5f));
+  fade_end_sliders_[p]->setColour(juce::Slider::trackColourId,
+      VelocityColour(params.fade_end).withAlpha(0.5f));
   fade_point_sliders_[p]->setVisible(UsesFadePoint(params.mode));
   fade_end_sliders_[p]->setVisible(UsesFadeEnd(params.mode));
 }
