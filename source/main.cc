@@ -107,6 +107,10 @@ public:
     }
 
     window = std::make_unique<MainWindow>(content);
+    // Menu items alone don't dispatch their shortcuts: command keypresses
+    // (cmd-Z, cmd-S, ...) only fire once the manager's key mappings are
+    // listening on the window.
+    window->addKeyListener(command_manager.getKeyMappings());
     menu = std::make_unique<MainMenu>(command_manager);
     // Without this, the menu bar never refreshes on commandStatusChanged(),
     // so Undo/Redo (and the View ticks) keep their stale enabled state.
