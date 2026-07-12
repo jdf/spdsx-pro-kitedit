@@ -100,6 +100,17 @@ juce::Path MakeShape(TransportAction action)
 
 }  // namespace
 
+juce::Colour VelocityColour(int velocity)
+{
+  const float t =
+      static_cast<float>(juce::jlimit(1, 127, velocity)) / 127.0f;
+  const juce::Colour soft(0xff3b6ea5);   // cool blue
+  const juce::Colour medium(0xffd9a94f); // amber
+  const juce::Colour hard(0xffe0533a);   // hot red
+  return t < 0.5f ? soft.interpolatedWith(medium, t * 2.0f)
+                  : medium.interpolatedWith(hard, (t - 0.5f) * 2.0f);
+}
+
 SampleSlot::SampleSlot(int index)
     : index_(index)
     , play_button_("play", kIcon, kIconOver, kIconDown)
@@ -180,8 +191,17 @@ void SampleSlot::set_play_state(PlayState state)
     play_state_ = state;
     if (state == PlayState::kStopped) {
       position_ = 0.0;
+      velocity_highlight_ = 0;
     }
     UpdateButtonColours();
+    repaint();
+  }
+}
+
+void SampleSlot::set_velocity_highlight(int velocity)
+{
+  if (velocity_highlight_ != velocity) {
+    velocity_highlight_ = velocity;
     repaint();
   }
 }
@@ -256,6 +276,16 @@ void SampleSlot::paint(juce::Graphics& g)
         juce::RectanglePlacement::stretchToFit);
   }
 
+  // While this layer sounds, a wash in the velocity colour shows how
+  // loud the layer mode decided it should be.
+  if (play_state_ != PlayState::kStopped && velocity_highlight_ > 0) {
+    const float strength =
+        static_cast<float>(velocity_highlight_) / 127.0f;
+    g.setColour(VelocityColour(velocity_highlight_)
+            .withAlpha(0.08f + 0.14f * strength));
+    g.fillRoundedRectangle(bounds, 8.0f);
+  }
+
   if (has_sample()) {
     // Playhead, visible while playing or paused.
     if (play_state_ != PlayState::kStopped) {
@@ -292,10 +322,13 @@ void SampleSlot::paint(juce::Graphics& g)
         "drop a sample", getLocalBounds(), juce::Justification::centred);
   }
 
+  const auto playing_border = velocity_highlight_ > 0
+      ? VelocityColour(velocity_highlight_)
+      : kBorderPlaying;
   g.setColour(drag_hover_
           ? kBorderDrop
           : (play_state_ == PlayState::kPlaying
-                    ? kBorderPlaying
+                    ? playing_border
                     : (hovered_ ? kBorderHover : kBorder)));
   g.drawRoundedRectangle(bounds.reduced(1.0f), 8.0f,
       drag_hover_ || play_state_ == PlayState::kPlaying ? 2.0f : 1.0f);

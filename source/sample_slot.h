@@ -11,6 +11,10 @@ namespace spdsx {
 enum class PlayState { kStopped, kPlaying, kPaused };
 enum class TransportAction { kPlay, kPause, kStop };
 
+// Soft-to-hard velocity colour ramp (cool blue -> amber -> hot red),
+// shared by the pad flash and the per-layer play highlights.
+juce::Colour VelocityColour(int velocity);
+
 class SampleSlot : public juce::Component,
                    public juce::FileDragAndDropTarget,
                    public juce::DragAndDropTarget {
@@ -21,7 +25,8 @@ public:
 
   // A file was dropped on this slot.
   std::function<void(int, const juce::File&)> on_drop;
-  // The slot body was clicked; triggers playback like the spacebar.
+  // The slot body was clicked; the parent triggers the whole pad, with
+  // the cursor height as velocity.
   std::function<void(int)> on_click;
   // A transport button was pressed.
   std::function<void(int, TransportAction)> on_transport;
@@ -55,6 +60,10 @@ public:
 
   void set_play_state(PlayState state);
   PlayState play_state() const { return play_state_; }
+  // The adjusted velocity (1..127) this layer was last triggered at;
+  // tints the slot while it plays. Cleared when playback stops.
+  void set_velocity_highlight(int velocity);
+  int velocity_highlight() const { return velocity_highlight_; }
   // Playhead position, 0..1; drawn while playing or paused.
   void set_position(double fraction);
 
@@ -94,6 +103,7 @@ private:
   juce::String sample_meta_;
   juce::Image image_;
   PlayState play_state_ = PlayState::kStopped;
+  int velocity_highlight_ = 0;
   bool playable_ = false;
   double position_ = 0.0;
   bool hovered_ = false;

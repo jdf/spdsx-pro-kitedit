@@ -1,5 +1,6 @@
 #include "main_component.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include "actions.h"
@@ -22,6 +23,8 @@ constexpr int kGridSpacing = 14;
 constexpr int kPadPadding = 8;
 constexpr int kPadHeader = 20;
 constexpr int kSlotSpacing = 8;
+// How long a hit's velocity-coloured pad flash takes to fade.
+constexpr juce::uint32 kPadFlashMs = 400;
 
 const juce::Colour kWindowBg(0xff12161b);
 const juce::Colour kPadBg(0xff161b22);
@@ -59,7 +62,14 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     auto& slot = *slots_[static_cast<size_t>(i)];
     slot.on_drop = [this](int idx, const juce::File& file)
     { LoadSample(idx, file); };
-    slot.on_click = [this](int idx) { TriggerSlot(idx); };
+    slot.on_click = [this](int idx)
+    {
+      // A click anywhere in a pad is a hit on the whole pad, at the
+      // cursor-height velocity.
+      const int pad = idx / KitModel::kLayersPerPad;
+      const auto pos = getMouseXYRelative();
+      TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
+    };
     slot.on_transport = [this](int idx, TransportAction action)
     { ApplyTransportAction(idx, action); };
     slot.on_slot_move = [this](int from, int to, bool copy, bool whole_pad)
@@ -366,11 +376,26 @@ void MainComponent::paint(juce::Graphics& g)
         kHeaderHeight / 2.0f - 4.0f, 8.0f, 8.0f);
   }
 
+  const auto now = juce::Time::getMillisecondCounter();
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto pad = PadBounds(r, c);
       g.setColour(kPadBg);
       g.fillRoundedRectangle(pad.toFloat(), 10.0f);
+      // A hit washes the pad in the velocity colour and fades out.
+      const auto idx = static_cast<size_t>(r * 3 + c);
+      const int flash_velocity = pad_flash_velocity_[idx];
+      if (flash_velocity > 0) {
+        const float age = static_cast<float>(now - pad_flash_ms_[idx])
+            / static_cast<float>(kPadFlashMs);
+        if (age < 1.0f) {
+          const auto colour = VelocityColour(flash_velocity);
+          g.setColour(colour.withAlpha(0.30f * (1.0f - age)));
+          g.fillRoundedRectangle(pad.toFloat(), 10.0f);
+          g.setColour(colour.withAlpha(0.9f * (1.0f - age)));
+          g.drawRoundedRectangle(pad.toFloat().reduced(1.0f), 10.0f, 2.0f);
+        }
+      }
       g.setColour(kPadBorder);
       g.drawRoundedRectangle(pad.toFloat().reduced(0.5f), 10.0f, 1.0f);
       g.setColour(kPadLabel);
@@ -450,8 +475,9 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     // doesn't roll). Same for pads below.
     if (!held_space_) {
       held_space_ = true;
-      if (hovered_ >= 0) {
-        TriggerSlot(hovered_);
+      const auto pos = getMouseXYRelative();
+      if (const int pad = PadAt(pos); pad >= 0) {
+        TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
       }
     }
     return true;
@@ -556,6 +582,7 @@ void MainComponent::ApplyTransportAction(int idx, TransportAction action)
       // Slot-level auditioning is always full volume, undoing any gain a
       // pad-level layer trigger left behind.
       engine_.SetGain(idx, 1.0f);
+      slot.set_velocity_highlight(127);
       if (slot.play_state() == PlayState::kPlaying) {
         engine_.Stop(idx);
       }
@@ -575,13 +602,36 @@ void MainComponent::ApplyTransportAction(int idx, TransportAction action)
   }
 }
 
-void MainComponent::TriggerSlot(int idx)
+// Clicks on the pad surface itself (the header strip, the gaps between
+// slots) land here; clicks on a slot body arrive via on_click. Both are
+// whole-pad hits.
+void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
-  auto& slot = *slots_[static_cast<size_t>(idx)];
-  if (slot.is_playable()) {
-    ApplyTransportAction(idx, TransportAction::kPlay);
-    slot.FlashTransportButton(TransportAction::kPlay);
+  const auto pos = event.getPosition();
+  if (const int pad = PadAt(pos); pad >= 0) {
+    TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
   }
+}
+
+int MainComponent::PadAt(juce::Point<int> point) const
+{
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    if (PadBounds(pad / 3, pad % 3).contains(point)) {
+      return pad;
+    }
+  }
+  return -1;
+}
+
+int MainComponent::VelocityForPointInPad(int pad, juce::Point<int> point)
+    const
+{
+  const auto bounds = PadBounds(pad / 3, pad % 3);
+  const float height_fraction =
+      static_cast<float>(bounds.getBottom() - point.y)
+      / static_cast<float>(juce::jmax(1, bounds.getHeight()));
+  return juce::jlimit(
+      1, 127, static_cast<int>(std::lround(height_fraction * 127.0f)));
 }
 
 void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
@@ -590,6 +640,10 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
     return;
   }
   const auto p = static_cast<size_t>(pad);
+  // Flash the pad in the velocity colour; the timer fades it out.
+  pad_flash_velocity_[p] = velocity;
+  pad_flash_ms_[p] = juce::Time::getMillisecondCounter();
+  repaint(PadBounds(pad / 3, pad % 3));
   const PadParams& params = model_.params(pad);
   const LayerWeights weights = ComputeLayerWeights(params.mode, velocity,
       params.fade_point, params.fade_end, alternate_flip_[p], pedal_down);
@@ -623,6 +677,9 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
     }
     engine_.Play(idx);
     slot.set_play_state(PlayState::kPlaying);
+    // Tint the layer with the loudness the layer mode gave it.
+    slot.set_velocity_highlight(juce::jlimit(
+        1, 127, static_cast<int>(std::lround(gain * 127.0f))));
     slot.FlashTransportButton(TransportAction::kPlay);
   }
 }
@@ -808,6 +865,18 @@ void MainComponent::timerCallback()
   hovered_ = hovered;
   for (int i = 0; i < kSlotCount; ++i) {
     slots_[static_cast<size_t>(i)]->set_hovered(i == hovered);
+  }
+
+  // Animate the pad flashes: repaint while fading, drop when expired.
+  const auto now = juce::Time::getMillisecondCounter();
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    const auto p = static_cast<size_t>(pad);
+    if (pad_flash_velocity_[p] > 0) {
+      if (now - pad_flash_ms_[p] >= kPadFlashMs) {
+        pad_flash_velocity_[p] = 0;
+      }
+      repaint(PadBounds(pad / 3, pad % 3));
+    }
   }
 
   // Advance playheads; sounds end on the audio thread, so a slot that

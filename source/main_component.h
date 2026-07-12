@@ -42,6 +42,7 @@ public:
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
   bool keyStateChanged(bool is_key_down) override;
+  void mouseDown(const juce::MouseEvent& event) override;
 
   ApplicationCommandTarget* getNextCommandTarget() override;
   void getAllCommands(juce::Array<juce::CommandID>& ids) override;
@@ -66,14 +67,17 @@ private:
       juce::MidiInput* source, const juce::MidiMessage& message) override;
 
   void ApplyTransportAction(int idx, TransportAction action);
-  // Drum-pad trigger (spacebar, slot-body clicks): retrigger from
-  // the top while playing, resume while paused, start when stopped.
-  // Always full volume, ignoring the pad's layer mode.
-  void TriggerSlot(int idx);
-  // A velocity-aware hit on a whole pad (MIDI note-on, or keys 1-9 at the
-  // header velocity): plays the layers the pad's layer mode selects, at
-  // the gains it computes. pedal_down is the hi-hat pedal state.
+  // A velocity-aware hit on a whole pad (MIDI note-on, mouse/space at
+  // cursor-height velocity, or keys 1-9 at the header velocity): plays
+  // the layers the pad's layer mode selects, at the gains it computes,
+  // flashes the pad in the velocity colour, and tints each sounding
+  // layer with its adjusted velocity. pedal_down is the hi-hat pedal.
   void TriggerPad(int pad, int velocity, bool pedal_down);
+  // The pad containing a point (in our coordinates), or -1.
+  int PadAt(juce::Point<int> point) const;
+  // Mouse-as-velocity: the cursor's height within the pad, bottom = 1
+  // (softest) up to top = 127 (hardest).
+  int VelocityForPointInPad(int pad, juce::Point<int> point) const;
   // The H key is the hi-hat pedal. A press is a foot-close on every
   // HI-HAT pad: it cuts the open layer and sounds the closed one (the
   // "chick"); a release is silent. While held, hits play closed.
@@ -121,6 +125,10 @@ private:
   // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);
   // runtime state, deliberately not persisted.
   std::array<bool, KitModel::kPadCount> alternate_flip_ {};
+  // Velocity-coloured pad flash: velocity of the last hit (0 = idle)
+  // and when it landed; the timer fades and expires it.
+  std::array<int, KitModel::kPadCount> pad_flash_velocity_ {};
+  std::array<juce::uint32, KitModel::kPadCount> pad_flash_ms_ {};
   // Last seen hi-hat pedal position (MIDI CC4), written on the MIDI
   // thread; >= 64 means pedal down (closed).
   std::atomic<int> hihat_cc_ {0};
