@@ -8,7 +8,9 @@
 //   --dry-run   prints every message it would send, opening nothing
 //
 // Notes for live runs: close the SPD-SX PRO App first (one program per port),
-// use the /dev/cu.usbmodem* node, and back the unit up before a full run.
+// and back the unit up before a full run. With no --port, the tool scans
+// /dev/cu.usbmodem* and pings each node until the device answers (the node
+// number changes every time the device is plugged in).
 
 #include <algorithm>
 #include <cctype>
@@ -233,6 +235,37 @@ int ArgInt(const char* v, int fallback) {
   return std::atoi(v);
 }
 
+// Resolves an explicit --port, or scans /dev/cu.usbmodem* and pings each
+// candidate until one answers. Throws if nothing responds.
+std::string ResolvePort(const std::string& requested) {
+  if (!requested.empty()) {
+    return requested;
+  }
+  const std::vector<std::string> candidates =
+      spdsx::device::ListUsbModemPorts();
+  if (candidates.empty()) {
+    throw std::runtime_error(
+        "no /dev/cu.usbmodem* ports found (device plugged in?)");
+  }
+  for (const auto& path : candidates) {
+    std::printf("trying %s... ", path.c_str());
+    std::fflush(stdout);
+    try {
+      spdsx::device::SpdsxDevice dev(path);
+      const Bytes reply = dev.Ping();
+      if (!reply.empty()) {
+        std::printf("ping ok\n");
+        return path;
+      }
+      std::printf("no reply\n");
+    } catch (const std::exception& e) {
+      std::printf("%s\n", e.what());
+    }
+  }
+  throw std::runtime_error(
+      "no port answered the ping (official app closed? device on?)");
+}
+
 }  // namespace
 
 // Read-only live test: opens the port and pings. Exercises the whole C++
@@ -257,7 +290,7 @@ int Probe(const std::string& port) {
 }
 
 int main(int argc, char** argv) {
-  std::string port = "/dev/cu.usbmodem113101";
+  std::string port;  // empty = auto-detect via ResolvePort
   int group = 11;
   int only = 0;
   int first = 1;
@@ -293,8 +326,18 @@ int main(int argc, char** argv) {
       std::fprintf(stderr,
           "usage: link_all_kits [--selftest] [--dry-run] [--verbose]\n"
           "                     [--port <dev>] [--group N] [--only K]\n"
-          "                     [--first K] [--last K]\n");
+          "                     [--first K] [--last K]\n"
+          "with no --port, scans /dev/cu.usbmodem* and pings each node\n");
       return 2;
+    }
+  }
+
+  if (probe || !dry_run) {
+    try {
+      port = ResolvePort(port);
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "error: %s\n", e.what());
+      return 1;
     }
   }
 

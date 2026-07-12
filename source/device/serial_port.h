@@ -8,10 +8,16 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include "device/protocol.h"  // Bytes
 
 namespace spdsx::device {
+
+// Ports matching /dev/cu.usbmodem*, sorted. The device gets a fresh node
+// number every time it's plugged in, so there is no stable path to default
+// to — enumerate and ping instead.
+std::vector<std::string> ListUsbModemPorts();
 
 class SerialPort {
  public:

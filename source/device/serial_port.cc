@@ -1,6 +1,7 @@
 #include "device/serial_port.h"
 
 #include <fcntl.h>
+#include <glob.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <termios.h>
@@ -25,6 +26,18 @@ double NowSeconds() {
 }
 
 }  // namespace
+
+std::vector<std::string> ListUsbModemPorts() {
+  std::vector<std::string> ports;
+  glob_t g{};
+  if (::glob("/dev/cu.usbmodem*", 0, nullptr, &g) == 0) {
+    for (size_t i = 0; i < g.gl_pathc; ++i) {
+      ports.emplace_back(g.gl_pathv[i]);
+    }
+  }
+  ::globfree(&g);
+  return ports;
+}
 
 SerialPort::SerialPort(const std::string& path, int baud) {
   fd_ = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
