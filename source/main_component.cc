@@ -133,6 +133,17 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   velocity_caption_.setColour(juce::Label::textColourId, kPadLabel);
   velocity_caption_.setJustificationType(juce::Justification::centredRight);
   addAndMakeVisible(velocity_caption_);
+  // Which kit the grid edits; switching stashes the old kit and loads
+  // the new one.
+  kit_selector_.onChange = [this]
+  {
+    const int index = kit_selector_.getSelectedId() - 1;
+    if (index >= 0 && index != device_.current_kit()) {
+      document_.SwitchKit(index);
+      RefreshDocumentState();
+    }
+  };
+  addAndMakeVisible(kit_selector_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
   // The kit name, click-to-edit in place.
@@ -156,6 +167,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addAndMakeVisible(name_label_);
 
   model_.AddListener(this);
+  // Start as a fresh untitled device, so the model reflects kit 1 and
+  // every header widget agrees with it.
+  document_.ResetToUntitled();
+  RefreshKitSelector();
   OpenMidiInputs();
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
@@ -188,7 +203,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
       commands::kFileOpen, commands::kFileSave, commands::kFileSaveAs,
-      commands::kToggleBrowser, commands::kToggleAutoplay});
+      commands::kImportKit, commands::kToggleBrowser,
+      commands::kToggleAutoplay});
 }
 
 void MainComponent::getCommandInfo(
@@ -220,10 +236,15 @@ void MainComponent::getCommandInfo(
       info.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
       break;
     case commands::kFileSaveAs:
-      info.setInfo("Save As...", "Save the kit to a new file", "File", 0);
+      info.setInfo("Save As...", "Save the device to a new file", "File", 0);
       info.addDefaultKeypress('s',
           juce::ModifierKeys::commandModifier
               | juce::ModifierKeys::shiftModifier);
+      break;
+    case commands::kImportKit:
+      info.setInfo("Import Kit...",
+          "Load a legacy single-kit .kit file into the current kit",
+          "File", 0);
       break;
     case commands::kToggleBrowser:
       info.setInfo("Sample Browser",
@@ -255,6 +276,7 @@ bool MainComponent::perform(const InvocationInfo& info)
           {
             if (result == juce::FileBasedDocument::savedOk) {
               document_.ResetToUntitled();
+              RefreshKitSelector();
               RefreshDocumentState();
             }
           });
@@ -264,8 +286,35 @@ bool MainComponent::perform(const InvocationInfo& info)
           [this](juce::FileBasedDocument::SaveResult result)
           {
             if (result == juce::FileBasedDocument::savedOk) {
-              document_.loadFromUserSpecifiedFileAsync(
-                  true, [this](juce::Result) { RefreshDocumentState(); });
+              document_.loadFromUserSpecifiedFileAsync(true,
+                  [this](juce::Result)
+                  {
+                    RefreshKitSelector();
+                    RefreshDocumentState();
+                  });
+            }
+          });
+      return true;
+    case commands::kImportKit:
+      import_chooser_ = std::make_unique<juce::FileChooser>(
+          "Import a kit into kit "
+              + juce::String(device_.current_kit() + 1),
+          juce::File(), "*.kit");
+      import_chooser_->launchAsync(
+          juce::FileBrowserComponent::openMode
+              | juce::FileBrowserComponent::canSelectFiles,
+          [this](const juce::FileChooser& fc)
+          {
+            if (auto file = fc.getResult(); file.existsAsFile()) {
+              if (auto result = document_.ImportKitFile(file);
+                  result.failed())
+              {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon, "Import Kit",
+                    result.getErrorMessage());
+              }
+              RefreshKitSelector();
+              RefreshDocumentState();
             }
           });
       return true;
@@ -307,23 +356,43 @@ void MainComponent::SetBrowserVisible(bool visible)
   repaint();
 }
 
-// Window title carries the kit name and an Edited marker; the header
-// dot repaints with it.
+// Window title carries the device, the active kit, and an Edited
+// marker; the header dot repaints with it.
 void MainComponent::RefreshDocumentState()
 {
   shown_dirty_ = document_.hasChangedSinceSaved();
   if (auto* window =
           dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent()))
   {
-    window->setName(
-        model_.name() + (shown_dirty_ ? " \xe2\x80\x94 Edited" : ""));
+    window->setName(document_.getDocumentTitle() + " \xe2\x80\x94 "
+        + juce::String(device_.current_kit() + 1) + ": " + model_.name()
+        + (shown_dirty_ ? " \xe2\x80\x94 Edited" : ""));
   }
+  // Loads and kit switches can change every widget in the header.
+  name_label_.setText(model_.name(), juce::dontSendNotification);
   repaint(0, 0, getWidth(), kHeaderHeight);
+}
+
+void MainComponent::RefreshKitSelector()
+{
+  kit_selector_.clear(juce::dontSendNotification);
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    const auto& name = i == device_.current_kit()
+        ? model_.name()
+        : device_.kit(i).name;
+    kit_selector_.addItem(juce::String(i + 1) + "  " + name, i + 1);
+  }
+  kit_selector_.setSelectedId(
+      device_.current_kit() + 1, juce::dontSendNotification);
 }
 
 void MainComponent::KitNameChanged()
 {
   name_label_.setText(model_.name(), juce::dontSendNotification);
+  if (kit_selector_.getNumItems() > 0) {
+    kit_selector_.changeItemText(device_.current_kit() + 1,
+        juce::String(device_.current_kit() + 1) + "  " + model_.name());
+  }
   document_.changed();
   RefreshDocumentState();
 }
@@ -436,7 +505,10 @@ void MainComponent::resized()
           .removeFromTop(kHeaderHeight)
           .withSizeKeepingCentre(
               juce::jmin(420, getWidth() - 120), 26));
-  // Velocity control at the header's right edge, clear of the dirty dot.
+  // Kit selector at the header's left edge, velocity control at the
+  // right, clear of the dirty dot.
+  kit_selector_.setBounds(juce::Rectangle<int>(12, 0, 190, kHeaderHeight)
+          .withSizeKeepingCentre(190, 24));
   auto vel = juce::Rectangle<int>(getWidth() - 178, 0, 140, kHeaderHeight)
                  .withSizeKeepingCentre(140, 20);
   velocity_caption_.setBounds(vel.removeFromLeft(34));

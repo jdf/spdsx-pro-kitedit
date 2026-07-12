@@ -13,6 +13,7 @@ enum : juce::CommandID {
   kFileOpen,
   kFileSave,
   kFileSaveAs,
+  kImportKit,
   kToggleBrowser,
   kToggleAutoplay,
 };

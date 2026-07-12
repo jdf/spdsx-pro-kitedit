@@ -29,6 +29,8 @@ public:
       menu.addSeparator();
       menu.addCommandItem(&commands_, commands::kFileSave);
       menu.addCommandItem(&commands_, commands::kFileSaveAs);
+      menu.addSeparator();
+      menu.addCommandItem(&commands_, commands::kImportKit);
     } else if (name == "Edit") {
       menu.addCommandItem(&commands_, commands::kUndo);
       menu.addCommandItem(&commands_, commands::kRedo);

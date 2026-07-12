@@ -12,7 +12,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "audio.h"
-#include "kit_document.h"
+#include "device_document.h"
+#include "device_model.h"
 #include "kit_model.h"
 #include "sample_browser.h"
 #include "sample_slot.h"
@@ -36,7 +37,7 @@ public:
   void LoadSample(int idx, const juce::File& file);
 
   // The document, for app-level flows (quit interception).
-  KitDocument& document() { return document_; }
+  DeviceDocument& document() { return document_; }
 
   void paint(juce::Graphics& g) override;
   void resized() override;
@@ -102,15 +103,19 @@ private:
   void SetDragTarget(int idx, bool whole_pad);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
+  // Rebuilds the header's kit selector from the device (the active
+  // kit's name comes from the live model).
+  void RefreshKitSelector();
   void timerCallback() override;
   juce::Rectangle<int> GridArea() const;
   juce::Rectangle<int> PadBounds(int row, int col) const;
 
   juce::ApplicationCommandManager& commands_;
   KitModel model_;
+  DeviceModel device_;
   juce::UndoManager undo_;
   juce::ApplicationProperties settings_;
-  KitDocument document_ {model_, undo_, settings_};
+  DeviceDocument document_ {device_, model_, undo_, settings_};
   AudioEngine engine_ {kSlotCount};
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   // Per-pad layer controls, living in each pad's header row.
@@ -142,6 +147,9 @@ private:
   // Velocity used by keyboard pad triggers (keys 1-9).
   juce::Slider velocity_slider_;
   juce::Label velocity_caption_;
+  // Which of the device's kits the grid is editing.
+  juce::ComboBox kit_selector_;
+  std::unique_ptr<juce::FileChooser> import_chooser_;
   juce::Label name_label_;
   SampleBrowser browser_;
   std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;

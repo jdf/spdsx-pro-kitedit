@@ -33,11 +33,56 @@ find_package(JUCE CONFIG REQUIRED)
 # specs checkout.
 find_package(specgram CONFIG REQUIRED)
 
-juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit")
+# The document is a folder; declaring it as a package (LSTypeIsPackage +
+# a UTI conforming to com.apple.package) makes Finder and the file
+# choosers treat *.spdsx as a single file.
+juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit"
+    BUNDLE_ID com.jdf.spdsx-patchedit
+    PLIST_TO_MERGE [[
+<plist version="1.0">
+<dict>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>SPD-SX PRO Device</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSTypeIsPackage</key>
+      <true/>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.jdf.spdsx-device</string>
+      </array>
+    </dict>
+  </array>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.jdf.spdsx-device</string>
+      <key>UTTypeDescription</key>
+      <string>SPD-SX PRO Device</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>com.apple.package</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>spdsx</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
+]])
 
 target_sources(spdsx-patchedit PRIVATE
     source/audio.cc
-    source/kit_document.cc
+    source/device_document.cc
     source/layers.cc
     source/main.cc
     source/main_component.cc
