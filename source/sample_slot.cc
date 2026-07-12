@@ -87,8 +87,8 @@ juce::String FormatMeta(double duration_seconds, double sample_rate)
     duration = juce::String(total / 60) + ":"
         + juce::String(total % 60).paddedLeft('0', 2);
   }
-  return duration + "  \xc2\xb7  " + juce::String(sample_rate / 1000.0, 1)
-      + " kHz";
+  return duration + juce::String::fromUTF8("  \xc2\xb7  ")
+      + juce::String(sample_rate / 1000.0, 1) + " kHz";
 }
 
 juce::Path MakeShape(TransportAction action)
@@ -172,7 +172,8 @@ void SampleSlot::SetDeviceSample(const juce::String& name,
 {
   sample_name_ = name;
   sample_meta_ = duration_seconds > 0.0
-      ? juce::String(duration_seconds, 2) + " s  \xc2\xb7  device"
+      ? juce::String(duration_seconds, 2)
+          + juce::String::fromUTF8(" s  \xc2\xb7  device")
       : juce::String("device");
   image_ = juce::Image();
   playable_ = false;

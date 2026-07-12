@@ -6,6 +6,7 @@ from this directory). Push with jdf's `jj push-main` alias.
 
 ## Conventions (STRICT — jdf cares)
 - **Google C++ style throughout**: `.cc`/`.h` files, `#ifndef SPDSX_PATCHEDIT_SOURCE_<FILE>_H_` guards (never `#pragma once`), UpperCamelCase methods (trivial accessors like `name()`/`set_name()` may be snake_case), `kUpperCamelCase` enumerators/constants, `snake_case_` data members. JUCE overrides keep their inherited names.
+- **JUCE string gotcha**: `juce::String` from a `char*` literal reads it byte-per-character — any non-ASCII UTF-8 (…, ·, —) becomes mojibake. Wrap such literals in `juce::String::fromUTF8(...)`, always.
 - **jj (not git) for VCS**, colocated. Commit liberally in small semantic chunks (one logical change per commit, each builds and works; `jj commit <paths>` for per-file chunks). **Never push, and don't offer to** — jdf runs `jj push-main` himself when he wants. Co-author trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - Also honored in sibling repos: `github.com/jdf/specgram` (the spectrogram lib, dir `../specgram`) and `github.com/jdf/spdsx-py` (`../spdsx-py`, the protocol RE).
 

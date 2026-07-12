@@ -467,7 +467,8 @@ void MainComponent::RefreshDocumentState()
   if (auto* window =
           dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent()))
   {
-    window->setName(document_.getDocumentTitle() + " \xe2\x80\x94 "
+    window->setName(document_.getDocumentTitle()
+        + juce::String::fromUTF8(" \xe2\x80\x94 ")
         + juce::String(device_.current_kit() + 1) + ": " + model_.name());
   }
   // Loads and kit switches can change every widget in the header.

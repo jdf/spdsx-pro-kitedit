@@ -36,9 +36,12 @@ void DeviceSamplePanel::paint(juce::Graphics& g)
   if (device_.sample_pool().empty()) {
     g.setColour(kMeta);
     g.setFont(13.0f);
+    // fromUTF8: a plain char* literal would render the ellipsis as
+    // mojibake (JUCE reads char* strings byte-per-character).
     g.drawFittedText(
-        "no device samples\n\nFile > Import Device Dump\xe2\x80\xa6\n"
-        "(spdutil dump --bank 0x20)",
+        juce::String::fromUTF8(
+            "no device samples\n\nFile > Import Device Dump\xe2\x80\xa6\n"
+            "(spdutil dump --bank 0x20)"),
         getLocalBounds().reduced(12), juce::Justification::centred, 6);
   }
 }
