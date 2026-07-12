@@ -10,8 +10,11 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_H_
 
+#include <vector>
+
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include "device/kit_image.h"
 #include "device_model.h"
 #include "kit_model.h"
 
@@ -60,6 +63,13 @@ public:
 
   // Reads a legacy single-kit .kit file (v1..v4) into the active kit.
   juce::Result ImportKitFile(const juce::File& file);
+
+  // Replaces the WHOLE document content — all 200 kits (names, wave
+  // assignments, layer params) and the sample pool — with a freshly
+  // fetched device state. Deliberately not undoable: histories are
+  // cleared. The caller confirms with the user first.
+  void ReplaceWithDeviceState(const std::vector<device::KitRecord>& kits,
+      std::vector<device::SampleRecord> pool);
 
   // Opens a device folder (or its device.json directly). All device
   // opening goes through here: FileBasedDocument::loadFrom insists the

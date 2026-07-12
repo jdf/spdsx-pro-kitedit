@@ -57,6 +57,16 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       pp.dynamics_curve = clean_image[p + kPadDynCurve];
       pp.fixed_velocity = clean_image[p + kPadFixedVel];
       pp.trigger_reserve = clean_image[p + kPadTrigReserve];
+      // The layer table: top = layer pad*2, bottom = pad*2 + 1.
+      const size_t top = rec + kLayerTableBase
+          + static_cast<size_t>(pad) * 2 * kLayerBlockStride;
+      if (top + kLayerBlockStride + 1 < clean_image.size()) {
+        pp.wave_top = static_cast<uint16_t>(clean_image[top]
+            | clean_image[top + 1] << 8);
+        pp.wave_bottom = static_cast<uint16_t>(
+            clean_image[top + kLayerBlockStride]
+            | clean_image[top + kLayerBlockStride + 1] << 8);
+      }
     }
     kits.push_back(std::move(k));
   }

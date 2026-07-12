@@ -95,6 +95,40 @@ Pad PadFromVar(const juce::var& v)
   return pad;
 }
 
+// Maps a parsed device kit record onto the app model. The hi-hat
+// closed-pedal trio keeps its defaults: those record offsets are still
+// hypothesis, not mapped.
+KitData KitDataFromDevice(const device::KitRecord& rec)
+{
+  KitData kit;
+  if (!rec.name.empty()) {
+    kit.name = juce::String(rec.name);
+  }
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    const auto& dp = rec.pads[static_cast<size_t>(pad)];
+    auto& p = kit.pads[static_cast<size_t>(pad)];
+    p.params.mode = static_cast<LayerMode>(juce::jlimit(
+        0, kLayerModeCount - 1, static_cast<int>(dp.layer_mode)));
+    p.params.fade_point =
+        juce::jlimit(1, 127, static_cast<int>(dp.fade_point));
+    p.params.fade_end = juce::jmax(p.params.fade_point,
+        juce::jlimit(1, 127, static_cast<int>(dp.fade_end)));
+    p.params.dynamics = dp.dynamics != 0;
+    p.params.curve = static_cast<DynamicsCurve>(juce::jlimit(
+        0, kDynamicsCurveCount - 1, static_cast<int>(dp.dynamics_curve)));
+    p.params.fixed_velocity =
+        juce::jlimit(1, 127, static_cast<int>(dp.fixed_velocity));
+    p.params.trigger_reserve = dp.trigger_reserve != 0;
+    p.samples.first = dp.wave_top > 0
+        ? LayerSample::DeviceWave(dp.wave_top)
+        : LayerSample();
+    p.samples.second = dp.wave_bottom > 0
+        ? LayerSample::DeviceWave(dp.wave_bottom)
+        : LayerSample();
+  }
+  return kit;
+}
+
 juce::var KitToVar(const KitData& kit)
 {
   auto* obj = new juce::DynamicObject();
@@ -338,6 +372,22 @@ void DeviceDocument::Autosave()
   if (saveDocument(getFile()).wasOk()) {
     setChangedFlag(false);
   }
+}
+
+void DeviceDocument::ReplaceWithDeviceState(
+    const std::vector<device::KitRecord>& kits,
+    std::vector<device::SampleRecord> pool)
+{
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    device_.kit(i) = i < static_cast<int>(kits.size())
+        ? KitDataFromDevice(kits[static_cast<size_t>(i)])
+        : KitData();
+  }
+  device_.set_sample_pool(std::move(pool));
+  LoadActiveKitIntoModel();
+  // Replaced wholesale; deliberately not undoable.
+  ResetHistory();
+  changed();
 }
 
 juce::Result DeviceDocument::ImportKitFile(const juce::File& file)

@@ -48,6 +48,10 @@ struct SampleRecord {
   std::string filename;  // original file name
   uint32_t frames = 0;   // length in sample frames
   int category = 0;      // 0..21
+
+  // Factory preload waves can never be exported off the device, so
+  // they will never have local audio; user imports eventually will.
+  bool is_preload() const { return filename.rfind("PRELOAD ", 0) == 0; }
 };
 
 // Parses the sample directory out of a CLEAN (header-stripped) image

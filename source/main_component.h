@@ -111,12 +111,14 @@ private:
   void SetDragTarget(int idx, bool whole_pad);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
-  // Reads the wave pool directory from the hardware on a worker thread
-  // (File > Load Samples from Device); FinishDeviceFetch lands the
-  // result back on the message thread.
-  void LoadSamplesFromDevice();
-  void FinishDeviceFetch(std::vector<device::SampleRecord> pool,
-      const juce::String& error);
+  // File > Load Device State: after a dire confirmation, reads kits +
+  // wave pool from the hardware on a worker thread and REPLACES the
+  // whole document (not undoable). FinishDeviceFetch lands the result
+  // back on the message thread.
+  void LoadDeviceState();
+  void StartDeviceStateFetch();
+  void FinishDeviceFetch(std::vector<device::KitRecord> kits,
+      std::vector<device::SampleRecord> pool, const juce::String& error);
   // Repopulates the device tab and re-resolves device-wave slots after
   // the pool changes (device fetch, open, new).
   void RefreshDeviceSamples();

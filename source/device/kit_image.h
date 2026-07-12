@@ -16,8 +16,12 @@
 //       +0x00 layer mode, +0x01 fade point, +0x02 fade end,
 //       +0x03 dynamics on/off, +0x04 dynamics curve, +0x05 fixed velocity,
 //       +0x13 trigger reserve.
-//   Many other pad params (waves, EQ, effects, ...) are elsewhere in the
-//   record and still unmapped.
+//   - offset 0x49a: the per-layer table, 18 layers (9 pads x top/bottom)
+//     x 60-byte blocks; the block starts with the layer's wave (sample
+//     pool index) as u16 LE, 0 = no sample. Verified against the "ZZZ"
+//     experiment kit (pad 7 = 127/203) and the factory kits.
+//   Many other pad params (EQ, effects, ...) are elsewhere in the record
+//   and still unmapped.
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_KIT_IMAGE_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_KIT_IMAGE_H_
 
@@ -51,6 +55,11 @@ inline constexpr size_t kPadDynCurve = 0x04;
 inline constexpr size_t kPadFixedVel = 0x05;
 inline constexpr size_t kPadTrigReserve = 0x13;
 
+// Per-layer table within a kit record; each layer block starts with the
+// wave index (u16 LE).
+inline constexpr size_t kLayerTableBase = 0x49a;
+inline constexpr size_t kLayerBlockStride = 60;  // 0x3c
+
 // Strips the per-block framing (`f0 41 6c 02` + 10-byte header ... `f7`,
 // one per ~64KB block) from a raw bulk dump, yielding the contiguous
 // device memory image.
@@ -67,6 +76,9 @@ struct PadDeviceParams {
   uint8_t dynamics_curve = 0;
   uint8_t fixed_velocity = 0;
   uint8_t trigger_reserve = 0;
+  // Wave (sample pool index) per layer; 0 = no sample.
+  uint16_t wave_top = 0;
+  uint16_t wave_bottom = 0;
 };
 
 // One kit's parsed contents: name plus the nine pads' mapped params.

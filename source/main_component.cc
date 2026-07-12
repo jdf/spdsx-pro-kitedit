@@ -260,7 +260,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
       commands::kFileOpen, commands::kFileSaveAs, commands::kImportKit,
-      commands::kLoadDeviceSamples, commands::kToggleBrowser,
+      commands::kLoadDeviceState, commands::kToggleBrowser,
       commands::kToggleAutoplay});
 }
 
@@ -301,9 +301,10 @@ void MainComponent::getCommandInfo(
           "Load a legacy single-kit .kit file into the current kit",
           "File", 0);
       break;
-    case commands::kLoadDeviceSamples:
-      info.setInfo("Load Samples from Device",
-          "Read the wave pool directory over the serial link", "File", 0);
+    case commands::kLoadDeviceState:
+      info.setInfo("Load Device State...",
+          "Replace this whole document with the device's current state",
+          "File", 0);
       info.setActive(!device_fetching_);
       break;
     case commands::kToggleBrowser:
@@ -419,8 +420,8 @@ bool MainComponent::perform(const InvocationInfo& info)
           [this](juce::FileBasedDocument::SaveResult)
           { RefreshDocumentState(); });
       return true;
-    case commands::kLoadDeviceSamples:
-      LoadSamplesFromDevice();
+    case commands::kLoadDeviceState:
+      LoadDeviceState();
       return true;
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);
@@ -469,7 +470,33 @@ void MainComponent::RefreshDocumentState()
   RefreshDeviceSamples();
 }
 
-void MainComponent::LoadSamplesFromDevice()
+void MainComponent::LoadDeviceState()
+{
+  if (device_fetching_) {
+    return;
+  }
+  juce::Component::SafePointer<MainComponent> safe(this);
+  juce::AlertWindow::showAsync(
+      juce::MessageBoxOptions()
+          .withIconType(juce::MessageBoxIconType::WarningIcon)
+          .withTitle("Load Device State")
+          .withMessage(
+              "This replaces EVERYTHING in this document with the "
+              "device's current state: all 200 kits — names, sample "
+              "assignments, layer parameters — and the wave pool.\n\n"
+              "Your local edits will be lost. This cannot be undone.")
+          .withButton("Replace Everything")
+          .withButton("Cancel"),
+      [safe](int result)
+      {
+        // The first button returns 1 (classic OK/cancel mapping).
+        if (result == 1 && safe != nullptr) {
+          safe->StartDeviceStateFetch();
+        }
+      });
+}
+
+void MainComponent::StartDeviceStateFetch()
 {
   if (device_fetching_.exchange(true)) {
     return;  // a fetch is already running
@@ -478,35 +505,40 @@ void MainComponent::LoadSamplesFromDevice()
   auto blocks = std::make_shared<std::atomic<int>>(0);
   fetch_blocks_ = blocks;
   device_samples_.SetStatus(juce::String::fromUTF8("connecting\xe2\x80\xa6"));
-  // The dump is megabytes over a serial link; a detached worker owns
+  // The dumps are megabytes over a serial link; a detached worker owns
   // the port and reports back through the message thread. It shares
   // only the counter (by shared_ptr) and a SafePointer checked on the
   // message thread, so quitting mid-fetch can't dangle.
   juce::Component::SafePointer<MainComponent> safe(this);
   std::thread([safe, blocks] {
+    std::vector<device::KitRecord> kits;
     std::vector<device::SampleRecord> pool;
     juce::String error;
     try {
       device::SpdsxDevice dev(device::FindDevicePort());
-      const auto raw = dev.DumpBank(device::kBankSamples,
-          [&blocks](const device::Bytes&) { ++*blocks; });
-      pool = device::ParseSampleDir(device::CleanBulkImage(raw));
-      if (pool.empty()) {
-        error = "the device's reply held no sample directory";
+      const auto count = [&blocks](const device::Bytes&) { ++*blocks; };
+      kits = device::ParseKits(
+          device::CleanBulkImage(dev.DumpBank(device::kBankKits, count)));
+      pool = device::ParseSampleDir(device::CleanBulkImage(
+          dev.DumpBank(device::kBankSamples, count)));
+      if (kits.empty() || pool.empty()) {
+        error = "the device's reply was incomplete (kits or samples "
+                "missing)";
       }
     } catch (const std::exception& e) {
       error = e.what();
     }
-    juce::MessageManager::callAsync(
-        [safe, pool = std::move(pool), error]() mutable {
-          if (safe != nullptr) {
-            safe->FinishDeviceFetch(std::move(pool), error);
-          }
-        });
+    juce::MessageManager::callAsync([safe, kits = std::move(kits),
+                                        pool = std::move(pool),
+                                        error]() mutable {
+      if (safe != nullptr) {
+        safe->FinishDeviceFetch(std::move(kits), std::move(pool), error);
+      }
+    });
   }).detach();
 }
 
-void MainComponent::FinishDeviceFetch(
+void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
     std::vector<device::SampleRecord> pool, const juce::String& error)
 {
   device_fetching_ = false;
@@ -515,13 +547,13 @@ void MainComponent::FinishDeviceFetch(
   commands_.commandStatusChanged();
   if (error.isNotEmpty()) {
     juce::AlertWindow::showMessageBoxAsync(
-        juce::MessageBoxIconType::WarningIcon, "Load Samples from Device",
-        error);
+        juce::MessageBoxIconType::WarningIcon, "Load Device State", error);
     return;
   }
-  device_.set_sample_pool(std::move(pool));
-  MarkEdited();  // the pool is document content
-  RefreshDeviceSamples();
+  document_.ReplaceWithDeviceState(kits, std::move(pool));
+  MarkEdited();
+  RefreshKitSelector();
+  RefreshDocumentState();
 }
 
 void MainComponent::RefreshDeviceSamples()

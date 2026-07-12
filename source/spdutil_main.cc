@@ -266,6 +266,10 @@ int RunSelfTest() {
     const size_t p3 = rec129 + spdsx::device::kPadTableBase
         + 2 * spdsx::device::kPadBlockStride;
     img[p3 + spdsx::device::kPadLayerMode] = 4;     // SWITCH
+    // Pad 1's waves in the layer table (u16 LE; bottom one block on).
+    const size_t l1 = rec129 + spdsx::device::kLayerTableBase;
+    img[l1] = 127;
+    img[l1 + spdsx::device::kLayerBlockStride] = 203;
     const auto kits = spdsx::device::ParseKits(img);
     const bool parse_ok = kits.size() >= 129 && kits[0].name == "Dance"
         && kits[128].name == "ZZZZZZZZZZZZZZZZ";
@@ -278,7 +282,8 @@ int RunSelfTest() {
       const bool pad_ok = pp.layer_mode == 3 && pp.fade_point == 100
           && pp.fade_end == 120 && pp.dynamics == 1
           && pp.dynamics_curve == 3 && pp.fixed_velocity == 50
-          && pp.trigger_reserve == 1 && kits[128].pads[2].layer_mode == 4;
+          && pp.trigger_reserve == 1 && kits[128].pads[2].layer_mode == 4
+          && pp.wave_top == 127 && pp.wave_bottom == 203;
       all_ok = all_ok && pad_ok;
       std::printf("%-8s pad params: pad1 mode=%d fp=%d ... pad3 mode=%d\n",
           pad_ok ? "OK" : "FAIL", pp.layer_mode, pp.fade_point,
@@ -613,15 +618,17 @@ int RunKit(const std::string& port_arg, const std::string& from_path,
   }
   const auto& k = kits[static_cast<size_t>(kit - 1)];
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
-  std::printf("  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv\n");
+  std::printf("  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
+              "  top   bottom\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
-    std::printf("  %3d  %-9s %5d %5d  %-3s %-7s %5d  %s\n", pad + 1, mode,
-        p.fade_point, p.fade_end, p.dynamics ? "ON" : "OFF", curve,
-        p.fixed_velocity, p.trigger_reserve ? "ON" : "OFF");
+    std::printf("  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %5d\n",
+        pad + 1, mode, p.fade_point, p.fade_end, p.dynamics ? "ON" : "OFF",
+        curve, p.fixed_velocity, p.trigger_reserve ? "ON" : "OFF",
+        p.wave_top, p.wave_bottom);
   }
   return 0;
 }
