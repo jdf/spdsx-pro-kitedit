@@ -87,6 +87,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/layers.cc
     source/main.cc
     source/main_component.cc
+    source/pad_settings.cc
     source/sample_browser.cc
     source/sample_slot.cc
     source/spectro.cc

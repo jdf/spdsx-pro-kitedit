@@ -1,10 +1,7 @@
 #include "main_component.h"
 
-#include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <functional>
-#include <vector>
 
 #include "actions.h"
 #include "commands.h"
@@ -114,7 +111,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     fade_end_sliders_[p] = make_fade_slider();
     pad_menu_buttons_[p] =
         std::make_unique<juce::TextButton>(juce::String::fromUTF8("⋯"));
-    pad_menu_buttons_[p]->onClick = [this, pad] { ShowPadMenu(pad); };
+    pad_menu_buttons_[p]->onClick = [this, pad] { ShowPadSettings(pad); };
     addAndMakeVisible(*pad_menu_buttons_[p]);
     UpdatePadWidgets(pad);
   }
@@ -818,59 +815,31 @@ void MainComponent::ApplyLayerParams(int pad)
   undo().perform(new SetPadParamsAction(model_, pad, params));
 }
 
-void MainComponent::ShowPadMenu(int pad)
+void MainComponent::ShowPadSettings(int pad)
 {
-  const PadParams& params = model_.params(pad);
-  juce::PopupMenu curve_menu;
-  for (int c = 0; c < kDynamicsCurveCount; ++c) {
-    const auto name = DynamicsCurveName(static_cast<DynamicsCurve>(c));
-    curve_menu.addItem(100 + c, juce::String(name.data(), name.size()),
-        params.dynamics, params.curve == static_cast<DynamicsCurve>(c));
-  }
-  // Fixed velocity only matters with dynamics off (mirroring the curve
-  // submenu, which only matters with dynamics on). Preset steps, plus
-  // the current value if it came from elsewhere (device sync, JSON).
-  juce::PopupMenu velocity_menu;
-  std::vector<int> velocities = {127, 112, 96, 80, 64, 48, 32, 16, 1};
-  if (std::find(velocities.begin(), velocities.end(),
-          params.fixed_velocity) == velocities.end())
+  auto panel = std::make_unique<PadSettingsPanel>();
+  panel->SetParams(model_.params(pad));
+  panel->on_change = [this, pad](const PadParams& edited)
   {
-    velocities.push_back(params.fixed_velocity);
-    std::sort(velocities.begin(), velocities.end(), std::greater<>());
-  }
-  for (const int v : velocities) {
-    velocity_menu.addItem(
-        200 + v, juce::String(v), true, params.fixed_velocity == v);
-  }
-  juce::PopupMenu menu;
-  menu.addItem(1, "Dynamics", true, params.dynamics);
-  menu.addSubMenu("Dynamics Curve", curve_menu, params.dynamics);
-  menu.addSubMenu(
-      "Fixed Velocity (" + juce::String(params.fixed_velocity) + ")",
-      velocity_menu, !params.dynamics);
-  menu.addItem(2, "Trigger Reserve", true, params.trigger_reserve);
-  menu.showMenuAsync(
-      juce::PopupMenu::Options().withTargetComponent(
-          pad_menu_buttons_[static_cast<size_t>(pad)].get()),
-      [this, pad](int result)
-      {
-        if (result == 0) {
-          return;  // dismissed
-        }
-        PadParams changed = model_.params(pad);
-        if (result == 1) {
-          changed.dynamics = !changed.dynamics;
-        } else if (result == 2) {
-          changed.trigger_reserve = !changed.trigger_reserve;
-        } else if (result >= 100 && result < 100 + kDynamicsCurveCount) {
-          changed.curve = static_cast<DynamicsCurve>(result - 100);
-        } else if (result > 200 && result <= 200 + 127) {
-          changed.fixed_velocity = result - 200;
-        }
-        undo().beginNewTransaction(
-            "Change pad " + juce::String(pad + 1) + " dynamics");
-        undo().perform(new SetPadParamsAction(model_, pad, changed));
-      });
+    // The panel only owns these four fields; the pad's mode and fade
+    // values may be edited in the header while the panel is open.
+    PadParams changed = model_.params(pad);
+    changed.dynamics = edited.dynamics;
+    changed.curve = edited.curve;
+    changed.fixed_velocity = edited.fixed_velocity;
+    changed.trigger_reserve = edited.trigger_reserve;
+    if (changed == model_.params(pad)) {
+      return;
+    }
+    undo().beginNewTransaction(
+        "Change pad " + juce::String(pad + 1) + " settings");
+    undo().perform(new SetPadParamsAction(model_, pad, changed));
+  };
+  pad_settings_panel_ = panel.get();
+  pad_settings_pad_ = pad;
+  juce::CallOutBox::launchAsynchronously(std::move(panel),
+      pad_menu_buttons_[static_cast<size_t>(pad)]->getScreenBounds(),
+      nullptr);
 }
 
 void MainComponent::UpdatePadWidgets(int pad)
@@ -891,6 +860,11 @@ void MainComponent::PadParamsChanged(int pad)
 {
   MarkEdited();
   UpdatePadWidgets(pad);
+  // Keep an open settings panel honest when undo/redo (or anything
+  // else) changes the pad underneath it.
+  if (pad_settings_panel_ != nullptr && pad_settings_pad_ == pad) {
+    pad_settings_panel_->SetParams(model_.params(pad));
+  }
 }
 
 void MainComponent::MoveSample(int from, int to, bool copy)
