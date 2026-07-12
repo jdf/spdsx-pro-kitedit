@@ -235,6 +235,27 @@ int ArgInt(const char* v, int fallback) {
 
 }  // namespace
 
+// Read-only live test: opens the port and pings. Exercises the whole C++
+// transport (serial open + IOSSIOSPEED baud, frame wrap/unwrap, round-trip)
+// without mutating the device.
+int Probe(const std::string& port) {
+  try {
+    spdsx::device::SpdsxDevice dev(port);
+    std::printf("opened %s\n", port.c_str());
+    const Bytes reply = dev.Ping();
+    if (reply.empty()) {
+      std::printf("ping: NO REPLY (device connected? official app closed?)\n");
+      return 1;
+    }
+    std::printf("ping reply (%zu bytes): %s\n", reply.size(),
+        ToHex(reply).c_str());
+    return 0;
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "error: %s\n", e.what());
+    return 1;
+  }
+}
+
 int main(int argc, char** argv) {
   std::string port = "/dev/cu.usbmodem113101";
   int group = 11;
@@ -243,6 +264,7 @@ int main(int argc, char** argv) {
   int last = 200;
   bool dry_run = false;
   bool verbose = false;
+  bool probe = false;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -251,6 +273,8 @@ int main(int argc, char** argv) {
     };
     if (arg == "--selftest") {
       return RunSelfTest();
+    } else if (arg == "--probe") {
+      probe = true;
     } else if (arg == "--dry-run") {
       dry_run = true;
     } else if (arg == "--verbose") {
@@ -272,6 +296,10 @@ int main(int argc, char** argv) {
           "                     [--first K] [--last K]\n");
       return 2;
     }
+  }
+
+  if (probe) {
+    return Probe(port);
   }
 
   if (only != 0) {
