@@ -91,6 +91,19 @@ Bytes SpdsxDevice::Ping() {
   return Command(p);
 }
 
+Bytes SpdsxDevice::StatusRequest(uint8_t category) {
+  // UNSOLVED: both guessed layouts failed live. A category at offset 5
+  // (ping-shaped) is ignored — the device answers as if pinged; this
+  // reply-shaped attempt (four zeros, model id, category) gets no reply
+  // at all. The real layout needs a frida capture of the official app's
+  // startup handshake, which polls categories 0x15-0x17 continuously.
+  Bytes p = {0xF0, 0x41, 0x6A, 0x03, 0x00, 0x00, 0x00, 0x00, 0x16,
+      category};
+  p.insert(p.end(), 6, 0x00);
+  p.push_back(0xF7);
+  return Command(p);
+}
+
 Bytes SpdsxDevice::SelectKit(int kit) {
   return Command(Dt1(kKitSelectAddr, EncodeKit(kit)));
 }

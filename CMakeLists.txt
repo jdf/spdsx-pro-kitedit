@@ -112,7 +112,7 @@ add_library(spdsx_device STATIC
 )
 target_include_directories(spdsx_device PUBLIC source)
 
-# link_all_kits: CLI that verifies the port (--selftest / --dry-run) and can
-# drive the device for real.
-add_executable(link_all_kits source/link_all_kits_main.cc)
-target_link_libraries(link_all_kits PRIVATE spdsx_device)
+# spdutil: CLI for the device — ping/info/padlink, offline selftest —
+# and the harness that verifies the protocol port byte-for-byte.
+add_executable(spdutil source/spdutil_main.cc)
+target_link_libraries(spdutil PRIVATE spdsx_device)

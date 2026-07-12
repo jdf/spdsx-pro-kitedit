@@ -34,6 +34,11 @@ class SpdsxDevice {
   Bytes ReadFrame(double timeout_seconds = 0.4);
 
   Bytes Ping();
+  // Control/status query on the 41 6a family. NOTE: the category byte's
+  // position is extrapolated from the ping message, not yet verified
+  // against captures — treat replies with suspicion until confirmed
+  // live (category 0x17 is believed to return the firmware version).
+  Bytes StatusRequest(uint8_t category);
   Bytes SelectKit(int kit);
   Bytes SelectObject(ObjectKind kind, int index);
   // Focus (replies; drains) then write the pad-link group (fire-and-forget)
