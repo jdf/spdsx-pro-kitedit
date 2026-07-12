@@ -3,8 +3,9 @@
 //
 // Every payload goes on the wire wrapped in the app's transport frame:
 //   0d 60 e0 <ch> <8 junk bytes> 01 00 00 00 <len LE32> <payload>
-// ch 0x07 = DT1 parameter writes, 0x09 = control/status. Focus/select
-// commands reply and must be drained; parameter writes don't ack.
+// ch 0x07 = DT1 parameter writes, 0x08 = bulk data, 0x09 = control/status.
+// Focus/select commands reply and must be drained; parameter writes don't
+// ack.
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_SPDSX_DEVICE_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_SPDSX_DEVICE_H_
 
@@ -59,10 +60,11 @@ class SpdsxDevice {
 
   // Streams a whole bank (0x10/0x20/0x30/0x40) and returns the reassembled
   // image: the block-frame payloads concatenated with their headers, the
-  // same layout SplitBulkImage parses and the RE image cache stores. Reads
-  // blocks until the device goes idle for idle_timeout. on_block, if given,
-  // fires per block (for progress). NOTE: the request/streaming protocol is
-  // reconstructed from captures but has NOT been driven live yet.
+  // same layout SplitBulkImage parses and the RE image cache stores.
+  // Follows the official app's handshake (live-verified 2026-07-12):
+  // PREPARE all four banks, BEGIN the target, then repeated READs — each
+  // yielding a device-chosen batch of 6c 02 blocks — until one yields
+  // none, then END. on_block, if given, fires per block (for progress).
   Bytes DumpBank(uint8_t bank, const BlockCallback& on_block = {},
       double idle_timeout = 1.0, double block_timeout = 15.0);
 
