@@ -23,8 +23,10 @@ enum class DeviceFormat : int {
   kInitial = 1,
   // Adds per-pad fixedVelocity.
   kFixedVelocity = 2,
+  // Adds per-pad hiHatVolume/hiHatFadeIn/hiHatDecay.
+  kHiHatPedal = 3,
 
-  kCurrent = kFixedVelocity,
+  kCurrent = kHiHatPedal,
 };
 
 class DeviceDocument : public juce::FileBasedDocument {

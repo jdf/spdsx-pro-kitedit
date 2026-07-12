@@ -21,6 +21,11 @@ constexpr int kAlignInset = 4;
 // the slider bounds.
 constexpr int kV4RotaryMargin = 10;
 
+constexpr int kBaseHeight = kPadding * 2 + kRowHeight * 3 + kRowGap * 3
+    + kKnobHeight;
+constexpr int kPedalHeight =
+    kRowGap + kRowHeight + (kRowGap + kKnobHeight) * 3;
+
 }  // namespace
 
 PadSettingsPanel::PadSettingsPanel()
@@ -43,23 +48,32 @@ PadSettingsPanel::PadSettingsPanel()
   addAndMakeVisible(curve_label_);
   addAndMakeVisible(curve_);
 
-  velocity_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-  velocity_.setRange(1, 127, 1);
-  // The value box doubles as direct entry: click the number and type.
-  velocity_.setTextBoxStyle(
-      juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
-  velocity_.setTextBoxIsEditable(true);
-  velocity_.onValueChange = [this] { Push(); };
-  velocity_label_.setBorderSize(
-      juce::BorderSize<int>(0, kAlignInset, 0, 0));
-  addAndMakeVisible(velocity_label_);
-  addAndMakeVisible(velocity_);
+  // A knob with a value box doubling as direct entry: click the
+  // number and type.
+  auto init_knob = [this](juce::Slider& knob, juce::Label& label, int min)
+  {
+    knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    knob.setRange(min, 127, 1);
+    knob.setTextBoxStyle(
+        juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
+    knob.setTextBoxIsEditable(true);
+    knob.onValueChange = [this] { Push(); };
+    label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+    addAndMakeVisible(label);
+    addAndMakeVisible(knob);
+  };
+  init_knob(velocity_, velocity_label_, 1);
 
   trigger_reserve_.onClick = [this] { Push(); };
   addAndMakeVisible(trigger_reserve_);
 
-  setSize(kPanelWidth, kPadding * 2 + kRowHeight * 3 + kRowGap * 3
-      + kKnobHeight);
+  pedal_heading_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+  addAndMakeVisible(pedal_heading_);
+  init_knob(volume_, volume_label_, 0);
+  init_knob(fade_in_, fade_in_label_, 0);
+  init_knob(decay_, decay_label_, 0);
+
+  setSize(kPanelWidth, kBaseHeight);
 }
 
 void PadSettingsPanel::SetParams(const PadParams& params)
@@ -70,11 +84,47 @@ void PadSettingsPanel::SetParams(const PadParams& params)
   velocity_.setValue(params.fixed_velocity, juce::dontSendNotification);
   trigger_reserve_.setToggleState(
       params.trigger_reserve, juce::dontSendNotification);
+  volume_.setValue(params.hi_hat_volume, juce::dontSendNotification);
+  fade_in_.setValue(params.hi_hat_fade_in, juce::dontSendNotification);
+  decay_.setValue(params.hi_hat_decay, juce::dontSendNotification);
   RefreshEnablement();
+
+  show_pedal_ = params.mode == LayerMode::kHiHat;
+  for (juce::Component* c : {static_cast<juce::Component*>(&pedal_heading_),
+           static_cast<juce::Component*>(&volume_label_),
+           static_cast<juce::Component*>(&volume_),
+           static_cast<juce::Component*>(&fade_in_label_),
+           static_cast<juce::Component*>(&fade_in_),
+           static_cast<juce::Component*>(&decay_label_),
+           static_cast<juce::Component*>(&decay_)})
+  {
+    c->setVisible(show_pedal_);
+  }
+  // The CallOutBox tracks content size, so growing for the pedal
+  // section repositions the box too.
+  setSize(kPanelWidth, kBaseHeight + (show_pedal_ ? kPedalHeight : 0));
 }
 
 void PadSettingsPanel::resized()
 {
+  // Knobs go on the left, aligned with the other controls; the label
+  // follows on the right, vertically centred on the knob. The slider
+  // gets exactly the dial's width — any extra and the dial drifts
+  // toward the centre of its bounds — and is shifted left by the
+  // margin LookAndFeel_V4 leaves around the dial, so the visible
+  // circle (not the widget bounds) is what left-aligns.
+  auto knob_row = [](juce::Rectangle<int>& area, juce::Slider& knob,
+                      juce::Label& label)
+  {
+    auto row = area.removeFromTop(kKnobHeight);
+    row.removeFromLeft(kAlignInset);
+    knob.setBounds(
+        row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
+    label.setBounds(row.withHeight(kRowHeight)
+            .withY(row.getY() + (kKnobHeight - kRowHeight) / 2));
+    area.removeFromTop(kRowGap);
+  };
+
   auto area = getLocalBounds().reduced(kPadding);
   dynamics_.setBounds(area.removeFromTop(kRowHeight));
   area.removeFromTop(kRowGap);
@@ -82,20 +132,17 @@ void PadSettingsPanel::resized()
   curve_label_.setBounds(curve_row.removeFromLeft(kLabelWidth));
   curve_.setBounds(curve_row);
   area.removeFromTop(kRowGap);
-  // Knob on the left, aligned with the other controls; its label
-  // follows on the right, vertically centred on the knob. The slider
-  // gets exactly the dial's width — any extra and the dial drifts
-  // toward the centre of its bounds — and is shifted left by the
-  // margin LookAndFeel_V4 leaves around the dial, so the visible
-  // circle (not the widget bounds) is what left-aligns.
-  auto knob_row = area.removeFromTop(kKnobHeight);
-  knob_row.removeFromLeft(kAlignInset);
-  velocity_.setBounds(
-      knob_row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
-  velocity_label_.setBounds(knob_row.withHeight(kRowHeight)
-          .withY(knob_row.getY() + (kKnobHeight - kRowHeight) / 2));
-  area.removeFromTop(kRowGap);
+  knob_row(area, velocity_, velocity_label_);
   trigger_reserve_.setBounds(area.removeFromTop(kRowHeight));
+  if (!show_pedal_) {
+    return;
+  }
+  area.removeFromTop(kRowGap);
+  pedal_heading_.setBounds(area.removeFromTop(kRowHeight));
+  area.removeFromTop(kRowGap);
+  knob_row(area, volume_, volume_label_);
+  knob_row(area, fade_in_, fade_in_label_);
+  knob_row(area, decay_, decay_label_);
 }
 
 void PadSettingsPanel::Push()
@@ -108,6 +155,9 @@ void PadSettingsPanel::Push()
   params.curve = static_cast<DynamicsCurve>(curve_.getSelectedId() - 1);
   params.fixed_velocity = static_cast<int>(velocity_.getValue());
   params.trigger_reserve = trigger_reserve_.getToggleState();
+  params.hi_hat_volume = static_cast<int>(volume_.getValue());
+  params.hi_hat_fade_in = static_cast<int>(fade_in_.getValue());
+  params.hi_hat_decay = static_cast<int>(decay_.getValue());
   on_change(params);
 }
 

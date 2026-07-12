@@ -33,6 +33,9 @@ juce::var PadToVar(const Pad& pad)
       "dynamicsCurve", NameOf(DynamicsCurveName(pad.params.curve)));
   obj->setProperty("fixedVelocity", pad.params.fixed_velocity);
   obj->setProperty("triggerReserve", pad.params.trigger_reserve);
+  obj->setProperty("hiHatVolume", pad.params.hi_hat_volume);
+  obj->setProperty("hiHatFadeIn", pad.params.hi_hat_fade_in);
+  obj->setProperty("hiHatDecay", pad.params.hi_hat_decay);
   return juce::var(obj);
 }
 
@@ -63,10 +66,19 @@ Pad PadFromVar(const juce::var& v)
   pad.params.curve = ParseDynamicsCurve(
       v.getProperty("dynamicsCurve", "").toString().toStdString(),
       DynamicsCurve::kLinear);
+  // The blended modes read fade end as "at least fade point".
+  pad.params.fade_end =
+      juce::jmax(pad.params.fade_end, pad.params.fade_point);
   pad.params.fixed_velocity = juce::jlimit(1, 127,
       static_cast<int>(
           v.getProperty("fixedVelocity", kDefaultFixedVelocity)));
   pad.params.trigger_reserve = v.getProperty("triggerReserve", false);
+  pad.params.hi_hat_volume = juce::jlimit(0, 127,
+      static_cast<int>(v.getProperty("hiHatVolume", kDefaultHiHatVolume)));
+  pad.params.hi_hat_fade_in = juce::jlimit(0, 127,
+      static_cast<int>(v.getProperty("hiHatFadeIn", kDefaultHiHatFadeIn)));
+  pad.params.hi_hat_decay = juce::jlimit(0, 127,
+      static_cast<int>(v.getProperty("hiHatDecay", kDefaultHiHatDecay)));
   return pad;
 }
 

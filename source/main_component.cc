@@ -759,8 +759,13 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
   pad_flash_ms_[p] = juce::Time::getMillisecondCounter();
   repaint(PadBounds(pad / 3, pad % 3));
   const PadParams& params = model_.params(pad);
-  const LayerWeights weights = ComputeLayerWeights(params.mode, velocity,
+  LayerWeights weights = ComputeLayerWeights(params.mode, velocity,
       params.fade_point, params.fade_end, alternate_flip_[p], pedal_down);
+  if (params.mode == LayerMode::kHiHat) {
+    // Closed-pedal volume shapes the closed (top) layer. Its fade
+    // in/decay siblings need engine envelopes and stay device-only.
+    weights.top *= static_cast<float>(params.hi_hat_volume) / 127.0f;
+  }
   // Layer selection follows the strike velocity; loudness follows the
   // dynamics settings (dynamics off = every hit at the pad's fixed
   // velocity level).
@@ -807,6 +812,10 @@ void MainComponent::ApplyLayerParams(int pad)
   params.mode = static_cast<LayerMode>(mode_boxes_[p]->getSelectedId() - 1);
   params.fade_point = static_cast<int>(fade_point_sliders_[p]->getValue());
   params.fade_end = static_cast<int>(fade_end_sliders_[p]->getValue());
+  // Fade end is constrained to >= fade point: pushing the point past
+  // the end drags the end along (the end slider's minimum tracks the
+  // point, so it can't be dragged below on its own).
+  params.fade_end = juce::jmax(params.fade_end, params.fade_point);
   if (params == model_.params(pad)) {
     return;
   }
@@ -828,6 +837,9 @@ void MainComponent::ShowPadSettings(int pad)
     changed.curve = edited.curve;
     changed.fixed_velocity = edited.fixed_velocity;
     changed.trigger_reserve = edited.trigger_reserve;
+    changed.hi_hat_volume = edited.hi_hat_volume;
+    changed.hi_hat_fade_in = edited.hi_hat_fade_in;
+    changed.hi_hat_decay = edited.hi_hat_decay;
     if (changed == model_.params(pad)) {
       return;
     }
@@ -850,6 +862,9 @@ void MainComponent::UpdatePadWidgets(int pad)
       static_cast<int>(params.mode) + 1, juce::dontSendNotification);
   fade_point_sliders_[p]->setValue(
       params.fade_point, juce::dontSendNotification);
+  // The end can't go below the point; keep the constraint in the
+  // slider's own range so drags stop there instead of snapping back.
+  fade_end_sliders_[p]->setRange(params.fade_point, 127, 1);
   fade_end_sliders_[p]->setValue(
       params.fade_end, juce::dontSendNotification);
   fade_point_sliders_[p]->setVisible(UsesFadePoint(params.mode));

@@ -32,6 +32,12 @@ struct PadParams {
   // Device-only (read/write, not emulated): hold a strike until the
   // next click accent instead of sounding immediately.
   bool trigger_reserve = false;
+  // HI-HAT mode's closed-pedal shaping (0..127). Volume scales the
+  // closed layer and is emulated; fade in (attack) and decay are
+  // read/write for the device only until the engine grows envelopes.
+  int hi_hat_volume = kDefaultHiHatVolume;
+  int hi_hat_fade_in = kDefaultHiHatFadeIn;
+  int hi_hat_decay = kDefaultHiHatDecay;
 
   bool operator==(const PadParams&) const = default;
 };
