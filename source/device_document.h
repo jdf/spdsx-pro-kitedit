@@ -50,6 +50,11 @@ public:
   // Reads a legacy single-kit .kit file (v1..v4) into the active kit.
   juce::Result ImportKitFile(const juce::File& file);
 
+  // Opens a device folder (or its device.json directly). All device
+  // opening goes through here: FileBasedDocument::loadFrom insists the
+  // target existsAsFile(), which a folder document never satisfies.
+  juce::Result OpenDevice(const juce::File& file);
+
 protected:
   juce::Result loadDocument(const juce::File& file) override;
   juce::Result saveDocument(const juce::File& file) override;

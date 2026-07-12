@@ -194,6 +194,20 @@ void MainComponent::LoadSample(int idx, const juce::File& file)
       idx % KitModel::kLayersPerPad, file));
 }
 
+void MainComponent::OpenLastDocument()
+{
+  const juce::File last(
+      settings_.getUserSettings()->getValue("lastDeviceFile"));
+  if (last == juce::File() || !(last.isDirectory() || last.existsAsFile()))
+  {
+    return;  // never saved anything, or the document moved
+  }
+  if (document_.OpenDevice(last).wasOk()) {
+    RefreshKitSelector();
+    RefreshDocumentState();
+  }
+}
+
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
 {
   return nullptr;
@@ -285,14 +299,36 @@ bool MainComponent::perform(const InvocationInfo& info)
       document_.saveIfNeededAndUserAgreesAsync(
           [this](juce::FileBasedDocument::SaveResult result)
           {
-            if (result == juce::FileBasedDocument::savedOk) {
-              document_.loadFromUserSpecifiedFileAsync(true,
-                  [this](juce::Result)
-                  {
-                    RefreshKitSelector();
-                    RefreshDocumentState();
-                  });
+            if (result != juce::FileBasedDocument::savedOk) {
+              return;
             }
+            // Our own chooser: FileBasedDocument's open path refuses
+            // folder documents (see DeviceDocument::OpenDevice).
+            // Directories stay selectable for unregistered packages.
+            open_chooser_ = std::make_unique<juce::FileChooser>(
+                "Open a device",
+                juce::File(
+                    settings_.getUserSettings()->getValue("lastDeviceFile"))
+                    .getParentDirectory(),
+                "*.spdsx;device.json");
+            open_chooser_->launchAsync(
+                juce::FileBrowserComponent::openMode
+                    | juce::FileBrowserComponent::canSelectFiles
+                    | juce::FileBrowserComponent::canSelectDirectories,
+                [this](const juce::FileChooser& fc)
+                {
+                  const auto file = fc.getResult();
+                  if (file == juce::File()) {
+                    return;
+                  }
+                  if (auto r = document_.OpenDevice(file); r.failed()) {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Open a device", r.getErrorMessage());
+                  }
+                  RefreshKitSelector();
+                  RefreshDocumentState();
+                });
           });
       return true;
     case commands::kImportKit:

@@ -109,6 +109,11 @@ public:
     }
 
     window = std::make_unique<MainWindow>(content);
+    // Pick up where the user left off — unless --load staged test
+    // samples that an auto-open would clobber.
+    if (args.isEmpty()) {
+      content->OpenLastDocument();
+    }
     // Menu items alone don't dispatch their shortcuts: command keypresses
     // (cmd-Z, cmd-S, ...) only fire once the manager's key mappings are
     // listening on the window.

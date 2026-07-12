@@ -237,6 +237,21 @@ juce::Result DeviceDocument::saveDocument(const juce::File& chosen)
   return juce::Result::ok();
 }
 
+juce::Result DeviceDocument::OpenDevice(const juce::File& chosen)
+{
+  const juce::File folder = chosen.getFileName() == kManifestName
+      ? chosen.getParentDirectory()
+      : chosen;
+  const auto result = loadDocument(folder);
+  if (result.failed()) {
+    return result;
+  }
+  setFile(folder);
+  setLastDocumentOpened(folder);
+  setChangedFlag(false);
+  return result;
+}
+
 juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
 {
   auto parsed = juce::JSON::parse(file.loadFileAsString());

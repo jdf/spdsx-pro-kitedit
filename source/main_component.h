@@ -39,6 +39,11 @@ public:
   // The document, for app-level flows (quit interception).
   DeviceDocument& document() { return document_; }
 
+  // Opens the most recently used device document, if it still exists;
+  // otherwise stays untitled. A device document is a staging area for
+  // one physical device, so launching back into it is the common case.
+  void OpenLastDocument();
+
   void paint(juce::Graphics& g) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
@@ -150,6 +155,7 @@ private:
   // Which of the device's kits the grid is editing.
   juce::ComboBox kit_selector_;
   std::unique_ptr<juce::FileChooser> import_chooser_;
+  std::unique_ptr<juce::FileChooser> open_chooser_;
   juce::Label name_label_;
   SampleBrowser browser_;
   std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;
