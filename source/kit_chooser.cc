@@ -150,8 +150,8 @@ void KitChooser::resized()
   number_area_ = inner.removeFromLeft(28);
   triangle_area_ =
       inner.removeFromRight(16).withSizeKeepingCentre(10, 6);
-  pencil_.setBounds(inner.removeFromRight(22).reduced(1));
-  inner.removeFromRight(2);
+  pencil_.setBounds(inner.removeFromLeft(22).reduced(1));
+  inner.removeFromLeft(2);
   name_label_.setBounds(inner);
 }
 
