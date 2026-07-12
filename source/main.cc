@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -27,7 +28,6 @@ public:
       menu.addCommandItem(&commands_, commands::kFileNew);
       menu.addCommandItem(&commands_, commands::kFileOpen);
       menu.addSeparator();
-      menu.addCommandItem(&commands_, commands::kFileSave);
       menu.addCommandItem(&commands_, commands::kFileSaveAs);
       menu.addSeparator();
       menu.addCommandItem(&commands_, commands::kImportKit);
@@ -110,8 +110,9 @@ public:
 
     window = std::make_unique<MainWindow>(content);
     // Pick up where the user left off — unless --load staged test
-    // samples that an auto-open would clobber.
-    if (args.isEmpty()) {
+    // samples that an auto-open would clobber, or a selftest is driving
+    // (it must not touch the real default document).
+    if (args.isEmpty() && std::getenv("SPDSX_SELFTEST") == nullptr) {
       content->OpenLastDocument();
     }
     // Menu items alone don't dispatch their shortcuts: command keypresses
@@ -129,21 +130,14 @@ public:
 #endif
   }
 
-  // Give the user a chance to save (or bail out) before quitting with
-  // unsaved changes.
+  // Everything autosaves; flush whatever the debounce hasn't written
+  // yet and go.
   void systemRequestedQuit() override
   {
-    if (content == nullptr) {
-      quit();
-      return;
+    if (content != nullptr) {
+      content->document().Autosave();
     }
-    content->document().saveIfNeededAndUserAgreesAsync(
-        [](juce::FileBasedDocument::SaveResult result)
-        {
-          if (result == juce::FileBasedDocument::savedOk) {
-            juce::JUCEApplication::quit();
-          }
-        });
+    quit();
   }
 
   void shutdown() override

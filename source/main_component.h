@@ -108,6 +108,9 @@ private:
   void SetDragTarget(int idx, bool whole_pad);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
+  // Every model mutation lands here: stamps the edit time so the timer
+  // can autosave once the edits go quiet.
+  void MarkEdited();
   // Rebuilds the header's kit selector from the device (the active
   // kit's name comes from the live model).
   void RefreshKitSelector();
@@ -163,7 +166,8 @@ private:
   int hovered_ = -1;
   bool could_undo_ = false;
   bool could_redo_ = false;
-  bool shown_dirty_ = false;
+  // When the last edit landed; the timer autosaves after a quiet spell.
+  juce::uint32 last_edit_ms_ = 0;
 };
 
 }  // namespace spdsx

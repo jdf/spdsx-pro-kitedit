@@ -11,7 +11,8 @@ enum : juce::CommandID {
   kRedo,
   kFileNew,
   kFileOpen,
-  kFileSave,
+  // No plain Save: every mutation autosaves. Save As relocates the
+  // document (and future autosaves with it).
   kFileSaveAs,
   kImportKit,
   kToggleBrowser,

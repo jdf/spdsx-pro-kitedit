@@ -55,6 +55,15 @@ public:
   // target existsAsFile(), which a folder document never satisfies.
   juce::Result OpenDevice(const juce::File& file);
 
+  // Creates a fresh device document at the given folder and saves it
+  // immediately, so autosave has a target from the first edit.
+  juce::Result CreateNew(const juce::File& folder);
+
+  // Writes straight back to the document's folder. There is no explicit
+  // save: callers flush after edits (debounced) and at quit. No-op
+  // while untitled (only --load test runs get into that state).
+  void Autosave();
+
 protected:
   juce::Result loadDocument(const juce::File& file) override;
   juce::Result saveDocument(const juce::File& file) override;

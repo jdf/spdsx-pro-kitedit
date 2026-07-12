@@ -252,6 +252,30 @@ juce::Result DeviceDocument::OpenDevice(const juce::File& chosen)
   return result;
 }
 
+juce::Result DeviceDocument::CreateNew(const juce::File& folder)
+{
+  device_.Reset();
+  LoadActiveKitIntoModel();
+  undo_.clearUndoHistory();
+  setFile(folder);
+  const auto result = saveDocument(folder);
+  if (result.wasOk()) {
+    setLastDocumentOpened(folder);
+    setChangedFlag(false);
+  }
+  return result;
+}
+
+void DeviceDocument::Autosave()
+{
+  if (getFile() == juce::File()) {
+    return;
+  }
+  if (saveDocument(getFile()).wasOk()) {
+    setChangedFlag(false);
+  }
+}
+
 juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
 {
   auto parsed = juce::JSON::parse(file.loadFileAsString());

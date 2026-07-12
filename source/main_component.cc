@@ -25,13 +25,14 @@ constexpr int kPadHeader = 20;
 constexpr int kSlotSpacing = 8;
 // How long a hit's velocity-coloured pad flash takes to fade.
 constexpr juce::uint32 kPadFlashMs = 400;
+// Edits autosave once they've been quiet this long.
+constexpr juce::uint32 kAutosaveQuietMs = 1000;
 
 const juce::Colour kWindowBg(0xff12161b);
 const juce::Colour kPadBg(0xff161b22);
 const juce::Colour kPadBorder(0xff242d38);
 const juce::Colour kPadLabel(0xff8a97a6);
 const juce::Colour kKitName(0xffe6edf5);
-const juce::Colour kDirtyDot(0xffd9a94f);
 
 }  // namespace
 
@@ -140,6 +141,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     const int index = kit_selector_.getSelectedId() - 1;
     if (index >= 0 && index != device_.current_kit()) {
       document_.SwitchKit(index);
+      MarkEdited();  // persists the new current kit
       RefreshDocumentState();
     }
   };
@@ -198,14 +200,23 @@ void MainComponent::OpenLastDocument()
 {
   const juce::File last(
       settings_.getUserSettings()->getValue("lastDeviceFile"));
-  if (last == juce::File() || !(last.isDirectory() || last.existsAsFile()))
+  if ((last.isDirectory() || last.existsAsFile())
+      && document_.OpenDevice(last).wasOk())
   {
-    return;  // never saved anything, or the document moved
-  }
-  if (document_.OpenDevice(last).wasOk()) {
     RefreshKitSelector();
     RefreshDocumentState();
+    return;
   }
+  // First launch (or the document moved): autosave needs a target from
+  // the very first edit, so live in a default document.
+  const auto fallback =
+      juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+          .getChildFile("SPD-SX PRO.spdsx");
+  if (!(fallback.isDirectory() && document_.OpenDevice(fallback).wasOk())) {
+    document_.CreateNew(fallback);
+  }
+  RefreshKitSelector();
+  RefreshDocumentState();
 }
 
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
@@ -216,9 +227,8 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
-      commands::kFileOpen, commands::kFileSave, commands::kFileSaveAs,
-      commands::kImportKit, commands::kToggleBrowser,
-      commands::kToggleAutoplay});
+      commands::kFileOpen, commands::kFileSaveAs, commands::kImportKit,
+      commands::kToggleBrowser, commands::kToggleAutoplay});
 }
 
 void MainComponent::getCommandInfo(
@@ -238,19 +248,17 @@ void MainComponent::getCommandInfo(
       info.setActive(undo_.canRedo());
       break;
     case commands::kFileNew:
-      info.setInfo("New Kit", "Start a fresh untitled kit", "File", 0);
+      info.setInfo(
+          "New Device...", "Create a fresh device document", "File", 0);
       info.addDefaultKeypress('n', juce::ModifierKeys::commandModifier);
       break;
     case commands::kFileOpen:
-      info.setInfo("Open...", "Open a .kit file", "File", 0);
+      info.setInfo("Open...", "Open a device document", "File", 0);
       info.addDefaultKeypress('o', juce::ModifierKeys::commandModifier);
       break;
-    case commands::kFileSave:
-      info.setInfo("Save", "Save the kit", "File", 0);
-      info.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
-      break;
     case commands::kFileSaveAs:
-      info.setInfo("Save As...", "Save the device to a new file", "File", 0);
+      info.setInfo("Save As...",
+          "Move the device document; autosaves follow it", "File", 0);
       info.addDefaultKeypress('s',
           juce::ModifierKeys::commandModifier
               | juce::ModifierKeys::shiftModifier);
@@ -285,50 +293,64 @@ bool MainComponent::perform(const InvocationInfo& info)
     case commands::kRedo:
       return undo_.redo();
     case commands::kFileNew:
-      document_.saveIfNeededAndUserAgreesAsync(
-          [this](juce::FileBasedDocument::SaveResult result)
+      // Nothing to prompt about — the current document is autosaved.
+      // A new device needs a home up front so autosave has a target.
+      document_.Autosave();
+      open_chooser_ = std::make_unique<juce::FileChooser>(
+          "Create a device",
+          juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+              .getChildFile("Untitled Device.spdsx"),
+          "*.spdsx");
+      open_chooser_->launchAsync(
+          juce::FileBrowserComponent::saveMode
+              | juce::FileBrowserComponent::canSelectFiles
+              | juce::FileBrowserComponent::warnAboutOverwriting,
+          [this](const juce::FileChooser& fc)
           {
-            if (result == juce::FileBasedDocument::savedOk) {
-              document_.ResetToUntitled();
-              RefreshKitSelector();
-              RefreshDocumentState();
+            auto file = fc.getResult();
+            if (file == juce::File()) {
+              return;
             }
+            if (auto r = document_.CreateNew(
+                    file.withFileExtension(".spdsx"));
+                r.failed())
+            {
+              juce::AlertWindow::showMessageBoxAsync(
+                  juce::MessageBoxIconType::WarningIcon, "Create a device",
+                  r.getErrorMessage());
+            }
+            RefreshKitSelector();
+            RefreshDocumentState();
           });
       return true;
     case commands::kFileOpen:
-      document_.saveIfNeededAndUserAgreesAsync(
-          [this](juce::FileBasedDocument::SaveResult result)
+      // Our own chooser: FileBasedDocument's open path refuses folder
+      // documents (see DeviceDocument::OpenDevice). Directories stay
+      // selectable for unregistered packages.
+      document_.Autosave();
+      open_chooser_ = std::make_unique<juce::FileChooser>(
+          "Open a device",
+          juce::File(
+              settings_.getUserSettings()->getValue("lastDeviceFile"))
+              .getParentDirectory(),
+          "*.spdsx;device.json");
+      open_chooser_->launchAsync(
+          juce::FileBrowserComponent::openMode
+              | juce::FileBrowserComponent::canSelectFiles
+              | juce::FileBrowserComponent::canSelectDirectories,
+          [this](const juce::FileChooser& fc)
           {
-            if (result != juce::FileBasedDocument::savedOk) {
+            const auto file = fc.getResult();
+            if (file == juce::File()) {
               return;
             }
-            // Our own chooser: FileBasedDocument's open path refuses
-            // folder documents (see DeviceDocument::OpenDevice).
-            // Directories stay selectable for unregistered packages.
-            open_chooser_ = std::make_unique<juce::FileChooser>(
-                "Open a device",
-                juce::File(
-                    settings_.getUserSettings()->getValue("lastDeviceFile"))
-                    .getParentDirectory(),
-                "*.spdsx;device.json");
-            open_chooser_->launchAsync(
-                juce::FileBrowserComponent::openMode
-                    | juce::FileBrowserComponent::canSelectFiles
-                    | juce::FileBrowserComponent::canSelectDirectories,
-                [this](const juce::FileChooser& fc)
-                {
-                  const auto file = fc.getResult();
-                  if (file == juce::File()) {
-                    return;
-                  }
-                  if (auto r = document_.OpenDevice(file); r.failed()) {
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Open a device", r.getErrorMessage());
-                  }
-                  RefreshKitSelector();
-                  RefreshDocumentState();
-                });
+            if (auto r = document_.OpenDevice(file); r.failed()) {
+              juce::AlertWindow::showMessageBoxAsync(
+                  juce::MessageBoxIconType::WarningIcon, "Open a device",
+                  r.getErrorMessage());
+            }
+            RefreshKitSelector();
+            RefreshDocumentState();
           });
       return true;
     case commands::kImportKit:
@@ -353,11 +375,6 @@ bool MainComponent::perform(const InvocationInfo& info)
               RefreshDocumentState();
             }
           });
-      return true;
-    case commands::kFileSave:
-      document_.saveAsync(true, true,
-          [this](juce::FileBasedDocument::SaveResult)
-          { RefreshDocumentState(); });
       return true;
     case commands::kFileSaveAs:
       document_.saveAsInteractiveAsync(true,
@@ -392,17 +409,15 @@ void MainComponent::SetBrowserVisible(bool visible)
   repaint();
 }
 
-// Window title carries the device, the active kit, and an Edited
-// marker; the header dot repaints with it.
+// Window title carries the device and the active kit. No dirty state:
+// every edit autosaves.
 void MainComponent::RefreshDocumentState()
 {
-  shown_dirty_ = document_.hasChangedSinceSaved();
   if (auto* window =
           dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent()))
   {
     window->setName(document_.getDocumentTitle() + " \xe2\x80\x94 "
-        + juce::String(device_.current_kit() + 1) + ": " + model_.name()
-        + (shown_dirty_ ? " \xe2\x80\x94 Edited" : ""));
+        + juce::String(device_.current_kit() + 1) + ": " + model_.name());
   }
   // Loads and kit switches can change every widget in the header.
   name_label_.setText(model_.name(), juce::dontSendNotification);
@@ -422,6 +437,12 @@ void MainComponent::RefreshKitSelector()
       device_.current_kit() + 1, juce::dontSendNotification);
 }
 
+void MainComponent::MarkEdited()
+{
+  last_edit_ms_ = juce::Time::getMillisecondCounter();
+  document_.changed();
+}
+
 void MainComponent::KitNameChanged()
 {
   name_label_.setText(model_.name(), juce::dontSendNotification);
@@ -429,7 +450,7 @@ void MainComponent::KitNameChanged()
     kit_selector_.changeItemText(device_.current_kit() + 1,
         juce::String(device_.current_kit() + 1) + "  " + model_.name());
   }
-  document_.changed();
+  MarkEdited();
   RefreshDocumentState();
 }
 
@@ -439,7 +460,7 @@ void MainComponent::KitNameChanged()
 // idx = pad * 2 + layer.
 void MainComponent::SampleChanged(int pad, int layer)
 {
-  document_.changed();
+  MarkEdited();
   const int idx = pad * KitModel::kLayersPerPad + layer;
   const auto& file = model_.sample(pad, layer);
   auto& slot = *slots_[static_cast<size_t>(idx)];
@@ -472,14 +493,6 @@ void MainComponent::SampleChanged(int pad, int layer)
 void MainComponent::paint(juce::Graphics& g)
 {
   g.fillAll(kWindowBg);
-
-  // Dirty indicator: a dot in the header (the title bar also carries an
-  // "Edited" marker).
-  if (document_.hasChangedSinceSaved()) {
-    g.setColour(kDirtyDot);
-    g.fillEllipse(static_cast<float>(getWidth()) - 26.0f,
-        kHeaderHeight / 2.0f - 4.0f, 8.0f, 8.0f);
-  }
 
   const auto now = juce::Time::getMillisecondCounter();
   for (int r = 0; r < 3; ++r) {
@@ -858,7 +871,7 @@ void MainComponent::UpdatePadWidgets(int pad)
 
 void MainComponent::PadParamsChanged(int pad)
 {
-  document_.changed();
+  MarkEdited();
   UpdatePadWidgets(pad);
 }
 
@@ -955,9 +968,13 @@ void MainComponent::timerCallback()
     commands_.commandStatusChanged();
   }
 
-  // Dirty state changes on async save completions too; poll it.
-  if (document_.hasChangedSinceSaved() != shown_dirty_) {
-    RefreshDocumentState();
+  // Autosave once edits have gone quiet; every mutation is persisted,
+  // there is no explicit save.
+  if (document_.hasChangedSinceSaved()
+      && juce::Time::getMillisecondCounter() - last_edit_ms_
+          >= kAutosaveQuietMs)
+  {
+    document_.Autosave();
   }
 
   // Focus follows the mouse. Polled rather than event-driven: the
