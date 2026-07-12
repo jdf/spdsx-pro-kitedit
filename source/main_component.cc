@@ -32,7 +32,6 @@ const juce::Colour kWindowBg(0xff12161b);
 const juce::Colour kPadBg(0xff161b22);
 const juce::Colour kPadBorder(0xff242d38);
 const juce::Colour kPadLabel(0xff8a97a6);
-const juce::Colour kKitName(0xffe6edf5);
 
 }  // namespace
 
@@ -134,39 +133,27 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   velocity_caption_.setColour(juce::Label::textColourId, kPadLabel);
   velocity_caption_.setJustificationType(juce::Justification::centredRight);
   addAndMakeVisible(velocity_caption_);
-  // Which kit the grid edits; switching stashes the old kit and loads
-  // the new one.
-  kit_selector_.onChange = [this]
+  // The unified kit control: arrows and menu switch kits (stashing the
+  // old one), the pencil renames in place.
+  kit_chooser_.kit_name = [this](int i)
   {
-    const int index = kit_selector_.getSelectedId() - 1;
-    if (index >= 0 && index != device_.current_kit()) {
+    return i == device_.current_kit() ? model_.name()
+                                      : device_.kit(i).name;
+  };
+  kit_chooser_.on_select = [this](int index)
+  {
+    if (index != device_.current_kit()) {
       document_.SwitchKit(index);
       MarkEdited();  // persists the new current kit
+      RefreshKitSelector();
       RefreshDocumentState();
     }
   };
-  addAndMakeVisible(kit_selector_);
+  kit_chooser_.on_rename = [this](const juce::String& name)
+  { model_.set_name(name); };
+  addAndMakeVisible(kit_chooser_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
-  // The kit name, click-to-edit in place.
-  name_label_.setText(model_.name(), juce::dontSendNotification);
-  name_label_.setFont(juce::Font(juce::FontOptions(17.0f)).boldened());
-  name_label_.setColour(juce::Label::textColourId, kKitName);
-  name_label_.setJustificationType(juce::Justification::centred);
-  name_label_.setEditable(true, false, false);
-  name_label_.onTextChange = [this]
-  {
-    auto text = name_label_.getText().trim();
-    if (text.isEmpty()) {
-      name_label_.setText(model_.name(), juce::dontSendNotification);
-    } else {
-      model_.set_name(text);
-    }
-  };
-  // Hand the keyboard back to the grid when editing ends, so the
-  // spacebar keeps working.
-  name_label_.onEditorHide = [this] { grabKeyboardFocus(); };
-  addAndMakeVisible(name_label_);
 
   model_.AddListener(this);
   // Start as a fresh untitled device, so the model reflects kit 1 and
@@ -420,21 +407,13 @@ void MainComponent::RefreshDocumentState()
         + juce::String(device_.current_kit() + 1) + ": " + model_.name());
   }
   // Loads and kit switches can change every widget in the header.
-  name_label_.setText(model_.name(), juce::dontSendNotification);
+  kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   repaint(0, 0, getWidth(), kHeaderHeight);
 }
 
 void MainComponent::RefreshKitSelector()
 {
-  kit_selector_.clear(juce::dontSendNotification);
-  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
-    const auto& name = i == device_.current_kit()
-        ? model_.name()
-        : device_.kit(i).name;
-    kit_selector_.addItem(juce::String(i + 1) + "  " + name, i + 1);
-  }
-  kit_selector_.setSelectedId(
-      device_.current_kit() + 1, juce::dontSendNotification);
+  kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
 }
 
 void MainComponent::MarkEdited()
@@ -445,11 +424,7 @@ void MainComponent::MarkEdited()
 
 void MainComponent::KitNameChanged()
 {
-  name_label_.setText(model_.name(), juce::dontSendNotification);
-  if (kit_selector_.getNumItems() > 0) {
-    kit_selector_.changeItemText(device_.current_kit() + 1,
-        juce::String(device_.current_kit() + 1) + "  " + model_.name());
-  }
+  kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   MarkEdited();
   RefreshDocumentState();
 }
@@ -550,14 +525,12 @@ juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const
 
 void MainComponent::resized()
 {
-  name_label_.setBounds(getLocalBounds()
+  // The kit chooser owns the header centre; the velocity control sits
+  // at the right edge.
+  kit_chooser_.setBounds(getLocalBounds()
           .removeFromTop(kHeaderHeight)
           .withSizeKeepingCentre(
-              juce::jmin(420, getWidth() - 120), 26));
-  // Kit selector at the header's left edge, velocity control at the
-  // right, clear of the dirty dot.
-  kit_selector_.setBounds(juce::Rectangle<int>(12, 0, 190, kHeaderHeight)
-          .withSizeKeepingCentre(190, 24));
+              juce::jmin(500, getWidth() - 2 * 200), 28));
   auto vel = juce::Rectangle<int>(getWidth() - 178, 0, 140, kHeaderHeight)
                  .withSizeKeepingCentre(140, 20);
   velocity_caption_.setBounds(vel.removeFromLeft(34));

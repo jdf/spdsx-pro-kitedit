@@ -14,6 +14,7 @@
 #include "audio.h"
 #include "device_document.h"
 #include "device_model.h"
+#include "kit_chooser.h"
 #include "kit_model.h"
 #include "sample_browser.h"
 #include "sample_slot.h"
@@ -111,8 +112,7 @@ private:
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
-  // Rebuilds the header's kit selector from the device (the active
-  // kit's name comes from the live model).
+  // Syncs the header's kit chooser with the active kit and its name.
   void RefreshKitSelector();
   void timerCallback() override;
   juce::Rectangle<int> GridArea() const;
@@ -155,11 +155,10 @@ private:
   // Velocity used by keyboard pad triggers (keys 1-9).
   juce::Slider velocity_slider_;
   juce::Label velocity_caption_;
-  // Which of the device's kits the grid is editing.
-  juce::ComboBox kit_selector_;
+  // The unified kit control: arrows, kit menu, in-place rename.
+  KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;
   std::unique_ptr<juce::FileChooser> open_chooser_;
-  juce::Label name_label_;
   SampleBrowser browser_;
   std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;
   bool browser_visible_ = true;
