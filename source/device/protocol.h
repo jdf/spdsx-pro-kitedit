@@ -78,7 +78,24 @@ inline constexpr uint8_t kBankSamples = 0x20;
 inline constexpr uint8_t kBankMeta = 0x30;
 inline constexpr uint8_t kBankConfig = 0x40;
 
-// Bulk-read (stream-a-bank) request, from capture:
+// A bulk-transfer request on the 41 6c family:
+//   f0 41 6c 03 <sub> 00 00 00 00 <bank> 00 00 <arg LE32> f7
+// Sub-commands (decoded from the official app's load, 2026-07-12):
+//   0x05 PREPARE a bank — the 6c 7a ack carries the bank's size
+//   0x00 BEGIN reading the bank
+//   0x02 READ a chunk — device streams a batch of 6c 02 data blocks;
+//        arg 0x24 requests the next standard chunk
+//   0x01 END reading the bank
+inline constexpr uint8_t kBulkPrepare = 0x05;
+inline constexpr uint8_t kBulkBegin = 0x00;
+inline constexpr uint8_t kBulkRead = 0x02;
+inline constexpr uint8_t kBulkEnd = 0x01;
+// The arg the app sends to pull the next standard chunk.
+inline constexpr uint32_t kBulkNextChunk = 0x24;
+
+Bytes BulkRequest(uint8_t sub, uint8_t bank, uint32_t arg);
+
+// PREPARE request for a bank (kept for the selftest's byte-exact check):
 //   f0 41 6c 03 05 00 00 00 00 <bank> 00 00 00 00 00 00 f7
 Bytes BulkReadRequest(uint8_t bank);
 

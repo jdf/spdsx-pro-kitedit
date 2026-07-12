@@ -65,9 +65,12 @@ class SpdsxDevice {
   // fires per block (for progress). NOTE: the request/streaming protocol is
   // reconstructed from captures but has NOT been driven live yet.
   Bytes DumpBank(uint8_t bank, const BlockCallback& on_block = {},
-      double idle_timeout = 2.0, double block_timeout = 15.0);
+      double idle_timeout = 1.0, double block_timeout = 15.0);
 
  private:
+  // Reads one transport frame's payload; empty on idle/malformed.
+  Bytes ReadBulkFrame(double idle_timeout, double body_timeout);
+
   SerialPort port_;
 };
 

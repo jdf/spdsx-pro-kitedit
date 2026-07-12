@@ -146,33 +146,59 @@ void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
+Bytes SpdsxDevice::ReadBulkFrame(double idle_timeout, double body_timeout) {
+  // Short wait for the frame header (its absence means the device has
+  // gone idle), then a longer wait for a possibly ~64KB body.
+  const Bytes hdr = port_.ReadExact(kFrameHeaderSize, idle_timeout);
+  if (hdr.size() < kFrameHeaderSize) {
+    return {};
+  }
+  const uint32_t len = static_cast<uint32_t>(hdr[16])
+      | (static_cast<uint32_t>(hdr[17]) << 8)
+      | (static_cast<uint32_t>(hdr[18]) << 16)
+      | (static_cast<uint32_t>(hdr[19]) << 24);
+  if (len == 0 || len > kMaxBulkFrameLen) {
+    return {};
+  }
+  return port_.ReadExact(len, body_timeout);
+}
+
 Bytes SpdsxDevice::DumpBank(uint8_t bank, const BlockCallback& on_block,
     double idle_timeout, double block_timeout) {
-  port_.Write(Wrap(BulkReadRequest(bank)));
+  // The official app's load handshake (decoded 2026-07-12): PREPARE every
+  // bank, then BEGIN -> repeated READ (each yields a batch of 6c 02 data
+  // blocks, the device advancing its own cursor) -> END. We loop READ
+  // until a request yields no blocks rather than pre-computing offsets.
+  for (uint8_t b : {kBankKits, kBankSamples, kBankMeta, kBankConfig}) {
+    Command(BulkRequest(kBulkPrepare, b, 0));  // reply: 6c 7a size ack
+  }
+  Command(BulkRequest(kBulkBegin, bank, 0));  // reply: 6c 7a
+
   Bytes image;
-  for (;;) {
-    // A short wait for the next block's header (its absence ends the
-    // stream), then a longer one for the ~64KB body.
-    const Bytes hdr = port_.ReadExact(kFrameHeaderSize, idle_timeout);
-    if (hdr.size() < kFrameHeaderSize) {
-      break;  // silence: bank finished streaming
+  constexpr int kMaxChunks = 4096;  // safety cap against a stuck loop
+  for (int chunk = 0; chunk < kMaxChunks; ++chunk) {
+    port_.Write(Wrap(BulkRequest(kBulkRead, bank, kBulkNextChunk)));
+    int blocks_this_chunk = 0;
+    for (;;) {
+      const Bytes payload = ReadBulkFrame(idle_timeout, block_timeout);
+      if (payload.size() < 4 || payload[1] != 0x41 || payload[2] != 0x6C) {
+        break;  // idle or a non-bulk frame ends this batch
+      }
+      if (payload[3] != 0x02) {
+        break;  // 6c 7a (or other) — end of this batch's data
+      }
+      image.insert(image.end(), payload.begin(), payload.end());
+      if (on_block) {
+        on_block(payload);
+      }
+      ++blocks_this_chunk;
     }
-    const uint32_t len = static_cast<uint32_t>(hdr[16])
-        | (static_cast<uint32_t>(hdr[17]) << 8)
-        | (static_cast<uint32_t>(hdr[18]) << 16)
-        | (static_cast<uint32_t>(hdr[19]) << 24);
-    if (len == 0 || len > kMaxBulkFrameLen) {
-      break;  // not a block frame we understand
-    }
-    const Bytes payload = port_.ReadExact(len, block_timeout);
-    if (payload.size() < 4 || payload[2] != 0x6C || payload[3] != 0x02) {
-      continue;  // interleaved control frame; ignore
-    }
-    image.insert(image.end(), payload.begin(), payload.end());
-    if (on_block) {
-      on_block(payload);
+    if (blocks_this_chunk == 0) {
+      break;  // bank exhausted
     }
   }
+
+  Command(BulkRequest(kBulkEnd, bank, 0));  // reply: 6c 7a
   return image;
 }
 
