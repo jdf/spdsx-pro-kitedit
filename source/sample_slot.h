@@ -25,9 +25,10 @@ public:
   std::function<void(int)> on_click;
   // A transport button was pressed.
   std::function<void(int, TransportAction)> on_transport;
-  // A sample was dragged from slot `from` onto this slot; copy=true
-  // duplicates (option-drag), false moves.
-  std::function<void(int from, int to, bool copy)> on_slot_move;
+  // A sample was dragged from slot `from` onto this slot. copy duplicates
+  // (option); whole_pad moves/copies both layers of the pad (command).
+  std::function<void(int from, int to, bool copy, bool whole_pad)>
+      on_slot_move;
 
   void SetSample(const juce::String& name,
       double duration_seconds,

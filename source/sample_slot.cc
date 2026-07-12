@@ -402,9 +402,10 @@ void SampleSlot::itemDropped(const SourceDetails& details)
   }
   const int from = DraggedSlotIndex(details);
   if (from >= 0 && from != index_ && on_slot_move) {
-    // Option-drag duplicates; a plain drag moves.
-    const bool copy = juce::ModifierKeys::getCurrentModifiers().isAltDown();
-    on_slot_move(from, index_, copy);
+    // Option duplicates instead of moving; command acts on the whole pad
+    // (both layers) instead of the single slot.
+    const auto mods = juce::ModifierKeys::getCurrentModifiers();
+    on_slot_move(from, index_, mods.isAltDown(), mods.isCommandDown());
   }
 }
 

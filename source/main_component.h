@@ -69,6 +69,8 @@ private:
   // Moves (or, when copy=true, duplicates) a slot's sample to another
   // slot as a single undoable action.
   void MoveSample(int from, int to, bool copy);
+  // Same, but both layers of a whole pad (command-drag).
+  void MovePad(int from_pad, int to_pad, bool copy);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
   void timerCallback() override;

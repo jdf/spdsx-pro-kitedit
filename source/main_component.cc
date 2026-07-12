@@ -62,8 +62,15 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     slot.on_click = [this](int idx) { TriggerSlot(idx); };
     slot.on_transport = [this](int idx, TransportAction action)
     { ApplyTransportAction(idx, action); };
-    slot.on_slot_move = [this](int from, int to, bool copy)
-    { MoveSample(from, to, copy); };
+    slot.on_slot_move = [this](int from, int to, bool copy, bool whole_pad)
+    {
+      if (whole_pad) {
+        MovePad(from / KitModel::kLayersPerPad, to / KitModel::kLayersPerPad,
+            copy);
+      } else {
+        MoveSample(from, to, copy);
+      }
+    };
     addAndMakeVisible(slot);
   }
   browser_.on_preview = [this](const juce::File& file)
@@ -431,6 +438,23 @@ void MainComponent::MoveSample(int from, int to, bool copy)
   if (!copy) {
     undo_.perform(new SetSampleAction(model_, from / KitModel::kLayersPerPad,
         from % KitModel::kLayersPerPad, juce::File()));
+  }
+}
+
+void MainComponent::MovePad(int from_pad, int to_pad, bool copy)
+{
+  if (from_pad == to_pad || from_pad < 0 || to_pad < 0) {
+    return;
+  }
+  // Copy up front so the source-clears below can't invalidate them.
+  const juce::File top = model_.sample(from_pad, 0);
+  const juce::File bottom = model_.sample(from_pad, 1);
+  undo_.beginNewTransaction(copy ? "Duplicate pad" : "Move pad");
+  undo_.perform(new SetSampleAction(model_, to_pad, 0, top));
+  undo_.perform(new SetSampleAction(model_, to_pad, 1, bottom));
+  if (!copy) {
+    undo_.perform(new SetSampleAction(model_, from_pad, 0, juce::File()));
+    undo_.perform(new SetSampleAction(model_, from_pad, 1, juce::File()));
   }
 }
 
