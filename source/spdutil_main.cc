@@ -9,6 +9,8 @@
 //               --verify an existing image's block structure offline
 //   kits        list every kit name (live dump of bank 0x10, or --from
 //               a saved dump file)
+//   samples     list the device wave pool from the bank 0x20 sample
+//               directory (live or --from); metadata only, no audio
 //   padlink     put triggers/pads into a pad-link group across kits
 //   selftest    offline byte-exact message checks (no device needed)
 //
@@ -37,6 +39,7 @@
 
 #include "device/kit_image.h"
 #include "device/protocol.h"
+#include "device/sample_image.h"
 #include "device/spdsx_device.h"
 
 namespace {
@@ -283,6 +286,42 @@ int RunSelfTest() {
     }
   }
 
+  std::printf("\n--- sample directory parse ---\n");
+  {
+    // A synthetic clean image: junk, then a directory whose record 1
+    // anchors on "PRELOAD 00001". Records 2 and 4 named, 3 empty.
+    const size_t stride = spdsx::device::kSampleRecordStride;
+    Bytes img(64 + stride * 6, 0x20);
+    const size_t base = 64;
+    auto put = [&](int idx, const char* wavename, const char* filename,
+                   uint32_t frames, uint32_t category) {
+      const size_t rec = base + static_cast<size_t>(idx) * stride;
+      std::memcpy(&img[rec], wavename, std::strlen(wavename));
+      std::memcpy(&img[rec + 0x10], filename, std::strlen(filename));
+      for (int b = 0; b < 4; ++b) {
+        img[rec + 0x94 + static_cast<size_t>(b)] =
+            static_cast<uint8_t>(frames >> (8 * b));
+        img[rec + 0xa0 + static_cast<size_t>(b)] =
+            static_cast<uint8_t>(category >> (8 * b));
+      }
+    };
+    put(1, "Solid K", "PRELOAD 00001", 56773, 1);
+    put(2, "Warm K", "PRELOAD 00002", 76712, 1);
+    put(4, "Bongo_Hi_CR78", "Bongo_Hi_CR78.wav", 11111, 15);
+    const auto dir = spdsx::device::ParseSampleDir(img);
+    const bool dir_ok = dir.size() == 3 && dir[0].index == 1
+        && dir[0].wavename == "Solid K" && dir[0].frames == 56773
+        && dir[1].index == 2 && dir[2].index == 4
+        && dir[2].filename == "Bongo_Hi_CR78.wav" && dir[2].category == 15
+        && spdsx::device::SampleCategoryName(dir[2].category)
+            == "Percussion";
+    all_ok = all_ok && dir_ok;
+    std::printf("%-8s sample dir: %zu records, [0]=%s [2]=%s\n",
+        dir_ok ? "OK" : "FAIL", dir.size(),
+        dir.empty() ? "?" : dir[0].wavename.c_str(),
+        dir.size() < 3 ? "?" : dir[2].wavename.c_str());
+  }
+
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
   return all_ok ? 0 : 1;
 }
@@ -354,6 +393,8 @@ int Usage() {
       "                --verify FILE    offline: report a file's blocks\n"
       "  kits        list all kit names (live, or --from <dump file>)\n"
       "  kit <N>     show kit N's pad params (live, or --from <dump>)\n"
+      "  samples     list the device wave pool (live, or --from <dump>;\n"
+      "              directory only — the dump carries no audio)\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -517,6 +558,31 @@ int RunKits(const std::string& port_arg, const std::string& from_path) {
     std::printf("  %3zu  %s\n", i + 1, kits[i].name.c_str());
   }
   return kits.empty() ? 1 : 0;
+}
+
+int RunSamples(const std::string& port_arg, const std::string& from_path) {
+  Bytes raw;
+  if (!from_path.empty()) {
+    raw = ReadFile(from_path);
+  } else {
+    const std::string port = ResolvePort(port_arg);
+    spdsx::device::SpdsxDevice dev(port);
+    std::printf("opened %s, streaming bank 0x20...\n", port.c_str());
+    raw = dev.DumpBank(spdsx::device::kBankSamples);
+  }
+  const Bytes clean = spdsx::device::CleanBulkImage(raw);
+  const auto samples = spdsx::device::ParseSampleDir(clean);
+  std::printf("%zu raw bytes -> %zu clean bytes -> %zu samples\n",
+      raw.size(), clean.size(), samples.size());
+  std::printf("%6s  %-16s  %-16s  %8s  %s\n", "index", "wavename",
+      "category", "seconds", "filename");
+  for (const auto& s : samples) {
+    const auto cat = spdsx::device::SampleCategoryName(s.category);
+    std::printf("%6d  %-16s  %-16.*s  %8.2f  %s\n", s.index,
+        s.wavename.c_str(), static_cast<int>(cat.size()), cat.data(),
+        static_cast<double>(s.frames) / 48000.0, s.filename.c_str());
+  }
+  return samples.empty() ? 1 : 0;
 }
 
 const char* kModeNames[] = {"MIX", "FADE1", "FADE2", "XFADE", "SWITCH",
@@ -726,6 +792,9 @@ int main(int argc, char** argv) {
     }
     if (command == "kits") {
       return RunKits(port, from_path);
+    }
+    if (command == "samples") {
+      return RunSamples(port, from_path);
     }
     if (command == "kit") {
       return RunKit(port, from_path, kit_arg);

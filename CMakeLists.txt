@@ -108,6 +108,7 @@ target_link_libraries(spdsx-patchedit PRIVATE
 # separate so it stays testable and could move to its own project later.
 add_library(spdsx_device STATIC
     source/device/kit_image.cc
+    source/device/sample_image.cc
     source/device/protocol.cc
     source/device/serial_port.cc
     source/device/spdsx_device.cc
