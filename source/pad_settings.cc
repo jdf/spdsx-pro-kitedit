@@ -11,6 +11,7 @@ constexpr int kPadding = 12;
 constexpr int kRowHeight = 24;
 constexpr int kRowGap = 6;
 constexpr int kKnobHeight = 78;
+constexpr int kLabelWidth = 60;
 
 }  // namespace
 
@@ -28,7 +29,10 @@ PadSettingsPanel::PadSettingsPanel()
     curve_.addItem(juce::String(name.data(), name.size()), c + 1);
   }
   curve_.onChange = [this] { Push(); };
-  curve_label_.attachToComponent(&curve_, true);
+  // Flush-left labels, nudged to line up with the checkbox squares
+  // (the LookAndFeel draws those at a small inset).
+  curve_label_.setBorderSize(juce::BorderSize<int>(0, 4, 0, 0));
+  addAndMakeVisible(curve_label_);
   addAndMakeVisible(curve_);
 
   velocity_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -37,6 +41,7 @@ PadSettingsPanel::PadSettingsPanel()
   velocity_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 18);
   velocity_.setTextBoxIsEditable(true);
   velocity_.onValueChange = [this] { Push(); };
+  velocity_label_.setBorderSize(juce::BorderSize<int>(0, 4, 0, 0));
   addAndMakeVisible(velocity_label_);
   addAndMakeVisible(velocity_);
 
@@ -63,12 +68,14 @@ void PadSettingsPanel::resized()
   auto area = getLocalBounds().reduced(kPadding);
   dynamics_.setBounds(area.removeFromTop(kRowHeight));
   area.removeFromTop(kRowGap);
-  // Room on the left for the attached "Curve" label.
-  curve_.setBounds(
-      area.removeFromTop(kRowHeight).withTrimmedLeft(kPanelWidth / 3));
+  auto curve_row = area.removeFromTop(kRowHeight);
+  curve_label_.setBounds(curve_row.removeFromLeft(kLabelWidth));
+  curve_.setBounds(curve_row);
   area.removeFromTop(kRowGap);
+  // Knob on the left, aligned with the other controls; its label
+  // follows on the right, vertically centred on the knob.
   auto knob_row = area.removeFromTop(kKnobHeight);
-  velocity_.setBounds(knob_row.removeFromRight(84));
+  velocity_.setBounds(knob_row.removeFromLeft(84));
   velocity_label_.setBounds(knob_row.withHeight(kRowHeight)
           .withY(knob_row.getY() + (kKnobHeight - kRowHeight) / 2));
   area.removeFromTop(kRowGap);
