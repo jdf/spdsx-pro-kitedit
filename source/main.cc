@@ -108,6 +108,9 @@ public:
 
     window = std::make_unique<MainWindow>(content);
     menu = std::make_unique<MainMenu>(command_manager);
+    // Without this, the menu bar never refreshes on commandStatusChanged(),
+    // so Undo/Redo (and the View ticks) keep their stale enabled state.
+    menu->setApplicationCommandManagerToWatch(&command_manager);
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu(menu.get());
 #else
