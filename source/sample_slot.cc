@@ -57,6 +57,13 @@ int DraggedSlotIndex(const juce::DragAndDropTarget::SourceDetails& details)
       : -1;
 }
 
+// A slot-to-slot drag with command held targets the whole pad (both layers).
+bool WholePadDrag(const juce::DragAndDropTarget::SourceDetails& details)
+{
+  return DraggedSlotIndex(details) >= 0
+      && juce::ModifierKeys::getCurrentModifiers().isCommandDown();
+}
+
 juce::String FormatMeta(double duration_seconds, double sample_rate)
 {
   juce::String duration;
@@ -348,22 +355,33 @@ bool SampleSlot::isInterestedInFileDrag(const juce::StringArray& files)
   return files.size() == 1 && LooksLikeAudio(files[0]);
 }
 
+void SampleSlot::set_drag_hover(bool on)
+{
+  if (drag_hover_ != on) {
+    drag_hover_ = on;
+    repaint();
+  }
+}
+
 void SampleSlot::fileDragEnter(const juce::StringArray&, int, int)
 {
-  drag_hover_ = true;
-  repaint();
+  if (on_drag_target) {
+    on_drag_target(index_, false);
+  }
 }
 
 void SampleSlot::fileDragExit(const juce::StringArray&)
 {
-  drag_hover_ = false;
-  repaint();
+  if (on_drag_target) {
+    on_drag_target(-1, false);
+  }
 }
 
 void SampleSlot::filesDropped(const juce::StringArray& files, int, int)
 {
-  drag_hover_ = false;
-  repaint();
+  if (on_drag_target) {
+    on_drag_target(-1, false);
+  }
   if (on_drop) {
     on_drop(index_, juce::File(files[0]));
   }
@@ -378,22 +396,33 @@ bool SampleSlot::isInterestedInDragSource(const SourceDetails& details)
   return from >= 0 && from != index_;
 }
 
-void SampleSlot::itemDragEnter(const SourceDetails&)
+void SampleSlot::itemDragEnter(const SourceDetails& details)
 {
-  drag_hover_ = true;
-  repaint();
+  if (on_drag_target) {
+    on_drag_target(index_, WholePadDrag(details));
+  }
+}
+
+void SampleSlot::itemDragMove(const SourceDetails& details)
+{
+  // Re-report so a command press/release mid-hover updates the highlight.
+  if (on_drag_target) {
+    on_drag_target(index_, WholePadDrag(details));
+  }
 }
 
 void SampleSlot::itemDragExit(const SourceDetails&)
 {
-  drag_hover_ = false;
-  repaint();
+  if (on_drag_target) {
+    on_drag_target(-1, false);
+  }
 }
 
 void SampleSlot::itemDropped(const SourceDetails& details)
 {
-  drag_hover_ = false;
-  repaint();
+  if (on_drag_target) {
+    on_drag_target(-1, false);
+  }
   if (auto file = DraggedBrowserFile(details);
       file != juce::File() && on_drop)
   {

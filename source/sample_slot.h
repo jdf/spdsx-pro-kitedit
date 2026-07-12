@@ -29,6 +29,14 @@ public:
   // (option); whole_pad moves/copies both layers of the pad (command).
   std::function<void(int from, int to, bool copy, bool whole_pad)>
       on_slot_move;
+  // The drag target under the cursor changed: idx is the hovered slot
+  // (-1 = none), whole_pad true when the drop would affect both layers.
+  // The parent highlights the right slot(s).
+  std::function<void(int idx, bool whole_pad)> on_drag_target;
+
+  // Sets the drag-hover highlight; driven by the parent so a whole-pad
+  // drag can light both layers.
+  void set_drag_hover(bool on);
 
   void SetSample(const juce::String& name,
       double duration_seconds,
@@ -69,9 +77,10 @@ public:
   void fileDragExit(const juce::StringArray&) override;
   void filesDropped(const juce::StringArray& files, int, int) override;
 
-  // Internal drags (the sample browser panel).
+  // Internal drags (the sample browser panel, and slot-to-slot).
   bool isInterestedInDragSource(const SourceDetails& details) override;
   void itemDragEnter(const SourceDetails&) override;
+  void itemDragMove(const SourceDetails&) override;
   void itemDragExit(const SourceDetails&) override;
   void itemDropped(const SourceDetails& details) override;
 

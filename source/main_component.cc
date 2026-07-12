@@ -71,6 +71,8 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
         MoveSample(from, to, copy);
       }
     };
+    slot.on_drag_target = [this](int idx, bool whole_pad)
+    { SetDragTarget(idx, whole_pad); };
     addAndMakeVisible(slot);
   }
   browser_.on_preview = [this](const juce::File& file)
@@ -455,6 +457,16 @@ void MainComponent::MovePad(int from_pad, int to_pad, bool copy)
   if (!copy) {
     undo_.perform(new SetSampleAction(model_, from_pad, 0, juce::File()));
     undo_.perform(new SetSampleAction(model_, from_pad, 1, juce::File()));
+  }
+}
+
+void MainComponent::SetDragTarget(int idx, bool whole_pad)
+{
+  // idx ^ 1 flips the layer bit, giving the other slot of the same pad.
+  for (int i = 0; i < kSlotCount; ++i) {
+    const bool on =
+        idx >= 0 && (i == idx || (whole_pad && i == (idx ^ 1)));
+    slots_[static_cast<size_t>(i)]->set_drag_hover(on);
   }
 }
 

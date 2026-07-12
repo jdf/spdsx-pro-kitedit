@@ -71,6 +71,9 @@ private:
   void MoveSample(int from, int to, bool copy);
   // Same, but both layers of a whole pad (command-drag).
   void MovePad(int from_pad, int to_pad, bool copy);
+  // Highlights the drag drop target: the hovered slot, plus its pad
+  // sibling when whole_pad is set. idx<0 clears.
+  void SetDragTarget(int idx, bool whole_pad);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
   void timerCallback() override;
