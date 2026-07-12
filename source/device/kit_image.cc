@@ -43,6 +43,21 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
     }
     KitRecord k;
     k.name = TrimName(clean_image, rec + kKitNameOffset, kKitNameLen);
+    for (int pad = 0; pad < kPadsPerKit; ++pad) {
+      const size_t p = rec + kPadTableBase
+          + static_cast<size_t>(pad) * kPadBlockStride;
+      if (p + kPadTrigReserve >= clean_image.size()) {
+        break;
+      }
+      PadDeviceParams& pp = k.pads[static_cast<size_t>(pad)];
+      pp.layer_mode = clean_image[p + kPadLayerMode];
+      pp.fade_point = clean_image[p + kPadFadePoint];
+      pp.fade_end = clean_image[p + kPadFadeEnd];
+      pp.dynamics = clean_image[p + kPadDynamics];
+      pp.dynamics_curve = clean_image[p + kPadDynCurve];
+      pp.fixed_velocity = clean_image[p + kPadFixedVel];
+      pp.trigger_reserve = clean_image[p + kPadTrigReserve];
+    }
     kits.push_back(std::move(k));
   }
   return kits;

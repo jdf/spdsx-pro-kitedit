@@ -248,6 +248,21 @@ int RunSelfTest() {
     };
     put(0, "Dance");
     put(128, "ZZZZZZZZZZZZZZZZ");
+    // Plant kit 129 pad 1 params (XFADE 100/120 dyn LOUD3 fv50 trig ON)
+    // and pad 3 layer mode (SWITCH), at the mapped offsets.
+    const size_t rec129 = spdsx::device::kKitArrayBase
+        + 128 * spdsx::device::kKitRecordStride;
+    const size_t p1 = rec129 + spdsx::device::kPadTableBase;
+    img[p1 + spdsx::device::kPadLayerMode] = 3;    // XFADE
+    img[p1 + spdsx::device::kPadFadePoint] = 100;
+    img[p1 + spdsx::device::kPadFadeEnd] = 120;
+    img[p1 + spdsx::device::kPadDynamics] = 1;
+    img[p1 + spdsx::device::kPadDynCurve] = 3;      // LOUD3
+    img[p1 + spdsx::device::kPadFixedVel] = 50;
+    img[p1 + spdsx::device::kPadTrigReserve] = 1;
+    const size_t p3 = rec129 + spdsx::device::kPadTableBase
+        + 2 * spdsx::device::kPadBlockStride;
+    img[p3 + spdsx::device::kPadLayerMode] = 4;     // SWITCH
     const auto kits = spdsx::device::ParseKits(img);
     const bool parse_ok = kits.size() >= 129 && kits[0].name == "Dance"
         && kits[128].name == "ZZZZZZZZZZZZZZZZ";
@@ -255,6 +270,17 @@ int RunSelfTest() {
     std::printf("%-8s parse: kit1=%s kit129=%s\n", parse_ok ? "OK" : "FAIL",
         kits.empty() ? "?" : kits[0].name.c_str(),
         kits.size() < 129 ? "?" : kits[128].name.c_str());
+    if (kits.size() >= 129) {
+      const auto& pp = kits[128].pads[0];
+      const bool pad_ok = pp.layer_mode == 3 && pp.fade_point == 100
+          && pp.fade_end == 120 && pp.dynamics == 1
+          && pp.dynamics_curve == 3 && pp.fixed_velocity == 50
+          && pp.trigger_reserve == 1 && kits[128].pads[2].layer_mode == 4;
+      all_ok = all_ok && pad_ok;
+      std::printf("%-8s pad params: pad1 mode=%d fp=%d ... pad3 mode=%d\n",
+          pad_ok ? "OK" : "FAIL", pp.layer_mode, pp.fade_point,
+          kits[128].pads[2].layer_mode);
+    }
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
@@ -327,6 +353,7 @@ int Usage() {
       "                --out FILE       write the reassembled image\n"
       "                --verify FILE    offline: report a file's blocks\n"
       "  kits        list all kit names (live, or --from <dump file>)\n"
+      "  kit <N>     show kit N's pad params (live, or --from <dump>)\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -494,6 +521,47 @@ int RunKits(const std::string& port_arg, const std::string& from_path) {
   return kits.empty() ? 1 : 0;
 }
 
+const char* kModeNames[] = {"MIX", "FADE1", "FADE2", "XFADE", "SWITCH",
+    "SW(MONO)", "ALTERNATE", "HI-HAT"};
+const char* kCurveNames[] = {"LINEAR", "LOUD1", "LOUD2", "LOUD3"};
+
+// Prints one kit's pads with the mapped params decoded.
+int RunKit(const std::string& port_arg, const std::string& from_path,
+    int kit) {
+  if (kit < 1 || kit > spdsx::device::kBankKitCount) {
+    std::fprintf(stderr, "kit must be 1-%d\n", spdsx::device::kBankKitCount);
+    return 2;
+  }
+  Bytes raw;
+  if (!from_path.empty()) {
+    raw = ReadFile(from_path);
+  } else {
+    const std::string port = ResolvePort(port_arg);
+    spdsx::device::SpdsxDevice dev(port);
+    std::printf("opened %s, streaming bank 0x10...\n", port.c_str());
+    raw = dev.DumpBank(spdsx::device::kBankKits);
+  }
+  const auto kits =
+      spdsx::device::ParseKits(spdsx::device::CleanBulkImage(raw));
+  if (static_cast<size_t>(kit) > kits.size()) {
+    std::fprintf(stderr, "only %zu kits in the image\n", kits.size());
+    return 1;
+  }
+  const auto& k = kits[static_cast<size_t>(kit - 1)];
+  std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
+  std::printf("  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv\n");
+  for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
+    const auto& p = k.pads[static_cast<size_t>(pad)];
+    const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
+    const char* curve =
+        p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
+    std::printf("  %3d  %-9s %5d %5d  %-3s %-7s %5d  %s\n", pad + 1, mode,
+        p.fade_point, p.fade_end, p.dynamics ? "ON" : "OFF", curve,
+        p.fixed_velocity, p.trigger_reserve ? "ON" : "OFF");
+  }
+  return 0;
+}
+
 int RunPadLink(const std::string& port_arg, int group,
     const std::vector<std::pair<ObjectKind, int>>& objects,
     std::vector<KitRange> ranges, bool dry_run, bool verbose) {
@@ -594,6 +662,7 @@ int main(int argc, char** argv) {
   std::string out_path;
   std::string verify_path;
   std::string from_path;
+  int kit_arg = 0;
   bool dry_run = false;
   bool verbose = false;
 
@@ -634,6 +703,9 @@ int main(int argc, char** argv) {
         verbose = true;
       } else if (!arg.empty() && arg[0] != '-' && command.empty()) {
         command = arg;
+      } else if (!arg.empty() && (std::isdigit((unsigned char)arg[0]))
+          && kit_arg == 0) {
+        kit_arg = std::atoi(arg.c_str());  // positional kit number
       } else {
         return Usage();
       }
@@ -656,6 +728,9 @@ int main(int argc, char** argv) {
     }
     if (command == "kits") {
       return RunKits(port, from_path);
+    }
+    if (command == "kit") {
+      return RunKit(port, from_path, kit_arg);
     }
     if (command == "padlink") {
       if (group < 0) {
