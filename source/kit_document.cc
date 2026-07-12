@@ -25,8 +25,8 @@ void KitDocument::ResetToUntitled()
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       model_.set_sample(pad, layer, juce::File());
     }
-    model_.SetLayerParams(
-        pad, LayerMode::kMix, kDefaultFadePoint, kDefaultFadeEnd);
+    model_.SetLayerParams(pad, KitModel::DefaultLayerMode(pad),
+        kDefaultFadePoint, kDefaultFadeEnd);
   }
   undo_.clearUndoHistory();
   setFile(juce::File());

@@ -30,6 +30,20 @@ public:
   // The UI still sizes its flat slot arrays from this.
   static constexpr int kSlotCount = kPadCount * kLayersPerPad;
 
+  // Pads start in their default modes (pad 9 is the hi-hat).
+  KitModel()
+  {
+    for (int i = 0; i < kPadCount; ++i) {
+      pads_[static_cast<size_t>(i)].mode = DefaultLayerMode(i);
+    }
+  }
+
+  // Pad 9 (bottom-right) defaults to HI-HAT, the rest to MIX.
+  static LayerMode DefaultLayerMode(int pad)
+  {
+    return pad == kPadCount - 1 ? LayerMode::kHiHat : LayerMode::kMix;
+  }
+
   class Listener {
   public:
     virtual ~Listener() = default;
