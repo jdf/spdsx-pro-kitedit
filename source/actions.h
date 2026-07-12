@@ -42,6 +42,34 @@ private:
   juce::File old_;
 };
 
+// Renames the kit as one undo step.
+class SetKitNameAction : public juce::UndoableAction {
+public:
+  SetKitNameAction(KitModel& model, const juce::String& name)
+      : model_(model)
+      , new_(name)
+      , old_(model.name())
+  {
+  }
+
+  bool perform() override
+  {
+    model_.set_name(new_);
+    return true;
+  }
+
+  bool undo() override
+  {
+    model_.set_name(old_);
+    return true;
+  }
+
+private:
+  KitModel& model_;
+  juce::String new_;
+  juce::String old_;
+};
+
 // Changes a pad's hit-response parameters (layer mode, fades, dynamics,
 // trigger reserve) as one undo step.
 class SetPadParamsAction : public juce::UndoableAction {

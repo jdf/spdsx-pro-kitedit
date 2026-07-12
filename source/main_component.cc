@@ -150,7 +150,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     }
   };
   kit_chooser_.on_rename = [this](const juce::String& name)
-  { model_.set_name(name); };
+  {
+    undo_.beginNewTransaction("Rename kit");
+    undo_.perform(new SetKitNameAction(model_, name));
+  };
   addAndMakeVisible(kit_chooser_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
