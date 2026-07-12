@@ -41,6 +41,7 @@ public:
   void paint(juce::Graphics& g) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;
+  bool keyStateChanged(bool is_key_down) override;
 
   ApplicationCommandTarget* getNextCommandTarget() override;
   void getAllCommands(juce::Array<juce::CommandID>& ids) override;
@@ -71,9 +72,14 @@ private:
   void TriggerSlot(int idx);
   // A velocity-aware hit on a whole pad (MIDI note-on, or keys 1-9 at the
   // header velocity): plays the layers the pad's layer mode selects, at
-  // the gains it computes. pedal_down is the hi-hat pedal (MIDI CC4 >= 64,
-  // or shift with the keyboard).
+  // the gains it computes. pedal_down is the hi-hat pedal state.
   void TriggerPad(int pad, int velocity, bool pedal_down);
+  // The H key is the hi-hat pedal. A press is a foot-close on every
+  // HI-HAT pad: it cuts the open layer and sounds the closed one (the
+  // "chick"); a release is silent. While held, hits play closed.
+  void SetHiHatKeyDown(bool down);
+  // Pedal state from any source: the H key, or MIDI CC4 >= 64.
+  bool HiHatPedalDown() const;
   // Pushes the pad's layer widgets into the model as one undo step.
   void ApplyLayerParams(int pad);
   // Syncs the pad's layer widgets (and their visibility) from the model.
@@ -112,6 +118,8 @@ private:
   // Last seen hi-hat pedal position (MIDI CC4), written on the MIDI
   // thread; >= 64 means pedal down (closed).
   std::atomic<int> hihat_cc_ {0};
+  // Whether the H key (the keyboard's hi-hat pedal) is held.
+  bool hihat_key_down_ = false;
   // Velocity used by keyboard pad triggers (keys 1-9).
   juce::Slider velocity_slider_;
   juce::Label velocity_caption_;

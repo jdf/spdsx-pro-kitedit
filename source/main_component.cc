@@ -444,12 +444,13 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     }
     return true;
   }
-  // Keys 1-9 hit the matching pad at the header velocity; shift holds the
-  // hi-hat pedal down. Shifted digits can arrive as their punctuation
-  // characters, so match those too.
+  // Keys 1-9 hit the matching pad at the header velocity; the pedal is
+  // down while H (or shift) is held, or the MIDI pedal is pressed.
+  // Shifted digits can arrive as their punctuation characters, so match
+  // those too.
   const int code = key.getKeyCode();
   int pad = -1;
-  bool pedal_down = key.getModifiers().isShiftDown();
+  bool pedal_down = key.getModifiers().isShiftDown() || HiHatPedalDown();
   if (code >= '1' && code <= '9') {
     pad = code - '1';
   } else if (const auto pos = juce::String("!@#$%^&*(").indexOfChar(
@@ -464,7 +465,50 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         pad, static_cast<int>(velocity_slider_.getValue()), pedal_down);
     return true;
   }
+  // The pedal itself is handled edge-triggered in keyStateChanged; consume
+  // the press here anyway or macOS beeps about an unhandled key.
+  if (code == 'H' || code == 'h') {
+    return true;
+  }
   return false;
+}
+
+// keyPressed only reports presses; releases arrive here, so the H-key
+// pedal has to poll the actual key state to see both edges.
+bool MainComponent::keyStateChanged(bool /*is_key_down*/)
+{
+  SetHiHatKeyDown(juce::KeyPress::isKeyCurrentlyDown('H')
+      || juce::KeyPress::isKeyCurrentlyDown('h'));
+  return false;
+}
+
+void MainComponent::SetHiHatKeyDown(bool down)
+{
+  if (down == hihat_key_down_) {
+    return;  // auto-repeat, or a different key changed state
+  }
+  hihat_key_down_ = down;
+  if (!down) {
+    return;  // releasing the pedal makes no sound of its own
+  }
+  // Foot-close: the closing pedal cuts the open layer and sounds the
+  // closed one.
+  const int velocity = static_cast<int>(velocity_slider_.getValue());
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    if (model_.layer_mode(pad) != LayerMode::kHiHat) {
+      continue;
+    }
+    const int open_idx = pad * KitModel::kLayersPerPad + 1;
+    engine_.Stop(open_idx);
+    slots_[static_cast<size_t>(open_idx)]->set_play_state(
+        PlayState::kStopped);
+    TriggerPad(pad, velocity, /*pedal_down=*/true);
+  }
+}
+
+bool MainComponent::HiHatPedalDown() const
+{
+  return hihat_key_down_ || hihat_cc_.load() >= 64;
 }
 
 void MainComponent::ApplyTransportAction(int idx, TransportAction action)
@@ -662,7 +706,7 @@ void MainComponent::handleIncomingMidiMessage(
       {
         if (safe != nullptr) {
           // A real hit: velocity-aware, through the pad's layer mode.
-          safe->TriggerPad(pad, velocity, safe->hihat_cc_.load() >= 64);
+          safe->TriggerPad(pad, velocity, safe->HiHatPedalDown());
         }
       });
 }
