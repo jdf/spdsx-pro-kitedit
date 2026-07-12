@@ -31,6 +31,10 @@ public:
   void Pause(int slot);
   // Stops and rewinds to the top.
   void Stop(int slot);
+  // Linear playback gain for the slot's next/current sound. Pad-level
+  // triggers use this to realize layer-mode velocity scaling; slot-level
+  // auditioning resets it to 1.
+  void SetGain(int slot, float gain);
   // True while the slot's sound is audibly playing (false once it ends).
   bool IsPlaying(int slot) const;
   // Playback position as a fraction of the sample length, 0..1.

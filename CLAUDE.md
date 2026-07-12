@@ -17,10 +17,11 @@ cmake --preset default && cmake --build --preset default
 Targets: the GUI app; `link_all_kits` (device-protocol CLI: `--selftest` / `--dry-run`); `spdsx_device` (JUCE-free static lib). Preset is RelWithDebInfo (breakpoints). VS Code: open `../hax.code-workspace` (multi-root); `--load <slot> <wav>` pre-fills slots for testing.
 
 ## Architecture (source/)
-- `kit_model.{h}` — **source of truth**: name + 9 `Pad`s, each a top/bottom sample pair. Observable (`KitModel::Listener`). UI/engine/document all react to it.
-- `actions.h` — `SetSampleAction` (undoable). `main_component` wraps edits in `undo_` transactions (Load, MoveSample, MovePad).
-- `kit_document.{h,cc}` — `KitDocument : FileBasedDocument`, versioned JSON `.kit` (`KitFormat` enum; `pads` array; absolute sample paths; legacy flat-`slots` still loads; loading clears undo history).
-- `main_component.{h,cc}` — the grid, undo, File/Edit/View menus (via ApplicationCommandManager; `main.cc` must call `setApplicationCommandManagerToWatch` or menu enablement goes stale), MIDI in (ch 10 notes 60-68 -> pads), drag (move/copy one slot; ⌘ = whole pad; ⌥ = duplicate).
+- `kit_model.{h}` — **source of truth**: name + 9 `Pad`s, each a top/bottom sample pair plus layer params (`LayerMode` + fade point/end). Observable (`KitModel::Listener`). UI/engine/document all react to it.
+- `layers.{h,cc}` — JUCE-free pure logic emulating the device's 8 layer types (MIX/FADE1/FADE2/XFADE/SWITCH/SW(MONO)/ALTERNATE/HI-HAT): `ComputeLayerGains(mode, velocity, fade_point, fade_end, alternate_flip, pedal_down)` -> per-layer gains + choke flag. Mode names are shared by the UI and `.kit` files.
+- `actions.h` — `SetSampleAction`, `SetLayerParamsAction` (undoable). `main_component` wraps edits in `undo_` transactions (Load, MoveSample, MovePad, layer-param changes).
+- `kit_document.{h,cc}` — `KitDocument : FileBasedDocument`, versioned JSON `.kit` (`KitFormat` enum, current v3 = per-pad `mode`/`fadePoint`/`fadeEnd`; `pads` array; absolute sample paths; legacy flat-`slots` still loads; loading clears undo history).
+- `main_component.{h,cc}` — the grid, undo, File/Edit/View menus (via ApplicationCommandManager; `main.cc` must call `setApplicationCommandManagerToWatch` or menu enablement goes stale), MIDI in (ch 10 notes 60-68 -> velocity-aware `TriggerPad` through the layer mode; CC4 = hi-hat pedal), keys 1-9 trigger pads at the header VEL slider's velocity (shift = pedal down), per-pad mode combo + fade sliders in each pad header, drag (move/copy one slot; ⌘ = whole pad; ⌥ = duplicate). Slot-level transport/space/click stays full-volume, ignoring layer mode.
 - `sample_slot.{h,cc}` — a slot: spectrogram + info bar + transport buttons; drag source + FileDragAndDropTarget + DragAndDropTarget; hover highlight driven by parent (`on_drag_target`/`SetDragTarget`).
 - `sample_browser.{h,cc}` — left panel FileTree; drags onto slots; autoplay (View menu, persisted).
 - `audio.{h,cc}` — AudioEngine (per-slot transports + a preview channel), miniaudio-free (pure JUCE).

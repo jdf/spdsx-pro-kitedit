@@ -38,6 +38,7 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit")
 target_sources(spdsx-patchedit PRIVATE
     source/audio.cc
     source/kit_document.cc
+    source/layers.cc
     source/main.cc
     source/main_component.cc
     source/sample_browser.cc

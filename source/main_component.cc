@@ -75,6 +75,50 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     { SetDragTarget(idx, whole_pad); };
     addAndMakeVisible(slot);
   }
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    const auto p = static_cast<size_t>(pad);
+    mode_boxes_[p] = std::make_unique<juce::ComboBox>();
+    for (int m = 0; m < kLayerModeCount; ++m) {
+      const auto name = LayerModeName(static_cast<LayerMode>(m));
+      // Item ids are mode + 1; 0 means "nothing selected" to ComboBox.
+      mode_boxes_[p]->addItem(
+          juce::String(name.data(), name.size()), m + 1);
+    }
+    mode_boxes_[p]->onChange = [this, pad] { ApplyLayerParams(pad); };
+    addAndMakeVisible(*mode_boxes_[p]);
+    auto make_fade_slider = [this, pad]
+    {
+      auto slider = std::make_unique<juce::Slider>(
+          juce::Slider::LinearBar, juce::Slider::NoTextBox);
+      slider->setRange(1, 127, 1);
+      // One undo step per adjustment, not one per drag pixel.
+      slider->setChangeNotificationOnlyOnRelease(true);
+      slider->onValueChange = [this, pad] { ApplyLayerParams(pad); };
+      addAndMakeVisible(*slider);
+      return slider;
+    };
+    fade_point_sliders_[p] = make_fade_slider();
+    fade_end_sliders_[p] = make_fade_slider();
+    UpdatePadWidgets(pad);
+  }
+  // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
+  // their own. Low values audition the soft side of the fade modes.
+  velocity_slider_.setSliderStyle(juce::Slider::LinearBar);
+  velocity_slider_.setRange(1, 127, 1);
+  velocity_slider_.setValue(
+      settings_.getUserSettings()->getIntValue("uiVelocity", 100),
+      juce::dontSendNotification);
+  velocity_slider_.onValueChange = [this]
+  {
+    settings_.getUserSettings()->setValue(
+        "uiVelocity", static_cast<int>(velocity_slider_.getValue()));
+  };
+  addAndMakeVisible(velocity_slider_);
+  velocity_caption_.setText("VEL", juce::dontSendNotification);
+  velocity_caption_.setFont(juce::Font(juce::FontOptions(12.0f)).boldened());
+  velocity_caption_.setColour(juce::Label::textColourId, kPadLabel);
+  velocity_caption_.setJustificationType(juce::Justification::centredRight);
+  addAndMakeVisible(velocity_caption_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
   // The kit name, click-to-edit in place.
@@ -363,17 +407,31 @@ void MainComponent::resized()
           .removeFromTop(kHeaderHeight)
           .withSizeKeepingCentre(
               juce::jmin(420, getWidth() - 120), 26));
+  // Velocity control at the header's right edge, clear of the dirty dot.
+  auto vel = juce::Rectangle<int>(getWidth() - 178, 0, 140, kHeaderHeight)
+                 .withSizeKeepingCentre(140, 20);
+  velocity_caption_.setBounds(vel.removeFromLeft(34));
+  velocity_slider_.setBounds(vel.reduced(2, 0));
   browser_.setBounds(
       0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto inner = PadBounds(r, c).reduced(kPadPadding);
-      inner.removeFromTop(kPadHeader);
+      const int pad = r * 3 + c;
+      // Layer controls share the header row with the painted pad number:
+      // fade point, fade end, mode box, right-aligned in that order.
+      auto header = inner.removeFromTop(kPadHeader).withTrimmedBottom(2);
+      const auto p = static_cast<size_t>(pad);
+      mode_boxes_[p]->setBounds(header.removeFromRight(96));
+      header.removeFromRight(4);
+      fade_end_sliders_[p]->setBounds(header.removeFromRight(34));
+      header.removeFromRight(4);
+      fade_point_sliders_[p]->setBounds(header.removeFromRight(34));
       const int slot_h = (inner.getHeight() - kSlotSpacing) / 2;
-      const auto pad = static_cast<size_t>((r * 3 + c) * 2);
-      slots_[pad]->setBounds(inner.removeFromTop(slot_h));
+      const auto slot = static_cast<size_t>(pad * 2);
+      slots_[slot]->setBounds(inner.removeFromTop(slot_h));
       inner.removeFromTop(kSlotSpacing);
-      slots_[pad + 1]->setBounds(inner.removeFromTop(slot_h));
+      slots_[slot + 1]->setBounds(inner.removeFromTop(slot_h));
     }
   }
 }
@@ -384,6 +442,26 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     if (hovered_ >= 0) {
       TriggerSlot(hovered_);
     }
+    return true;
+  }
+  // Keys 1-9 hit the matching pad at the header velocity; shift holds the
+  // hi-hat pedal down. Shifted digits can arrive as their punctuation
+  // characters, so match those too.
+  const int code = key.getKeyCode();
+  int pad = -1;
+  bool pedal_down = key.getModifiers().isShiftDown();
+  if (code >= '1' && code <= '9') {
+    pad = code - '1';
+  } else if (const auto pos = juce::String("!@#$%^&*(").indexOfChar(
+                 key.getTextCharacter());
+             pos >= 0)
+  {
+    pad = pos;
+    pedal_down = true;
+  }
+  if (pad >= 0) {
+    TriggerPad(
+        pad, static_cast<int>(velocity_slider_.getValue()), pedal_down);
     return true;
   }
   return false;
@@ -399,6 +477,9 @@ void MainComponent::ApplyTransportAction(int idx, TransportAction action)
     case TransportAction::kPlay:
       // Play during playback retriggers from the top (drum-pad style);
       // from paused it resumes, from stopped it starts at the top.
+      // Slot-level auditioning is always full volume, undoing any gain a
+      // pad-level layer trigger left behind.
+      engine_.SetGain(idx, 1.0f);
       if (slot.play_state() == PlayState::kPlaying) {
         engine_.Stop(idx);
       }
@@ -425,6 +506,81 @@ void MainComponent::TriggerSlot(int idx)
     ApplyTransportAction(idx, TransportAction::kPlay);
     slot.FlashTransportButton(TransportAction::kPlay);
   }
+}
+
+void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
+{
+  if (pad < 0 || pad >= KitModel::kPadCount) {
+    return;
+  }
+  const auto p = static_cast<size_t>(pad);
+  const LayerGains gains = ComputeLayerGains(model_.layer_mode(pad),
+      velocity, model_.fade_point(pad), model_.fade_end(pad),
+      alternate_flip_[p], pedal_down);
+  if (model_.layer_mode(pad) == LayerMode::kAlternate) {
+    alternate_flip_[p] = !alternate_flip_[p];
+  }
+  if (gains.choke) {
+    // SW(MONO): only one voice from this pad — silence both layers
+    // before the new hit sounds.
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      const int idx = pad * KitModel::kLayersPerPad + layer;
+      engine_.Stop(idx);
+      slots_[static_cast<size_t>(idx)]->set_play_state(PlayState::kStopped);
+    }
+  }
+  for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+    const float gain = layer == 0 ? gains.top : gains.bottom;
+    const int idx = pad * KitModel::kLayersPerPad + layer;
+    auto& slot = *slots_[static_cast<size_t>(idx)];
+    if (gain <= 0.0f || !slot.is_playable()) {
+      continue;
+    }
+    engine_.SetGain(idx, gain);
+    if (slot.play_state() == PlayState::kPlaying) {
+      engine_.Stop(idx);  // retrigger from the top
+    }
+    engine_.Play(idx);
+    slot.set_play_state(PlayState::kPlaying);
+    slot.FlashTransportButton(TransportAction::kPlay);
+  }
+}
+
+void MainComponent::ApplyLayerParams(int pad)
+{
+  const auto p = static_cast<size_t>(pad);
+  const auto mode =
+      static_cast<LayerMode>(mode_boxes_[p]->getSelectedId() - 1);
+  const int point = static_cast<int>(fade_point_sliders_[p]->getValue());
+  const int end = static_cast<int>(fade_end_sliders_[p]->getValue());
+  if (mode == model_.layer_mode(pad) && point == model_.fade_point(pad)
+      && end == model_.fade_end(pad))
+  {
+    return;
+  }
+  undo_.beginNewTransaction(
+      "Change pad " + juce::String(pad + 1) + " layers");
+  undo_.perform(new SetLayerParamsAction(model_, pad, mode, point, end));
+}
+
+void MainComponent::UpdatePadWidgets(int pad)
+{
+  const auto p = static_cast<size_t>(pad);
+  const LayerMode mode = model_.layer_mode(pad);
+  mode_boxes_[p]->setSelectedId(
+      static_cast<int>(mode) + 1, juce::dontSendNotification);
+  fade_point_sliders_[p]->setValue(
+      model_.fade_point(pad), juce::dontSendNotification);
+  fade_end_sliders_[p]->setValue(
+      model_.fade_end(pad), juce::dontSendNotification);
+  fade_point_sliders_[p]->setVisible(UsesFadePoint(mode));
+  fade_end_sliders_[p]->setVisible(UsesFadeEnd(mode));
+}
+
+void MainComponent::PadParamsChanged(int pad)
+{
+  document_.changed();
+  UpdatePadWidgets(pad);
 }
 
 void MainComponent::MoveSample(int from, int to, bool copy)
@@ -486,6 +642,12 @@ void MainComponent::handleIncomingMidiMessage(
 {
   // Runs on the MIDI thread; marshal to the message thread before touching
   // the audio engine or UI.
+  // CC4 is the hi-hat pedal on the HH CTRL jack; remember its position
+  // for the HI-HAT layer mode (any channel).
+  if (message.isController() && message.getControllerNumber() == 4) {
+    hihat_cc_ = message.getControllerValue();
+    return;
+  }
   if (!message.isNoteOn() || message.getChannel() != kMidiChannel) {
     return;
   }
@@ -493,13 +655,14 @@ void MainComponent::handleIncomingMidiMessage(
   if (pad < 0 || pad >= KitModel::kPadCount) {
     return;
   }
+  const int velocity = message.getVelocity();
   juce::Component::SafePointer<MainComponent> safe(this);
   juce::MessageManager::callAsync(
-      [safe, pad]
+      [safe, pad, velocity]
       {
         if (safe != nullptr) {
-          // Trigger the pad's top slot.
-          safe->TriggerSlot(pad * KitModel::kLayersPerPad);
+          // A real hit: velocity-aware, through the pad's layer mode.
+          safe->TriggerPad(pad, velocity, safe->hihat_cc_.load() >= 64);
         }
       });
 }

@@ -106,6 +106,11 @@ void AudioEngine::Stop(int slot)
   s.transport.setPosition(0.0);
 }
 
+void AudioEngine::SetGain(int slot, float gain)
+{
+  impl_->slots.at(static_cast<size_t>(slot))->transport.setGain(gain);
+}
+
 bool AudioEngine::IsPlaying(int slot) const
 {
   return impl_->slots.at(static_cast<size_t>(slot))->transport.isPlaying();

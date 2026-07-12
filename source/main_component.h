@@ -5,6 +5,7 @@
 #define SPDSX_PATCHEDIT_SOURCE_MAIN_COMPONENT_H_
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -50,6 +51,7 @@ public:
 private:
   void SampleChanged(int pad, int layer) override;
   void KitNameChanged() override;
+  void PadParamsChanged(int pad) override;
 
   // Sets the settings storage parameters; must run before any member
   // that reads settings in its constructor.
@@ -63,9 +65,19 @@ private:
       juce::MidiInput* source, const juce::MidiMessage& message) override;
 
   void ApplyTransportAction(int idx, TransportAction action);
-  // Drum-pad trigger (spacebar, slot-body clicks, MIDI): retrigger from
+  // Drum-pad trigger (spacebar, slot-body clicks): retrigger from
   // the top while playing, resume while paused, start when stopped.
+  // Always full volume, ignoring the pad's layer mode.
   void TriggerSlot(int idx);
+  // A velocity-aware hit on a whole pad (MIDI note-on, or keys 1-9 at the
+  // header velocity): plays the layers the pad's layer mode selects, at
+  // the gains it computes. pedal_down is the hi-hat pedal (MIDI CC4 >= 64,
+  // or shift with the keyboard).
+  void TriggerPad(int pad, int velocity, bool pedal_down);
+  // Pushes the pad's layer widgets into the model as one undo step.
+  void ApplyLayerParams(int pad);
+  // Syncs the pad's layer widgets (and their visibility) from the model.
+  void UpdatePadWidgets(int pad);
   // Moves (or, when copy=true, duplicates) a slot's sample to another
   // slot as a single undoable action.
   void MoveSample(int from, int to, bool copy);
@@ -87,6 +99,22 @@ private:
   KitDocument document_ {model_, undo_, settings_};
   AudioEngine engine_ {kSlotCount};
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
+  // Per-pad layer controls, living in each pad's header row.
+  std::array<std::unique_ptr<juce::ComboBox>, KitModel::kPadCount>
+      mode_boxes_;
+  std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>
+      fade_point_sliders_;
+  std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>
+      fade_end_sliders_;
+  // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);
+  // runtime state, deliberately not persisted.
+  std::array<bool, KitModel::kPadCount> alternate_flip_ {};
+  // Last seen hi-hat pedal position (MIDI CC4), written on the MIDI
+  // thread; >= 64 means pedal down (closed).
+  std::atomic<int> hihat_cc_ {0};
+  // Velocity used by keyboard pad triggers (keys 1-9).
+  juce::Slider velocity_slider_;
+  juce::Label velocity_caption_;
   juce::Label name_label_;
   SampleBrowser browser_;
   std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;

@@ -9,12 +9,18 @@
 
 #include <juce_core/juce_core.h>
 
+#include "layers.h"
+
 namespace spdsx {
 
 struct Pad {
   // top, bottom; an empty File means the layer holds no sample.
   std::pair<juce::File, juce::File> samples;
-  // There will be other per-pad properties coming soon.
+  // How the two layers respond to a hit, and the velocity thresholds the
+  // fade/switch modes read (1..127).
+  LayerMode mode = LayerMode::kMix;
+  int fade_point = kDefaultFadePoint;
+  int fade_end = kDefaultFadeEnd;
 };
 
 class KitModel {
@@ -33,6 +39,8 @@ public:
       (void)pad;
       (void)layer;
     }
+    // Layer mode or fade parameters changed.
+    virtual void PadParamsChanged(int pad) { (void)pad; }
   };
 
   const juce::String& name() const { return name_; }
@@ -63,6 +71,32 @@ public:
       current = file;
       listeners_.call(
           [pad, layer](Listener& l) { l.SampleChanged(pad, layer); });
+    }
+  }
+
+  LayerMode layer_mode(int pad) const
+  {
+    return pads_.at(static_cast<size_t>(pad)).mode;
+  }
+  int fade_point(int pad) const
+  {
+    return pads_.at(static_cast<size_t>(pad)).fade_point;
+  }
+  int fade_end(int pad) const
+  {
+    return pads_.at(static_cast<size_t>(pad)).fade_end;
+  }
+  // One notification even when several of the three change together.
+  void SetLayerParams(int pad, LayerMode mode, int fade_point, int fade_end)
+  {
+    auto& p = pads_.at(static_cast<size_t>(pad));
+    if (p.mode != mode || p.fade_point != fade_point
+        || p.fade_end != fade_end)
+    {
+      p.mode = mode;
+      p.fade_point = fade_point;
+      p.fade_end = fade_end;
+      listeners_.call([pad](Listener& l) { l.PadParamsChanged(pad); });
     }
   }
 

@@ -3,8 +3,9 @@
 //
 // The format is human-readable JSON: a kit name and an array of 9 pads,
 // each with a two-entry samples array (top, bottom) of absolute sample
-// paths or null. Samples are referenced, not copied. Kits saved in the
-// earlier flat-"slots" format still load.
+// paths or null, a layer mode name, and the fade point/end velocities.
+// Samples are referenced, not copied. Kits saved in the earlier
+// flat-"slots" format still load.
 #ifndef SPDSX_PATCHEDIT_SOURCE_KIT_DOCUMENT_H_
 #define SPDSX_PATCHEDIT_SOURCE_KIT_DOCUMENT_H_
 
@@ -24,8 +25,11 @@ enum class KitFormat : int {
   // Pad-shaped: nine {"samples": [top, bottom]} objects, ready for
   // per-pad properties. First version stamped on disk.
   kPads = 2,
+  // Adds per-pad layer parameters: "mode" (a LayerModeName string),
+  // "fadePoint", "fadeEnd". Absent fields read as MIX with defaults.
+  kPadLayers = 3,
 
-  kCurrent = kPads,
+  kCurrent = kPadLayers,
 };
 
 class KitDocument : public juce::FileBasedDocument {

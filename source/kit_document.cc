@@ -25,6 +25,8 @@ void KitDocument::ResetToUntitled()
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       model_.set_sample(pad, layer, juce::File());
     }
+    model_.SetLayerParams(
+        pad, LayerMode::kMix, kDefaultFadePoint, kDefaultFadeEnd);
   }
   undo_.clearUndoHistory();
   setFile(juce::File());
@@ -81,6 +83,22 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
       }
       model_.set_sample(pad, layer, to_file(entry));
     }
+    // Layer parameters arrived in v3; older pads read as MIX defaults.
+    LayerMode mode = LayerMode::kMix;
+    int fade_point = kDefaultFadePoint;
+    int fade_end = kDefaultFadeEnd;
+    if (pads != nullptr && pad < pads->size()) {
+      const auto& pad_var = (*pads)[pad];
+      mode = ParseLayerMode(
+          pad_var.getProperty("mode", "").toString().toStdString(),
+          LayerMode::kMix);
+      fade_point = juce::jlimit(1, 127,
+          static_cast<int>(
+              pad_var.getProperty("fadePoint", kDefaultFadePoint)));
+      fade_end = juce::jlimit(1, 127,
+          static_cast<int>(pad_var.getProperty("fadeEnd", kDefaultFadeEnd)));
+    }
+    model_.SetLayerParams(pad, mode, fade_point, fade_end);
   }
   // A freshly loaded kit starts with a clean history; undoing into a
   // different document's edits would be nonsense.
@@ -104,6 +122,11 @@ juce::Result KitDocument::saveDocument(const juce::File& file)
               : juce::var(sample.getFullPathName()));
     }
     pad_obj->setProperty("samples", samples);
+    const auto mode_name = LayerModeName(model_.layer_mode(pad));
+    pad_obj->setProperty("mode",
+        juce::String(mode_name.data(), mode_name.size()));
+    pad_obj->setProperty("fadePoint", model_.fade_point(pad));
+    pad_obj->setProperty("fadeEnd", model_.fade_end(pad));
     pads.add(juce::var(pad_obj));
   }
   obj->setProperty("pads", pads);
