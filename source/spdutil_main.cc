@@ -325,6 +325,20 @@ int RunSelfTest() {
         dir_ok ? "OK" : "FAIL", dir.size(),
         dir.empty() ? "?" : dir[0].wavename.c_str(),
         dir.size() < 3 ? "?" : dir[2].wavename.c_str());
+
+    // Remote path derivation + RFWV header (wave-export protocol).
+    const bool path_ok = spdsx::device::RemoteWavePath(1554)
+        == "/SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D015/W01554.SMP";
+    const Bytes rfwv = FromHex(
+        "52 46 57 56 14 4d 00 00 80 bb 00 00 01 00");
+    const auto hdr = spdsx::device::ParseRfwvHeader(rfwv);
+    const bool rfwv_ok = hdr.valid && hdr.data_bytes == 0x4d14
+        && hdr.sample_rate == 48000 && hdr.channels == 1;
+    all_ok = all_ok && path_ok && rfwv_ok;
+    std::printf("%-8s remote path\n", path_ok ? "OK" : "FAIL");
+    std::printf("%-8s RFWV header: %u Hz, %u ch, %u data bytes\n",
+        rfwv_ok ? "OK" : "FAIL", hdr.sample_rate, hdr.channels,
+        hdr.data_bytes);
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");

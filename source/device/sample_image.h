@@ -59,6 +59,23 @@ struct SampleRecord {
 // order; empty if the directory can't be located.
 std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image);
 
+// The device-side path a user wave is read from over the remote-file
+// protocol (family f0 41 7a, channel 0x06 — see
+// re-cache/captures/WAVE-EXPORT-PROTOCOL.md). Sample index N lives at
+// /SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D<N/100>/W<N>.SMP.
+std::string RemoteWavePath(int index);
+
+// The header of a `.SMP` (RFWV) wave file: magic then data length,
+// sample rate, channel count. 16-bit signed LE PCM follows.
+struct RfwvHeader {
+  bool valid = false;
+  uint32_t data_bytes = 0;
+  uint32_t sample_rate = 0;
+  uint16_t channels = 0;
+};
+// Parses an RFWV header from the start of a `.SMP` payload.
+RfwvHeader ParseRfwvHeader(const Bytes& smp);
+
 }  // namespace spdsx::device
 
 #endif  // SPDSX_PATCHEDIT_SOURCE_DEVICE_SAMPLE_IMAGE_H_

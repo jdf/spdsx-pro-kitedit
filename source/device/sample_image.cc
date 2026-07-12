@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 
 namespace spdsx::device {
 
@@ -89,6 +90,32 @@ std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image)
     records.push_back(std::move(rec));
   }
   return records;
+}
+
+std::string RemoteWavePath(int index)
+{
+  char buf[80];
+  std::snprintf(buf, sizeof(buf),
+      "/SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D%03d/W%05d.SMP",
+      index / 100, index);
+  return buf;
+}
+
+RfwvHeader ParseRfwvHeader(const Bytes& smp)
+{
+  RfwvHeader h;
+  // RFWV magic, then u32 data length, u32 sample rate, u16 channels.
+  if (smp.size() < 14 || smp[0] != 'R' || smp[1] != 'F' || smp[2] != 'W'
+      || smp[3] != 'V')
+  {
+    return h;
+  }
+  h.valid = true;
+  h.data_bytes = ReadLe32(smp, 4);
+  h.sample_rate = ReadLe32(smp, 8);
+  h.channels =
+      static_cast<uint16_t>(smp[12] | static_cast<uint16_t>(smp[13]) << 8);
+  return h;
 }
 
 }  // namespace spdsx::device
