@@ -15,6 +15,7 @@ enum : juce::CommandID {
   // document (and future autosaves with it).
   kFileSaveAs,
   kImportKit,
+  kImportDeviceDump,
   kToggleBrowser,
   kToggleAutoplay,
 };

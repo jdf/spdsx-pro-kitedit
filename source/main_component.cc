@@ -53,8 +53,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
 {
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
-  browser_.setVisible(browser_visible_);
-  addChildComponent(browser_);
+  // The left panel: sample browser and device wave pool as tabs.
+  const juce::Colour tab_bg(0xff161b22);
+  panel_tabs_.addTab("Files", tab_bg, &browser_, false);
+  panel_tabs_.addTab("Device", tab_bg, &device_samples_, false);
+  panel_tabs_.setOutline(0);
+  panel_tabs_.setVisible(browser_visible_);
+  addChildComponent(panel_tabs_);
 
   setWantsKeyboardFocus(true);
   for (int i = 0; i < kSlotCount; ++i) {
@@ -62,6 +67,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     auto& slot = *slots_[static_cast<size_t>(i)];
     slot.on_drop = [this](int idx, const juce::File& file)
     { LoadSample(idx, file); };
+    slot.on_drop_device = [this](int idx, int sample)
+    {
+      undo().beginNewTransaction("Assign device sample");
+      undo().perform(new SetSampleAction(model_,
+          idx / KitModel::kLayersPerPad, idx % KitModel::kLayersPerPad,
+          LayerSample::DeviceWave(sample)));
+    };
     slot.on_click = [this](int idx)
     {
       // A click anywhere in a pad is a hit on the whole pad, at the
@@ -203,7 +215,7 @@ void MainComponent::LoadSample(int idx, const juce::File& file)
   }
   undo().beginNewTransaction("Load " + file.getFileName());
   undo().perform(new SetSampleAction(model_, idx / KitModel::kLayersPerPad,
-      idx % KitModel::kLayersPerPad, file));
+      idx % KitModel::kLayersPerPad, LayerSample(file)));
 }
 
 void MainComponent::OpenLastDocument()
@@ -238,7 +250,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
       commands::kFileOpen, commands::kFileSaveAs, commands::kImportKit,
-      commands::kToggleBrowser, commands::kToggleAutoplay});
+      commands::kImportDeviceDump, commands::kToggleBrowser,
+      commands::kToggleAutoplay});
 }
 
 void MainComponent::getCommandInfo(
@@ -276,6 +289,11 @@ void MainComponent::getCommandInfo(
     case commands::kImportKit:
       info.setInfo("Import Kit...",
           "Load a legacy single-kit .kit file into the current kit",
+          "File", 0);
+      break;
+    case commands::kImportDeviceDump:
+      info.setInfo("Import Device Dump...",
+          "Load the sample pool directory from an spdutil memory dump",
           "File", 0);
       break;
     case commands::kToggleBrowser:
@@ -391,6 +409,29 @@ bool MainComponent::perform(const InvocationInfo& info)
           [this](juce::FileBasedDocument::SaveResult)
           { RefreshDocumentState(); });
       return true;
+    case commands::kImportDeviceDump:
+      dump_chooser_ = std::make_unique<juce::FileChooser>(
+          "Import a device memory dump (spdutil dump output)",
+          juce::File(), "*");
+      dump_chooser_->launchAsync(
+          juce::FileBrowserComponent::openMode
+              | juce::FileBrowserComponent::canSelectFiles,
+          [this](const juce::FileChooser& fc)
+          {
+            if (auto file = fc.getResult(); file.existsAsFile()) {
+              if (auto result = document_.ImportDeviceDump(file);
+                  result.failed())
+              {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Import Device Dump", result.getErrorMessage());
+              } else {
+                MarkEdited();  // the pool is document content
+              }
+              RefreshDeviceSamples();
+            }
+          });
+      return true;
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);
       return true;
@@ -412,7 +453,7 @@ bool MainComponent::perform(const InvocationInfo& info)
 void MainComponent::SetBrowserVisible(bool visible)
 {
   browser_visible_ = visible;
-  browser_.setVisible(visible);
+  panel_tabs_.setVisible(visible);
   settings_.getUserSettings()->setValue("browserVisible", visible);
   commands_.commandStatusChanged();  // menu tick
   resized();
@@ -432,6 +473,22 @@ void MainComponent::RefreshDocumentState()
   // Loads and kit switches can change every widget in the header.
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   repaint(0, 0, getWidth(), kHeaderHeight);
+  // Open/new/import can also swap the wave pool out from under the
+  // device tab and any device-wave slots.
+  RefreshDeviceSamples();
+}
+
+void MainComponent::RefreshDeviceSamples()
+{
+  device_samples_.Refresh();
+  // Re-resolve device-wave slot displays against the (new) pool.
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      if (model_.sample(pad, layer).is_device()) {
+        SyncSlotFromModel(pad, layer);
+      }
+    }
+  }
 }
 
 void MainComponent::RefreshKitSelector()
@@ -468,14 +525,31 @@ void MainComponent::KitNameChanged()
 void MainComponent::SampleChanged(int pad, int layer)
 {
   MarkEdited();
+  SyncSlotFromModel(pad, layer);
+}
+
+void MainComponent::SyncSlotFromModel(int pad, int layer)
+{
   const int idx = pad * KitModel::kLayersPerPad + layer;
-  const auto& file = model_.sample(pad, layer);
+  const LayerSample& sample = model_.sample(pad, layer);
   auto& slot = *slots_[static_cast<size_t>(idx)];
-  if (file == juce::File()) {
+  if (sample.empty()) {
     engine_.Clear(idx);
     slot.ClearSample();
     return;
   }
+  if (sample.is_device()) {
+    // A pool wave: name + duration from the directory; no audio to
+    // load until sample transfer is implemented.
+    engine_.Clear(idx);
+    const auto* rec = device_.FindSample(sample.device_index);
+    slot.SetDeviceSample(rec != nullptr
+            ? juce::String(rec->wavename)
+            : "#" + juce::String(sample.device_index),
+        rec != nullptr ? static_cast<double>(rec->frames) / 48000.0 : 0.0);
+    return;
+  }
+  const juce::File& file = sample.file;
   auto info = engine_.Load(idx, file);
   if (!info) {
     // Unreadable (moved, unmounted, not audio): keep the assignment
@@ -567,7 +641,7 @@ void MainComponent::resized()
                  .withSizeKeepingCentre(140, 20);
   velocity_caption_.setBounds(vel.removeFromLeft(34));
   velocity_slider_.setBounds(vel.reduced(2, 0));
-  browser_.setBounds(
+  panel_tabs_.setBounds(
       0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
@@ -906,14 +980,14 @@ void MainComponent::MoveSample(int from, int to, bool copy)
   if (from == to || from < 0 || to < 0) {
     return;
   }
-  const auto& file = model_.sample(
+  const LayerSample sample = model_.sample(
       from / KitModel::kLayersPerPad, from % KitModel::kLayersPerPad);
   undo().beginNewTransaction(copy ? "Duplicate sample" : "Move sample");
   undo().perform(new SetSampleAction(model_, to / KitModel::kLayersPerPad,
-      to % KitModel::kLayersPerPad, file));
+      to % KitModel::kLayersPerPad, sample));
   if (!copy) {
     undo().perform(new SetSampleAction(model_, from / KitModel::kLayersPerPad,
-        from % KitModel::kLayersPerPad, juce::File()));
+        from % KitModel::kLayersPerPad, LayerSample()));
   }
 }
 
@@ -923,14 +997,15 @@ void MainComponent::MovePad(int from_pad, int to_pad, bool copy)
     return;
   }
   // Copy up front so the source-clears below can't invalidate them.
-  const juce::File top = model_.sample(from_pad, 0);
-  const juce::File bottom = model_.sample(from_pad, 1);
+  const LayerSample top = model_.sample(from_pad, 0);
+  const LayerSample bottom = model_.sample(from_pad, 1);
   undo().beginNewTransaction(copy ? "Duplicate pad" : "Move pad");
   undo().perform(new SetSampleAction(model_, to_pad, 0, top));
   undo().perform(new SetSampleAction(model_, to_pad, 1, bottom));
   if (!copy) {
-    undo().perform(new SetSampleAction(model_, from_pad, 0, juce::File()));
-    undo().perform(new SetSampleAction(model_, from_pad, 1, juce::File()));
+    undo().perform(new SetSampleAction(model_, from_pad, 0, LayerSample()));
+    undo().perform(
+        new SetSampleAction(model_, from_pad, 1, LayerSample()));
   }
 }
 

@@ -42,9 +42,33 @@ struct PadParams {
   bool operator==(const PadParams&) const = default;
 };
 
+// One layer's assignment: nothing, a local audio file, or a wave in
+// the device's sample pool (referenced by pool index). Device waves
+// are metadata-only until the audio-transfer protocol is cracked, so
+// they display but can't play; at sync time local files get uploaded
+// and become pool indices too.
+struct LayerSample {
+  LayerSample() = default;
+  explicit LayerSample(const juce::File& f) : file(f) {}
+  static LayerSample DeviceWave(int index)
+  {
+    LayerSample sample;
+    sample.device_index = index;
+    return sample;
+  }
+
+  bool empty() const { return device_index == 0 && file == juce::File(); }
+  bool is_file() const { return device_index == 0 && file != juce::File(); }
+  bool is_device() const { return device_index > 0; }
+  bool operator==(const LayerSample&) const = default;
+
+  juce::File file;       // the local file, when device_index == 0
+  int device_index = 0;  // > 0 refers to the device pool
+};
+
 struct Pad {
-  // top, bottom; an empty File means the layer holds no sample.
-  std::pair<juce::File, juce::File> samples;
+  // top, bottom; an empty LayerSample means the layer holds nothing.
+  std::pair<LayerSample, LayerSample> samples;
   PadParams params;
 };
 
@@ -101,17 +125,17 @@ public:
   }
 
   // layer 0 is the top sample, 1 the bottom.
-  const juce::File& sample(int pad, int layer) const
+  const LayerSample& sample(int pad, int layer) const
   {
     const auto& samples = pads_.at(static_cast<size_t>(pad)).samples;
     return layer == 0 ? samples.first : samples.second;
   }
-  void set_sample(int pad, int layer, const juce::File& file)
+  void set_sample(int pad, int layer, const LayerSample& sample)
   {
     auto& samples = pads_.at(static_cast<size_t>(pad)).samples;
     auto& current = layer == 0 ? samples.first : samples.second;
-    if (current != file) {
-      current = file;
+    if (current != sample) {
+      current = sample;
       listeners_.call(
           [pad, layer](Listener& l) { l.SampleChanged(pad, layer); });
     }

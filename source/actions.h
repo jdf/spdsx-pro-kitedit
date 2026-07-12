@@ -8,16 +8,16 @@
 
 namespace spdsx {
 
-// Covers the whole sample mutation surface: add is empty->file, replace
-// is file->file, delete is file->empty.
+// Covers the whole sample mutation surface: assign, replace, and clear
+// (an empty LayerSample), for both local files and device pool waves.
 class SetSampleAction : public juce::UndoableAction {
 public:
   SetSampleAction(
-      KitModel& model, int pad, int layer, const juce::File& new_file)
+      KitModel& model, int pad, int layer, const LayerSample& new_sample)
       : model_(model)
       , pad_(pad)
       , layer_(layer)
-      , new_(new_file)
+      , new_(new_sample)
       , old_(model.sample(pad, layer))
   {
   }
@@ -38,8 +38,8 @@ private:
   KitModel& model_;
   int pad_;
   int layer_;
-  juce::File new_;
-  juce::File old_;
+  LayerSample new_;
+  LayerSample old_;
 };
 
 // Renames the kit as one undo step.

@@ -15,6 +15,7 @@
 #include "device_document.h"
 #include "device_model.h"
 #include "kit_chooser.h"
+#include "device_samples.h"
 #include "kit_model.h"
 #include "pad_settings.h"
 #include "sample_browser.h"
@@ -110,6 +111,12 @@ private:
   void SetDragTarget(int idx, bool whole_pad);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
+  // Repopulates the device tab and re-resolves device-wave slots after
+  // the pool changes (dump import, open, new).
+  void RefreshDeviceSamples();
+  // Syncs one slot's engine + display from the model, without marking
+  // the document edited.
+  void SyncSlotFromModel(int pad, int layer);
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
@@ -171,7 +178,12 @@ private:
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;
   std::unique_ptr<juce::FileChooser> open_chooser_;
+  std::unique_ptr<juce::FileChooser> dump_chooser_;
   SampleBrowser browser_;
+  DeviceSamplePanel device_samples_ {device_};
+  // The left panel: "Files" (the sample browser) and "Device" (the
+  // wave pool) tabs.
+  juce::TabbedComponent panel_tabs_ {juce::TabbedButtonBar::TabsAtTop};
   std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;
   bool browser_visible_ = true;
   int hovered_ = -1;

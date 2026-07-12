@@ -1,5 +1,7 @@
 #include "device_document.h"
 
+#include "device/kit_image.h"
+
 namespace spdsx {
 
 namespace {
@@ -19,10 +21,16 @@ juce::var PadToVar(const Pad& pad)
 {
   auto* obj = new juce::DynamicObject();
   juce::Array<juce::var> samples;
+  // A sample entry is null (empty), a string (local file path), or a
+  // number (device pool index).
   for (const auto* sample : {&pad.samples.first, &pad.samples.second}) {
-    samples.add(*sample == juce::File()
-            ? juce::var()
-            : juce::var(sample->getFullPathName()));
+    if (sample->is_device()) {
+      samples.add(juce::var(sample->device_index));
+    } else if (sample->is_file()) {
+      samples.add(juce::var(sample->file.getFullPathName()));
+    } else {
+      samples.add(juce::var());
+    }
   }
   obj->setProperty("samples", samples);
   obj->setProperty("mode", NameOf(LayerModeName(pad.params.mode)));
@@ -44,16 +52,23 @@ juce::var PadToVar(const Pad& pad)
 Pad PadFromVar(const juce::var& v)
 {
   Pad pad;
-  auto to_file = [](const juce::var& entry)
+  auto to_sample = [](const juce::var& entry)
   {
-    return entry.isString() ? juce::File(entry.toString()) : juce::File();
+    if (entry.isString()) {
+      return LayerSample(juce::File(entry.toString()));
+    }
+    if (entry.isInt() || entry.isInt64()) {
+      return LayerSample::DeviceWave(
+          juce::jmax(0, static_cast<int>(entry)));
+    }
+    return LayerSample();
   };
   if (const auto* samples = v.getProperty("samples", {}).getArray()) {
     if (samples->size() > 0) {
-      pad.samples.first = to_file((*samples)[0]);
+      pad.samples.first = to_sample((*samples)[0]);
     }
     if (samples->size() > 1) {
-      pad.samples.second = to_file((*samples)[1]);
+      pad.samples.second = to_sample((*samples)[1]);
     }
   }
   pad.params.mode = ParseLayerMode(
@@ -221,6 +236,25 @@ juce::Result DeviceDocument::loadDocument(const juce::File& chosen)
   }
   device_.set_current_kit(juce::jlimit(0, DeviceModel::kKitCount - 1,
       static_cast<int>(parsed.getProperty("currentKit", 0))));
+  if (const auto* samples = parsed.getProperty("samples", {}).getArray()) {
+    std::vector<device::SampleRecord> pool;
+    pool.reserve(static_cast<size_t>(samples->size()));
+    for (const auto& entry : *samples) {
+      device::SampleRecord rec;
+      rec.index = entry.getProperty("index", 0);
+      rec.wavename =
+          entry.getProperty("name", "").toString().toStdString();
+      rec.filename =
+          entry.getProperty("file", "").toString().toStdString();
+      rec.frames = static_cast<uint32_t>(
+          static_cast<juce::int64>(entry.getProperty("frames", 0)));
+      rec.category = entry.getProperty("category", 0);
+      if (rec.index > 0) {
+        pool.push_back(std::move(rec));
+      }
+    }
+    device_.set_sample_pool(std::move(pool));
+  }
   LoadActiveKitIntoModel();
   // A freshly loaded device starts with clean histories.
   ResetHistory();
@@ -248,6 +282,17 @@ juce::Result DeviceDocument::saveDocument(const juce::File& chosen)
     kits.add(KitToVar(device_.kit(i)));
   }
   obj->setProperty("kits", kits);
+  juce::Array<juce::var> samples;
+  for (const auto& rec : device_.sample_pool()) {
+    auto* s = new juce::DynamicObject();
+    s->setProperty("index", rec.index);
+    s->setProperty("name", juce::String(rec.wavename));
+    s->setProperty("file", juce::String(rec.filename));
+    s->setProperty("frames", static_cast<juce::int64>(rec.frames));
+    s->setProperty("category", rec.category);
+    samples.add(juce::var(s));
+  }
+  obj->setProperty("samples", samples);
   const juce::File manifest = chosen.getChildFile(kManifestName);
   if (!manifest.replaceWithText(
           juce::JSON::toString(juce::var(obj)) + "\n"))
@@ -324,13 +369,31 @@ juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
       const auto& entry = (*slots)[i];
       auto& pad = kit.pads[static_cast<size_t>(i / 2)];
       auto& sample = i % 2 == 0 ? pad.samples.first : pad.samples.second;
-      sample = entry.isString() ? juce::File(entry.toString())
-                                : juce::File();
+      sample = entry.isString() ? LayerSample(juce::File(entry.toString()))
+                                : LayerSample();
     }
   }
   device_.kit(device_.current_kit()) = kit;
   LoadActiveKitIntoModel();
   ResetHistory();
+  changed();
+  return juce::Result::ok();
+}
+
+juce::Result DeviceDocument::ImportDeviceDump(const juce::File& file)
+{
+  juce::MemoryBlock data;
+  if (!file.loadFileAsData(data)) {
+    return juce::Result::fail("couldn't read " + file.getFullPathName());
+  }
+  const auto* bytes = static_cast<const uint8_t*>(data.getData());
+  const device::Bytes raw(bytes, bytes + data.getSize());
+  auto pool = device::ParseSampleDir(device::CleanBulkImage(raw));
+  if (pool.empty()) {
+    return juce::Result::fail(file.getFileName()
+        + " holds no sample directory (dump bank 0x20, or --all)");
+  }
+  device_.set_sample_pool(std::move(pool));
   changed();
   return juce::Result::ok();
 }

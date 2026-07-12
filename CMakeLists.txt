@@ -83,6 +83,7 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit"
 target_sources(spdsx-patchedit PRIVATE
     source/audio.cc
     source/device_document.cc
+    source/device_samples.cc
     source/kit_chooser.cc
     source/layers.cc
     source/main.cc
@@ -100,6 +101,7 @@ target_link_libraries(spdsx-patchedit PRIVATE
     juce::juce_audio_utils
     juce::juce_gui_basics
     specgram::specgram
+    spdsx_device
     juce::juce_recommended_config_flags
 )
 

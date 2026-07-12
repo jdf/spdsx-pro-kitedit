@@ -25,6 +25,9 @@ public:
 
   // A file was dropped on this slot.
   std::function<void(int, const juce::File&)> on_drop;
+  // A device pool wave was dropped on this slot (from the device
+  // samples panel); the second argument is the pool index.
+  std::function<void(int, int)> on_drop_device;
   // The slot body was clicked; the parent triggers the whole pad, with
   // the cursor height as velocity.
   std::function<void(int)> on_click;
@@ -50,6 +53,9 @@ public:
   // The slot is assigned a file that can't be read (e.g. a .kit whose
   // sample moved): shows the name flagged as missing, no transport.
   void SetSampleMissing(const juce::String& name);
+  // The slot holds a wave from the device pool: name + duration shown,
+  // but nothing to play until sample transfer is implemented.
+  void SetDeviceSample(const juce::String& name, double duration_seconds);
   // Back to an empty slot.
   void ClearSample();
 
@@ -105,6 +111,7 @@ private:
   PlayState play_state_ = PlayState::kStopped;
   int velocity_highlight_ = 0;
   bool playable_ = false;
+  bool device_wave_ = false;
   double position_ = 0.0;
   bool hovered_ = false;
   bool drag_hover_ = false;

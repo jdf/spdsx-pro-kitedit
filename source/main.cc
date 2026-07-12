@@ -31,6 +31,7 @@ public:
       menu.addCommandItem(&commands_, commands::kFileSaveAs);
       menu.addSeparator();
       menu.addCommandItem(&commands_, commands::kImportKit);
+      menu.addCommandItem(&commands_, commands::kImportDeviceDump);
     } else if (name == "Edit") {
       menu.addCommandItem(&commands_, commands::kUndo);
       menu.addCommandItem(&commands_, commands::kRedo);

@@ -46,6 +46,17 @@ juce::File DraggedBrowserFile(
       : juce::File();
 }
 
+// Device-panel drags carry "spdsx-devsample:<pool index>". Returns the
+// pool index, or -1 if this isn't a device wave drag.
+int DraggedDeviceSample(
+    const juce::DragAndDropTarget::SourceDetails& details)
+{
+  const juce::String d = details.description.toString();
+  const juce::String prefix(kDeviceSampleDragPrefix);
+  return d.startsWith(prefix) ? d.substring(prefix.length()).getIntValue()
+                              : -1;
+}
+
 // Slot-to-slot drags carry "spdsx-slot:<index>". Returns the source slot
 // index, or -1 if this isn't a slot drag.
 const juce::String kSlotDragPrefix = "spdsx-slot:";
@@ -144,6 +155,7 @@ void SampleSlot::SetSample(const juce::String& name,
   sample_meta_ = FormatMeta(duration_seconds, sample_rate);
   image_ = image;
   playable_ = true;
+  device_wave_ = false;
   play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(true);
@@ -155,12 +167,32 @@ void SampleSlot::SetSample(const juce::String& name,
   repaint();
 }
 
+void SampleSlot::SetDeviceSample(const juce::String& name,
+    double duration_seconds)
+{
+  sample_name_ = name;
+  sample_meta_ = duration_seconds > 0.0
+      ? juce::String(duration_seconds, 2) + " s  \xc2\xb7  device"
+      : juce::String("device");
+  image_ = juce::Image();
+  playable_ = false;
+  device_wave_ = true;
+  play_state_ = PlayState::kStopped;
+  position_ = 0.0;
+  play_button_.setVisible(false);
+  pause_button_.setVisible(false);
+  stop_button_.setVisible(false);
+  setMouseCursor(juce::MouseCursor::NormalCursor);
+  repaint();
+}
+
 void SampleSlot::SetSampleMissing(const juce::String& name)
 {
   sample_name_ = name;
   sample_meta_ = "missing";
   image_ = juce::Image();
   playable_ = false;
+  device_wave_ = false;
   play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(false);
@@ -176,6 +208,7 @@ void SampleSlot::ClearSample()
   sample_meta_.clear();
   image_ = juce::Image();
   playable_ = false;
+  device_wave_ = false;
   play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(false);
@@ -274,6 +307,13 @@ void SampleSlot::paint(juce::Graphics& g)
     g.drawImage(image_,
         bounds.reduced(kImageInset),
         juce::RectanglePlacement::stretchToFit);
+  } else if (device_wave_) {
+    // No spectrogram until the wave's audio can be pulled off the
+    // device; the body says where the sound lives instead.
+    g.setColour(kPlaceholderText);
+    g.setFont(13.0f);
+    g.drawText("on device", getLocalBounds(),
+        juce::Justification::centred);
   }
 
   // While this layer sounds, a wash in the velocity colour shows how
@@ -307,7 +347,9 @@ void SampleSlot::paint(juce::Graphics& g)
     auto text_area = bar.reduced(6, 0);
     text_area.removeFromRight(3 * kButtonSize + 3 * kButtonGap);
     g.setFont(11.0f);
-    g.setColour(playable_ ? kMetaText : kBorderDrop);
+    // Missing files flag their meta in amber; device waves are a normal
+    // state, just not playable yet.
+    g.setColour(playable_ || device_wave_ ? kMetaText : kBorderDrop);
     const auto meta_area =
         text_area.removeFromRight(text_area.getWidth() * 2 / 5);
     g.drawText(sample_meta_, meta_area, juce::Justification::centredRight);
@@ -422,7 +464,9 @@ void SampleSlot::filesDropped(const juce::StringArray& files, int, int)
 
 bool SampleSlot::isInterestedInDragSource(const SourceDetails& details)
 {
-  if (DraggedBrowserFile(details) != juce::File()) {
+  if (DraggedBrowserFile(details) != juce::File()
+      || DraggedDeviceSample(details) > 0)
+  {
     return true;
   }
   const int from = DraggedSlotIndex(details);
@@ -460,6 +504,12 @@ void SampleSlot::itemDropped(const SourceDetails& details)
       file != juce::File() && on_drop)
   {
     on_drop(index_, file);
+    return;
+  }
+  if (const int sample = DraggedDeviceSample(details);
+      sample > 0 && on_drop_device)
+  {
+    on_drop_device(index_, sample);
     return;
   }
   const int from = DraggedSlotIndex(details);

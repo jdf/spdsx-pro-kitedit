@@ -12,6 +12,9 @@ inline constexpr const char* kAudioFileWildcard =
 
 // Drag-and-drop description for samples dragged from the browser panel.
 inline constexpr const char* kSampleDragId = "sample-browser-file";
+// Drag-and-drop description prefix for device pool waves dragged from
+// the device samples panel: "spdsx-devsample:<pool index>".
+inline constexpr const char* kDeviceSampleDragPrefix = "spdsx-devsample:";
 
 inline bool LooksLikeAudio(const juce::String& path)
 {
