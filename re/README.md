@@ -11,9 +11,9 @@ protocol lives in this project.
 - `spdsx.py` — the original Python driver: DT1 framing, checksum, kit-select,
   object-focus, pad-link addressing. Reimplemented in `../source/device/`
   (`protocol`, `serial_port`, `spdsx_device`). Its `__main__` has byte-exact
-  message cases — the same ones `link_all_kits --selftest` now checks.
-- `link_all_kits.py` — original CLI; reimplemented as the C++ `link_all_kits`
-  target (with `--selftest` / `--probe`).
+  message cases — the same ones `spdutil selftest` now checks.
+- `link_all_kits.py` — original CLI; reimplemented as the C++ `spdutil`
+  target (`spdutil padlink`; `spdutil ping` is the old `--probe`).
 
 ## Live capture (frida) — `frida-scripts/`
 Hook the official **SPD-SX PRO App**'s serial I/O while you drive it. See
@@ -22,8 +22,17 @@ disabled). It exits if backgrounded plainly — keep it attached with:
 ```
 tail -f /dev/null | ~/frida-env/bin/frida -f "/Applications/Roland/SPDSXPROAPP.app/Contents/MacOS/SPDSXPROAPP" -l frida-scripts/<script>.js
 ```
+- `bulkread.js` — both directions of the bulk block transfer, content-triggered
+  on the frame magic (robust to attaching after the port is open); this is the
+  capture that decoded the bulk-read handshake.
+- `paramlog.js` — DT1 parameter writes as you change values in the app; how the
+  pad-param write map was captured.
+- `writecmd.js` — everything both directions with only the known heartbeat
+  suppressed; how the WRITE-button flash-commit handshake was found. (Lesson
+  learned the hard way: when hunting an unknown command, never filter by its
+  assumed shape.)
 - `statelog.js` — both directions (read+write) of a full "load current state"
-  dump; the workhorse for state RE.
+  dump; the original workhorse for state RE.
 - `dt1log.js` / `editlog.js` — outgoing DT1 parameter writes (editlog filters
   the heartbeat poll).
 - `portlog.js` — how the app opens/configures the port. `framelog.js` — the
@@ -35,5 +44,7 @@ tail -f /dev/null | ~/frida-env/bin/frida -f "/Applications/Roland/SPDSXPROAPP.a
 
 ## Data
 A full ~8 MB device image (the source of every documented storage offset) is
-cached at `../../re-cache/device-image.bin` with its own memo. The protocol map
-and current frontier are in `../CLAUDE.md`.
+cached at `../../re-cache/device-image.bin` with its own memo, and decoded
+capture evidence (`BULK-READ-PROTOCOL.md`, the commit-handshake and pad-param
+logs) at `../../re-cache/captures/`. The protocol map and current frontier are
+in `../CLAUDE.md`.
