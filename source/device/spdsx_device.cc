@@ -97,17 +97,24 @@ Bytes SpdsxDevice::Ping() {
   return Command(p);
 }
 
-Bytes SpdsxDevice::StatusRequest(uint8_t category) {
-  // UNSOLVED: both guessed layouts failed live. A category at offset 5
-  // (ping-shaped) is ignored — the device answers as if pinged; this
-  // reply-shaped attempt (four zeros, model id, category) gets no reply
-  // at all. The real layout needs a frida capture of the official app's
-  // startup handshake, which polls categories 0x15-0x17 continuously.
-  Bytes p = {0xF0, 0x41, 0x6A, 0x03, 0x00, 0x00, 0x00, 0x00, 0x16,
-      category};
-  p.insert(p.end(), 6, 0x00);
-  p.push_back(0xF7);
-  return Command(p);
+std::string SpdsxDevice::FirmwareField(uint8_t field) {
+  // Exact 32-byte cat-0x17 request from the capture; byte 15 selects the
+  // field. Reply: f0 41 6a 02 00 00 00 00 17 40 00 00 00 <len> <ascii> f7.
+  Bytes p = {0xF0, 0x41, 0x6A, 0x03, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x40, 0x00, 0x00, 0x00, 0x00, field, 0x00, 0x00, 0x00, 0x01, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7};
+  const Bytes r = Command(p);
+  if (r.size() < 15 || r[8] != 0x17) {
+    return {};
+  }
+  const size_t len = r[13];
+  std::string s;
+  for (size_t i = 14; i < 14 + len && i + 1 < r.size(); ++i) {
+    if (r[i] >= 0x20 && r[i] < 0x7F) {
+      s += static_cast<char>(r[i]);
+    }
+  }
+  return s;
 }
 
 Bytes SpdsxDevice::SelectKit(int kit) {

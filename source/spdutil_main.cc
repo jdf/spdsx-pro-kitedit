@@ -392,17 +392,16 @@ int RunInfo(const std::string& port_arg) {
   if (pong.empty()) {
     return 1;
   }
-  // Category 0x17 returned the firmware version ("2.00" / "0094") in
-  // captures, but the request layout hasn't been cracked yet (see
-  // SpdsxDevice::StatusRequest); report whatever comes back.
-  const Bytes version = dev.StatusRequest(0x17);
-  if (version.empty()) {
-    std::printf(
-        "version:  unknown (request layout not yet captured; needs a\n"
-        "          frida sniff of the official app's startup handshake)\n");
+  const std::string ver = dev.FirmwareField(0);   // "2.00"
+  const std::string build = dev.FirmwareField(3);  // "0094"
+  if (ver.empty()) {
+    std::printf("version:  (no reply)\n");
   } else {
-    std::printf("version:  %s\n          \"%s\"\n", ToHex(version).c_str(),
-        ToPrintable(version).c_str());
+    std::printf("version:  %s", ver.c_str());
+    if (!build.empty()) {
+      std::printf("  (build %s)", build.c_str());
+    }
+    std::printf("\n");
   }
   return 0;
 }
