@@ -387,8 +387,7 @@ int RunInfo(const std::string& port_arg) {
   spdsx::device::SpdsxDevice dev(port);
   std::printf("port:     %s\n", port.c_str());
   const Bytes pong = dev.Ping();
-  std::printf("ping:     %s\n",
-      pong.empty() ? "NO REPLY" : ToHex(pong).c_str());
+  std::printf("status:   %s\n", pong.empty() ? "no reply" : "connected");
   if (pong.empty()) {
     return 1;
   }
