@@ -28,8 +28,12 @@ enum class KitFormat : int {
   // Adds per-pad layer parameters: "mode" (a LayerModeName string),
   // "fadePoint", "fadeEnd". Absent fields read as MIX with defaults.
   kPadLayers = 3,
+  // Adds the shared hit-response properties: "dynamics" (bool),
+  // "dynamicsCurve" (a DynamicsCurveName string), "triggerReserve"
+  // (bool). Absent fields read as on/LINEAR/off.
+  kPadDynamics = 4,
 
-  kCurrent = kPadLayers,
+  kCurrent = kPadDynamics,
 };
 
 class KitDocument : public juce::FileBasedDocument {

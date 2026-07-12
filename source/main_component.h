@@ -84,6 +84,10 @@ private:
   void ApplyLayerParams(int pad);
   // Syncs the pad's layer widgets (and their visibility) from the model.
   void UpdatePadWidgets(int pad);
+  // The pad's "..." menu: dynamics on/off, dynamics curve, trigger
+  // reserve — the shared hit-response properties that don't earn
+  // permanent header space.
+  void ShowPadMenu(int pad);
   // Moves (or, when copy=true, duplicates) a slot's sample to another
   // slot as a single undoable action.
   void MoveSample(int from, int to, bool copy);
@@ -112,6 +116,8 @@ private:
       fade_point_sliders_;
   std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>
       fade_end_sliders_;
+  std::array<std::unique_ptr<juce::TextButton>, KitModel::kPadCount>
+      pad_menu_buttons_;
   // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);
   // runtime state, deliberately not persisted.
   std::array<bool, KitModel::kPadCount> alternate_flip_ {};

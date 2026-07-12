@@ -99,6 +99,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     };
     fade_point_sliders_[p] = make_fade_slider();
     fade_end_sliders_[p] = make_fade_slider();
+    pad_menu_buttons_[p] =
+        std::make_unique<juce::TextButton>(juce::String::fromUTF8("⋯"));
+    pad_menu_buttons_[p]->onClick = [this, pad] { ShowPadMenu(pad); };
+    addAndMakeVisible(*pad_menu_buttons_[p]);
     UpdatePadWidgets(pad);
   }
   // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
@@ -422,11 +426,13 @@ void MainComponent::resized()
       // fade point, fade end, mode box, right-aligned in that order.
       auto header = inner.removeFromTop(kPadHeader).withTrimmedBottom(2);
       const auto p = static_cast<size_t>(pad);
-      mode_boxes_[p]->setBounds(header.removeFromRight(96));
+      pad_menu_buttons_[p]->setBounds(header.removeFromRight(18));
       header.removeFromRight(4);
-      fade_end_sliders_[p]->setBounds(header.removeFromRight(34));
+      mode_boxes_[p]->setBounds(header.removeFromRight(88));
       header.removeFromRight(4);
-      fade_point_sliders_[p]->setBounds(header.removeFromRight(34));
+      fade_end_sliders_[p]->setBounds(header.removeFromRight(30));
+      header.removeFromRight(4);
+      fade_point_sliders_[p]->setBounds(header.removeFromRight(30));
       const int slot_h = (inner.getHeight() - kSlotSpacing) / 2;
       const auto slot = static_cast<size_t>(pad * 2);
       slots_[slot]->setBounds(inner.removeFromTop(slot_h));
@@ -521,7 +527,7 @@ void MainComponent::SetHiHatKeyDown(bool down)
   // closed one.
   const int velocity = static_cast<int>(velocity_slider_.getValue());
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    if (model_.layer_mode(pad) != LayerMode::kHiHat) {
+    if (model_.params(pad).mode != LayerMode::kHiHat) {
       continue;
     }
     const int open_idx = pad * KitModel::kLayersPerPad + 1;
@@ -584,13 +590,17 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
     return;
   }
   const auto p = static_cast<size_t>(pad);
-  const LayerGains gains = ComputeLayerGains(model_.layer_mode(pad),
-      velocity, model_.fade_point(pad), model_.fade_end(pad),
-      alternate_flip_[p], pedal_down);
-  if (model_.layer_mode(pad) == LayerMode::kAlternate) {
+  const PadParams& params = model_.params(pad);
+  const LayerWeights weights = ComputeLayerWeights(params.mode, velocity,
+      params.fade_point, params.fade_end, alternate_flip_[p], pedal_down);
+  // Layer selection follows the strike velocity; loudness follows the
+  // dynamics settings (a fixed full level when dynamics is off).
+  const float loudness =
+      params.dynamics ? DynamicsGain(params.curve, velocity) : 1.0f;
+  if (params.mode == LayerMode::kAlternate) {
     alternate_flip_[p] = !alternate_flip_[p];
   }
-  if (gains.choke) {
+  if (weights.choke) {
     // SW(MONO): only one voice from this pad — silence both layers
     // before the new hit sounds.
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
@@ -600,7 +610,8 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
     }
   }
   for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
-    const float gain = layer == 0 ? gains.top : gains.bottom;
+    const float gain =
+        (layer == 0 ? weights.top : weights.bottom) * loudness;
     const int idx = pad * KitModel::kLayersPerPad + layer;
     auto& slot = *slots_[static_cast<size_t>(idx)];
     if (gain <= 0.0f || !slot.is_playable()) {
@@ -619,32 +630,65 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
 void MainComponent::ApplyLayerParams(int pad)
 {
   const auto p = static_cast<size_t>(pad);
-  const auto mode =
-      static_cast<LayerMode>(mode_boxes_[p]->getSelectedId() - 1);
-  const int point = static_cast<int>(fade_point_sliders_[p]->getValue());
-  const int end = static_cast<int>(fade_end_sliders_[p]->getValue());
-  if (mode == model_.layer_mode(pad) && point == model_.fade_point(pad)
-      && end == model_.fade_end(pad))
-  {
+  PadParams params = model_.params(pad);
+  params.mode = static_cast<LayerMode>(mode_boxes_[p]->getSelectedId() - 1);
+  params.fade_point = static_cast<int>(fade_point_sliders_[p]->getValue());
+  params.fade_end = static_cast<int>(fade_end_sliders_[p]->getValue());
+  if (params == model_.params(pad)) {
     return;
   }
   undo_.beginNewTransaction(
       "Change pad " + juce::String(pad + 1) + " layers");
-  undo_.perform(new SetLayerParamsAction(model_, pad, mode, point, end));
+  undo_.perform(new SetPadParamsAction(model_, pad, params));
+}
+
+void MainComponent::ShowPadMenu(int pad)
+{
+  const PadParams& params = model_.params(pad);
+  juce::PopupMenu curve_menu;
+  for (int c = 0; c < kDynamicsCurveCount; ++c) {
+    const auto name = DynamicsCurveName(static_cast<DynamicsCurve>(c));
+    curve_menu.addItem(100 + c, juce::String(name.data(), name.size()),
+        params.dynamics, params.curve == static_cast<DynamicsCurve>(c));
+  }
+  juce::PopupMenu menu;
+  menu.addItem(1, "Dynamics", true, params.dynamics);
+  menu.addSubMenu("Dynamics Curve", curve_menu, params.dynamics);
+  menu.addItem(2, "Trigger Reserve", true, params.trigger_reserve);
+  menu.showMenuAsync(
+      juce::PopupMenu::Options().withTargetComponent(
+          pad_menu_buttons_[static_cast<size_t>(pad)].get()),
+      [this, pad](int result)
+      {
+        if (result == 0) {
+          return;  // dismissed
+        }
+        PadParams changed = model_.params(pad);
+        if (result == 1) {
+          changed.dynamics = !changed.dynamics;
+        } else if (result == 2) {
+          changed.trigger_reserve = !changed.trigger_reserve;
+        } else if (result >= 100 && result < 100 + kDynamicsCurveCount) {
+          changed.curve = static_cast<DynamicsCurve>(result - 100);
+        }
+        undo_.beginNewTransaction(
+            "Change pad " + juce::String(pad + 1) + " dynamics");
+        undo_.perform(new SetPadParamsAction(model_, pad, changed));
+      });
 }
 
 void MainComponent::UpdatePadWidgets(int pad)
 {
   const auto p = static_cast<size_t>(pad);
-  const LayerMode mode = model_.layer_mode(pad);
+  const PadParams& params = model_.params(pad);
   mode_boxes_[p]->setSelectedId(
-      static_cast<int>(mode) + 1, juce::dontSendNotification);
+      static_cast<int>(params.mode) + 1, juce::dontSendNotification);
   fade_point_sliders_[p]->setValue(
-      model_.fade_point(pad), juce::dontSendNotification);
+      params.fade_point, juce::dontSendNotification);
   fade_end_sliders_[p]->setValue(
-      model_.fade_end(pad), juce::dontSendNotification);
-  fade_point_sliders_[p]->setVisible(UsesFadePoint(mode));
-  fade_end_sliders_[p]->setVisible(UsesFadeEnd(mode));
+      params.fade_end, juce::dontSendNotification);
+  fade_point_sliders_[p]->setVisible(UsesFadePoint(params.mode));
+  fade_end_sliders_[p]->setVisible(UsesFadeEnd(params.mode));
 }
 
 void MainComponent::PadParamsChanged(int pad)

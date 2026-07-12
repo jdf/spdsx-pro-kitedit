@@ -13,14 +13,30 @@
 
 namespace spdsx {
 
-struct Pad {
-  // top, bottom; an empty File means the layer holds no sample.
-  std::pair<juce::File, juce::File> samples;
-  // How the two layers respond to a hit, and the velocity thresholds the
+// Everything about how a pad responds to a hit (as opposed to which
+// samples it holds). Mutated as a unit: one undo step, one listener
+// notification, however many fields a gesture changes.
+struct PadParams {
+  // How the two layers split a hit, and the velocity thresholds the
   // fade/switch modes read (1..127).
   LayerMode mode = LayerMode::kMix;
   int fade_point = kDefaultFadePoint;
   int fade_end = kDefaultFadeEnd;
+  // Respond to strike velocity? Off = fixed full volume.
+  bool dynamics = true;
+  // Velocity -> loudness transfer, when dynamics is on.
+  DynamicsCurve curve = DynamicsCurve::kLinear;
+  // Device-only (read/write, not emulated): hold a strike until the
+  // next click accent instead of sounding immediately.
+  bool trigger_reserve = false;
+
+  bool operator==(const PadParams&) const = default;
+};
+
+struct Pad {
+  // top, bottom; an empty File means the layer holds no sample.
+  std::pair<juce::File, juce::File> samples;
+  PadParams params;
 };
 
 class KitModel {
@@ -34,14 +50,18 @@ public:
   KitModel()
   {
     for (int i = 0; i < kPadCount; ++i) {
-      pads_[static_cast<size_t>(i)].mode = DefaultLayerMode(i);
+      pads_[static_cast<size_t>(i)].params = DefaultParams(i);
     }
   }
 
   // Pad 9 (bottom-right) defaults to HI-HAT, the rest to MIX.
-  static LayerMode DefaultLayerMode(int pad)
+  static PadParams DefaultParams(int pad)
   {
-    return pad == kPadCount - 1 ? LayerMode::kHiHat : LayerMode::kMix;
+    PadParams params;
+    if (pad == kPadCount - 1) {
+      params.mode = LayerMode::kHiHat;
+    }
+    return params;
   }
 
   class Listener {
@@ -88,28 +108,15 @@ public:
     }
   }
 
-  LayerMode layer_mode(int pad) const
+  const PadParams& params(int pad) const
   {
-    return pads_.at(static_cast<size_t>(pad)).mode;
+    return pads_.at(static_cast<size_t>(pad)).params;
   }
-  int fade_point(int pad) const
-  {
-    return pads_.at(static_cast<size_t>(pad)).fade_point;
-  }
-  int fade_end(int pad) const
-  {
-    return pads_.at(static_cast<size_t>(pad)).fade_end;
-  }
-  // One notification even when several of the three change together.
-  void SetLayerParams(int pad, LayerMode mode, int fade_point, int fade_end)
+  void SetPadParams(int pad, const PadParams& params)
   {
     auto& p = pads_.at(static_cast<size_t>(pad));
-    if (p.mode != mode || p.fade_point != fade_point
-        || p.fade_end != fade_end)
-    {
-      p.mode = mode;
-      p.fade_point = fade_point;
-      p.fade_end = fade_end;
+    if (p.params != params) {
+      p.params = params;
       listeners_.call([pad](Listener& l) { l.PadParamsChanged(pad); });
     }
   }

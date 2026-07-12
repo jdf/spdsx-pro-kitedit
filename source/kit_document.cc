@@ -25,8 +25,7 @@ void KitDocument::ResetToUntitled()
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       model_.set_sample(pad, layer, juce::File());
     }
-    model_.SetLayerParams(pad, KitModel::DefaultLayerMode(pad),
-        kDefaultFadePoint, kDefaultFadeEnd);
+    model_.SetPadParams(pad, KitModel::DefaultParams(pad));
   }
   undo_.clearUndoHistory();
   setFile(juce::File());
@@ -83,22 +82,26 @@ juce::Result KitDocument::loadDocument(const juce::File& file)
       }
       model_.set_sample(pad, layer, to_file(entry));
     }
-    // Layer parameters arrived in v3; older pads read as MIX defaults.
-    LayerMode mode = LayerMode::kMix;
-    int fade_point = kDefaultFadePoint;
-    int fade_end = kDefaultFadeEnd;
+    // Layer parameters arrived in v3, dynamics in v4; absent fields
+    // read as the field defaults (MIX, dynamics on, LINEAR, no reserve).
+    PadParams params;
     if (pads != nullptr && pad < pads->size()) {
       const auto& pad_var = (*pads)[pad];
-      mode = ParseLayerMode(
+      params.mode = ParseLayerMode(
           pad_var.getProperty("mode", "").toString().toStdString(),
           LayerMode::kMix);
-      fade_point = juce::jlimit(1, 127,
+      params.fade_point = juce::jlimit(1, 127,
           static_cast<int>(
               pad_var.getProperty("fadePoint", kDefaultFadePoint)));
-      fade_end = juce::jlimit(1, 127,
+      params.fade_end = juce::jlimit(1, 127,
           static_cast<int>(pad_var.getProperty("fadeEnd", kDefaultFadeEnd)));
+      params.dynamics = pad_var.getProperty("dynamics", true);
+      params.curve = ParseDynamicsCurve(
+          pad_var.getProperty("dynamicsCurve", "").toString().toStdString(),
+          DynamicsCurve::kLinear);
+      params.trigger_reserve = pad_var.getProperty("triggerReserve", false);
     }
-    model_.SetLayerParams(pad, mode, fade_point, fade_end);
+    model_.SetPadParams(pad, params);
   }
   // A freshly loaded kit starts with a clean history; undoing into a
   // different document's edits would be nonsense.
@@ -122,11 +125,17 @@ juce::Result KitDocument::saveDocument(const juce::File& file)
               : juce::var(sample.getFullPathName()));
     }
     pad_obj->setProperty("samples", samples);
-    const auto mode_name = LayerModeName(model_.layer_mode(pad));
+    const auto& params = model_.params(pad);
+    const auto mode_name = LayerModeName(params.mode);
     pad_obj->setProperty("mode",
         juce::String(mode_name.data(), mode_name.size()));
-    pad_obj->setProperty("fadePoint", model_.fade_point(pad));
-    pad_obj->setProperty("fadeEnd", model_.fade_end(pad));
+    pad_obj->setProperty("fadePoint", params.fade_point);
+    pad_obj->setProperty("fadeEnd", params.fade_end);
+    pad_obj->setProperty("dynamics", params.dynamics);
+    const auto curve_name = DynamicsCurveName(params.curve);
+    pad_obj->setProperty("dynamicsCurve",
+        juce::String(curve_name.data(), curve_name.size()));
+    pad_obj->setProperty("triggerReserve", params.trigger_reserve);
     pads.add(juce::var(pad_obj));
   }
   obj->setProperty("pads", pads);

@@ -29,9 +29,33 @@ inline constexpr int kLayerModeCount = 8;
 inline constexpr int kDefaultFadePoint = 64;
 inline constexpr int kDefaultFadeEnd = 127;
 
-// Per-hit result: linear gain for each layer (0 = that layer doesn't
-// fire), plus whether the hit chokes anything still ringing on the pad.
-struct LayerGains {
+// Velocity -> loudness transfer functions (the pad's Dynamics Curve).
+// The manual only says LOUD1-3 make loud output "more readily produced"
+// from softer strikes; the shapes here are power-curve approximations
+// of that, not measured device behavior.
+enum class DynamicsCurve {
+  kLinear,
+  kLoud1,
+  kLoud2,
+  kLoud3,
+};
+
+inline constexpr int kDynamicsCurveCount = 4;
+
+// Loudness gain 0..1 for a 1..127 velocity through the given curve.
+float DynamicsGain(DynamicsCurve curve, int velocity);
+
+std::string_view DynamicsCurveName(DynamicsCurve curve);
+DynamicsCurve ParseDynamicsCurve(std::string_view name,
+    DynamicsCurve fallback);
+
+// Per-hit result: each layer's selection weight, 0..1 (0 = that layer
+// doesn't fire; blended modes give fractions), plus whether the hit
+// chokes anything still ringing on the pad. Loudness is deliberately
+// NOT folded in: the caller multiplies by DynamicsGain (or 1.0 when
+// Dynamics is off), so layer selection always follows the real strike
+// velocity even when loudness doesn't.
+struct LayerWeights {
   float top = 0.0f;
   float bottom = 0.0f;
   bool choke = false;
@@ -40,8 +64,8 @@ struct LayerGains {
 // velocity and fade_point/fade_end are MIDI-style 1..127. alternate_flip
 // is the pad's flip-flop state (false = A fires next); pedal_down is the
 // hi-hat pedal. Modes ignore the inputs they don't use.
-LayerGains ComputeLayerGains(LayerMode mode, int velocity, int fade_point,
-    int fade_end, bool alternate_flip, bool pedal_down);
+LayerWeights ComputeLayerWeights(LayerMode mode, int velocity,
+    int fade_point, int fade_end, bool alternate_flip, bool pedal_down);
 
 // True when the mode reads the fade point (and, for the blended modes,
 // the fade end); drives which controls the UI shows.

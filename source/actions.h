@@ -42,43 +42,35 @@ private:
   juce::File old_;
 };
 
-// Changes a pad's layer mode / fade parameters as one undo step.
-class SetLayerParamsAction : public juce::UndoableAction {
+// Changes a pad's hit-response parameters (layer mode, fades, dynamics,
+// trigger reserve) as one undo step.
+class SetPadParamsAction : public juce::UndoableAction {
 public:
-  SetLayerParamsAction(
-      KitModel& model, int pad, LayerMode mode, int fade_point, int fade_end)
+  SetPadParamsAction(KitModel& model, int pad, const PadParams& params)
       : model_(model)
       , pad_(pad)
-      , new_mode_(mode)
-      , new_point_(fade_point)
-      , new_end_(fade_end)
-      , old_mode_(model.layer_mode(pad))
-      , old_point_(model.fade_point(pad))
-      , old_end_(model.fade_end(pad))
+      , new_(params)
+      , old_(model.params(pad))
   {
   }
 
   bool perform() override
   {
-    model_.SetLayerParams(pad_, new_mode_, new_point_, new_end_);
+    model_.SetPadParams(pad_, new_);
     return true;
   }
 
   bool undo() override
   {
-    model_.SetLayerParams(pad_, old_mode_, old_point_, old_end_);
+    model_.SetPadParams(pad_, old_);
     return true;
   }
 
 private:
   KitModel& model_;
   int pad_;
-  LayerMode new_mode_;
-  int new_point_;
-  int new_end_;
-  LayerMode old_mode_;
-  int old_point_;
-  int old_end_;
+  PadParams new_;
+  PadParams old_;
 };
 
 }  // namespace spdsx
