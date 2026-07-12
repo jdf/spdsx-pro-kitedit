@@ -7,6 +7,8 @@
 //   info        serial port, ping status, firmware version query
 //   dump        stream a memory bank (or all) to an image file; or
 //               --verify an existing image's block structure offline
+//   kits        list every kit name (live dump of bank 0x10, or --from
+//               a saved dump file)
 //   padlink     put triggers/pads into a pad-link group across kits
 //   selftest    offline byte-exact message checks (no device needed)
 //
@@ -33,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+#include "device/kit_image.h"
 #include "device/protocol.h"
 #include "device/spdsx_device.h"
 
@@ -209,6 +212,51 @@ int RunSelfTest() {
       blocks.empty() ? 0 : blocks[0].bank,
       blocks.size() < 2 ? 0 : blocks[1].bank);
 
+  std::printf("\n--- clean image + kit parse ---\n");
+  {
+    // Two synthetic block frames; CleanBulkImage should strip the 14-byte
+    // headers + trailing f7 and concatenate the data.
+    auto make_block = [](uint8_t fill, size_t data_len) {
+      Bytes blk = FromHex("f0 41 6c 02 00 00 00 00 10 00 00 04 00 00");
+      blk.insert(blk.end(), data_len, fill);
+      blk.push_back(0xf7);
+      return blk;
+    };
+    Bytes raw = make_block(0xaa, 100);
+    const Bytes b2 = make_block(0xbb, 50);
+    raw.insert(raw.end(), b2.begin(), b2.end());
+    const Bytes clean = spdsx::device::CleanBulkImage(raw);
+    const bool clean_ok = clean.size() == 150 && clean[0] == 0xaa
+        && clean[99] == 0xaa && clean[100] == 0xbb && clean[149] == 0xbb;
+    all_ok = all_ok && clean_ok;
+    std::printf("%-8s clean strips framing (%zu bytes)\n",
+        clean_ok ? "OK" : "FAIL", clean.size());
+
+    // A clean image with names planted at record 0 and record 128.
+    Bytes img(spdsx::device::kKitArrayBase
+        + 129 * spdsx::device::kKitRecordStride,
+        0x00);
+    auto put = [&](int kit, const char* name) {
+      const size_t rec = spdsx::device::kKitArrayBase
+          + static_cast<size_t>(kit) * spdsx::device::kKitRecordStride;
+      const std::string padded = std::string(name)
+          + std::string(spdsx::device::kKitNameLen - std::string(name).size(),
+              ' ');
+      for (size_t i = 0; i < spdsx::device::kKitNameLen; ++i) {
+        img[rec + i] = static_cast<uint8_t>(padded[i]);
+      }
+    };
+    put(0, "Dance");
+    put(128, "ZZZZZZZZZZZZZZZZ");
+    const auto kits = spdsx::device::ParseKits(img);
+    const bool parse_ok = kits.size() >= 129 && kits[0].name == "Dance"
+        && kits[128].name == "ZZZZZZZZZZZZZZZZ";
+    all_ok = all_ok && parse_ok;
+    std::printf("%-8s parse: kit1=%s kit129=%s\n", parse_ok ? "OK" : "FAIL",
+        kits.empty() ? "?" : kits[0].name.c_str(),
+        kits.size() < 129 ? "?" : kits[128].name.c_str());
+  }
+
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
   return all_ok ? 0 : 1;
 }
@@ -278,6 +326,7 @@ int Usage() {
       "                --all            all four banks\n"
       "                --out FILE       write the reassembled image\n"
       "                --verify FILE    offline: report a file's blocks\n"
+      "  kits        list all kit names (live, or --from <dump file>)\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -425,6 +474,26 @@ int RunDump(const std::string& port_arg, const std::vector<uint8_t>& banks,
   return image.empty() ? 1 : 0;
 }
 
+int RunKits(const std::string& port_arg, const std::string& from_path) {
+  Bytes raw;
+  if (!from_path.empty()) {
+    raw = ReadFile(from_path);
+  } else {
+    const std::string port = ResolvePort(port_arg);
+    spdsx::device::SpdsxDevice dev(port);
+    std::printf("opened %s, streaming bank 0x10...\n", port.c_str());
+    raw = dev.DumpBank(spdsx::device::kBankKits);
+  }
+  const Bytes clean = spdsx::device::CleanBulkImage(raw);
+  const auto kits = spdsx::device::ParseKits(clean);
+  std::printf("%zu raw bytes -> %zu clean bytes -> %zu kits\n", raw.size(),
+      clean.size(), kits.size());
+  for (size_t i = 0; i < kits.size(); ++i) {
+    std::printf("  %3zu  %s\n", i + 1, kits[i].name.c_str());
+  }
+  return kits.empty() ? 1 : 0;
+}
+
 int RunPadLink(const std::string& port_arg, int group,
     const std::vector<std::pair<ObjectKind, int>>& objects,
     std::vector<KitRange> ranges, bool dry_run, bool verbose) {
@@ -524,6 +593,7 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> banks;
   std::string out_path;
   std::string verify_path;
+  std::string from_path;
   bool dry_run = false;
   bool verbose = false;
 
@@ -556,6 +626,8 @@ int main(int argc, char** argv) {
         out_path = next();
       } else if (arg == "--verify") {
         verify_path = next();
+      } else if (arg == "--from") {
+        from_path = next();
       } else if (arg == "--dry-run") {
         dry_run = true;
       } else if (arg == "--verbose") {
@@ -581,6 +653,9 @@ int main(int argc, char** argv) {
         banks = {spdsx::device::kBankKits};  // the useful default
       }
       return RunDump(port, banks, out_path, verify_path);
+    }
+    if (command == "kits") {
+      return RunKits(port, from_path);
     }
     if (command == "padlink") {
       if (group < 0) {

@@ -106,6 +106,7 @@ target_link_libraries(spdsx-patchedit PRIVATE
 # JUCE-free: pure protocol + POSIX/macOS serial, ported from spdsx-py. Kept
 # separate so it stays testable and could move to its own project later.
 add_library(spdsx_device STATIC
+    source/device/kit_image.cc
     source/device/protocol.cc
     source/device/serial_port.cc
     source/device/spdsx_device.cc
