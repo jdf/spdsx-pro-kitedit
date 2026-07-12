@@ -151,14 +151,22 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   };
   kit_chooser_.on_rename = [this](const juce::String& name)
   {
-    undo_.beginNewTransaction("Rename kit");
-    undo_.perform(new SetKitNameAction(model_, name));
+    undo().beginNewTransaction("Rename kit");
+    undo().perform(new SetKitNameAction(model_, name));
   };
   addAndMakeVisible(kit_chooser_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
 
   model_.AddListener(this);
+  document_.on_history_reset = [this]
+  {
+    for (auto& u : undos_) {
+      if (u != nullptr) {
+        u->clearUndoHistory();
+      }
+    }
+  };
   // Start as a fresh untitled device, so the model reflects kit 1 and
   // every header widget agrees with it.
   document_.ResetToUntitled();
@@ -181,8 +189,8 @@ void MainComponent::LoadSample(int idx, const juce::File& file)
         stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
     return;
   }
-  undo_.beginNewTransaction("Load " + file.getFileName());
-  undo_.perform(new SetSampleAction(model_, idx / KitModel::kLayersPerPad,
+  undo().beginNewTransaction("Load " + file.getFileName());
+  undo().perform(new SetSampleAction(model_, idx / KitModel::kLayersPerPad,
       idx % KitModel::kLayersPerPad, file));
 }
 
@@ -228,14 +236,14 @@ void MainComponent::getCommandInfo(
     case commands::kUndo:
       info.setInfo("Undo", "Undo the last change", "Edit", 0);
       info.addDefaultKeypress('z', juce::ModifierKeys::commandModifier);
-      info.setActive(undo_.canUndo());
+      info.setActive(undo().canUndo());
       break;
     case commands::kRedo:
       info.setInfo("Redo", "Redo the last undone change", "Edit", 0);
       info.addDefaultKeypress('z',
           juce::ModifierKeys::commandModifier
               | juce::ModifierKeys::shiftModifier);
-      info.setActive(undo_.canRedo());
+      info.setActive(undo().canRedo());
       break;
     case commands::kFileNew:
       info.setInfo(
@@ -279,9 +287,9 @@ bool MainComponent::perform(const InvocationInfo& info)
 {
   switch (info.commandID) {
     case commands::kUndo:
-      return undo_.undo();
+      return undo().undo();
     case commands::kRedo:
-      return undo_.redo();
+      return undo().redo();
     case commands::kFileNew:
       // Nothing to prompt about — the current document is autosaved.
       // A new device needs a home up front so autosave has a target.
@@ -417,6 +425,15 @@ void MainComponent::RefreshDocumentState()
 void MainComponent::RefreshKitSelector()
 {
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
+}
+
+juce::UndoManager& MainComponent::undo()
+{
+  auto& u = undos_[static_cast<size_t>(device_.current_kit())];
+  if (u == nullptr) {
+    u = std::make_unique<juce::UndoManager>();
+  }
+  return *u;
 }
 
 void MainComponent::MarkEdited()
@@ -791,9 +808,9 @@ void MainComponent::ApplyLayerParams(int pad)
   if (params == model_.params(pad)) {
     return;
   }
-  undo_.beginNewTransaction(
+  undo().beginNewTransaction(
       "Change pad " + juce::String(pad + 1) + " layers");
-  undo_.perform(new SetPadParamsAction(model_, pad, params));
+  undo().perform(new SetPadParamsAction(model_, pad, params));
 }
 
 void MainComponent::ShowPadMenu(int pad)
@@ -825,9 +842,9 @@ void MainComponent::ShowPadMenu(int pad)
         } else if (result >= 100 && result < 100 + kDynamicsCurveCount) {
           changed.curve = static_cast<DynamicsCurve>(result - 100);
         }
-        undo_.beginNewTransaction(
+        undo().beginNewTransaction(
             "Change pad " + juce::String(pad + 1) + " dynamics");
-        undo_.perform(new SetPadParamsAction(model_, pad, changed));
+        undo().perform(new SetPadParamsAction(model_, pad, changed));
       });
 }
 
@@ -858,11 +875,11 @@ void MainComponent::MoveSample(int from, int to, bool copy)
   }
   const auto& file = model_.sample(
       from / KitModel::kLayersPerPad, from % KitModel::kLayersPerPad);
-  undo_.beginNewTransaction(copy ? "Duplicate sample" : "Move sample");
-  undo_.perform(new SetSampleAction(model_, to / KitModel::kLayersPerPad,
+  undo().beginNewTransaction(copy ? "Duplicate sample" : "Move sample");
+  undo().perform(new SetSampleAction(model_, to / KitModel::kLayersPerPad,
       to % KitModel::kLayersPerPad, file));
   if (!copy) {
-    undo_.perform(new SetSampleAction(model_, from / KitModel::kLayersPerPad,
+    undo().perform(new SetSampleAction(model_, from / KitModel::kLayersPerPad,
         from % KitModel::kLayersPerPad, juce::File()));
   }
 }
@@ -875,12 +892,12 @@ void MainComponent::MovePad(int from_pad, int to_pad, bool copy)
   // Copy up front so the source-clears below can't invalidate them.
   const juce::File top = model_.sample(from_pad, 0);
   const juce::File bottom = model_.sample(from_pad, 1);
-  undo_.beginNewTransaction(copy ? "Duplicate pad" : "Move pad");
-  undo_.perform(new SetSampleAction(model_, to_pad, 0, top));
-  undo_.perform(new SetSampleAction(model_, to_pad, 1, bottom));
+  undo().beginNewTransaction(copy ? "Duplicate pad" : "Move pad");
+  undo().perform(new SetSampleAction(model_, to_pad, 0, top));
+  undo().perform(new SetSampleAction(model_, to_pad, 1, bottom));
   if (!copy) {
-    undo_.perform(new SetSampleAction(model_, from_pad, 0, juce::File()));
-    undo_.perform(new SetSampleAction(model_, from_pad, 1, juce::File()));
+    undo().perform(new SetSampleAction(model_, from_pad, 0, juce::File()));
+    undo().perform(new SetSampleAction(model_, from_pad, 1, juce::File()));
   }
 }
 
@@ -938,9 +955,9 @@ void MainComponent::handleIncomingMidiMessage(
 void MainComponent::timerCallback()
 {
   // Keep menu enablement in step with the undo history.
-  if (undo_.canUndo() != could_undo_ || undo_.canRedo() != could_redo_) {
-    could_undo_ = undo_.canUndo();
-    could_redo_ = undo_.canRedo();
+  if (undo().canUndo() != could_undo_ || undo().canRedo() != could_redo_) {
+    could_undo_ = undo().canUndo();
+    could_redo_ = undo().canRedo();
     commands_.commandStatusChanged();
   }
 

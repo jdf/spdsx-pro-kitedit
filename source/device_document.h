@@ -29,8 +29,12 @@ class DeviceDocument : public juce::FileBasedDocument {
 public:
   DeviceDocument(DeviceModel& device,
       KitModel& model,
-      juce::UndoManager& undo,
       juce::ApplicationProperties& settings);
+
+  // Fired when every undo history must go (open/new/import replaced the
+  // content wholesale). Kit switches deliberately do NOT fire it: undo
+  // histories are per-kit and survive switching.
+  std::function<void()> on_history_reset;
 
   juce::String getDocumentTitle() override;
 
@@ -39,8 +43,8 @@ public:
   void ResetToUntitled();
 
   // Stashes the active kit and makes another one active. A pure view
-  // change: the dirty flag is preserved; undo history clears (undoing
-  // across kits would be nonsense).
+  // change: the dirty flag is preserved, and per-kit undo histories
+  // are untouched.
   void SwitchKit(int index);
 
   // Copies the live KitModel back into the device store; called before
@@ -72,10 +76,10 @@ protected:
 
 private:
   void LoadActiveKitIntoModel();
+  void ResetHistory();
 
   DeviceModel& device_;
   KitModel& model_;
-  juce::UndoManager& undo_;
   juce::ApplicationProperties& settings_;
 };
 

@@ -97,7 +97,6 @@ KitData KitFromVar(const juce::var& v)
 
 DeviceDocument::DeviceDocument(DeviceModel& device,
     KitModel& model,
-    juce::UndoManager& undo,
     juce::ApplicationProperties& settings)
     : juce::FileBasedDocument(".spdsx",
           // device.json is included so the manifest stays openable even
@@ -108,7 +107,6 @@ DeviceDocument::DeviceDocument(DeviceModel& device,
           "Save this device")
     , device_(device)
     , model_(model)
-    , undo_(undo)
     , settings_(settings)
 {
 }
@@ -119,11 +117,18 @@ juce::String DeviceDocument::getDocumentTitle()
                                    : "Untitled Device";
 }
 
+void DeviceDocument::ResetHistory()
+{
+  if (on_history_reset) {
+    on_history_reset();
+  }
+}
+
 void DeviceDocument::ResetToUntitled()
 {
   device_.Reset();
   LoadActiveKitIntoModel();
-  undo_.clearUndoHistory();
+  ResetHistory();
   setFile(juce::File());
   setChangedFlag(false);
 }
@@ -159,12 +164,12 @@ void DeviceDocument::SwitchKit(int index)
     return;
   }
   // Loading the model fires change listeners that mark the document
-  // edited; a kit switch is view state, so put the flag back.
+  // edited; a kit switch is view state, so put the flag back. Undo
+  // histories are per-kit and survive the switch untouched.
   const bool was_changed = hasChangedSinceSaved();
   StashActiveKit();
   device_.set_current_kit(index);
   LoadActiveKitIntoModel();
-  undo_.clearUndoHistory();
   setChangedFlag(was_changed);
 }
 
@@ -201,8 +206,8 @@ juce::Result DeviceDocument::loadDocument(const juce::File& chosen)
   device_.set_current_kit(juce::jlimit(0, DeviceModel::kKitCount - 1,
       static_cast<int>(parsed.getProperty("currentKit", 0))));
   LoadActiveKitIntoModel();
-  // A freshly loaded device starts with a clean history.
-  undo_.clearUndoHistory();
+  // A freshly loaded device starts with clean histories.
+  ResetHistory();
   return juce::Result::ok();
 }
 
@@ -256,7 +261,7 @@ juce::Result DeviceDocument::CreateNew(const juce::File& folder)
 {
   device_.Reset();
   LoadActiveKitIntoModel();
-  undo_.clearUndoHistory();
+  ResetHistory();
   setFile(folder);
   const auto result = saveDocument(folder);
   if (result.wasOk()) {
@@ -309,7 +314,7 @@ juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
   }
   device_.kit(device_.current_kit()) = kit;
   LoadActiveKitIntoModel();
-  undo_.clearUndoHistory();
+  ResetHistory();
   changed();
   return juce::Result::ok();
 }

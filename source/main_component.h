@@ -118,12 +118,18 @@ private:
   juce::Rectangle<int> GridArea() const;
   juce::Rectangle<int> PadBounds(int row, int col) const;
 
+  // The current kit's undo history. Histories are per-kit (created
+  // lazily) so switching kits doesn't destroy them; document-level
+  // events (open/new/import) clear all via on_history_reset.
+  juce::UndoManager& undo();
+
   juce::ApplicationCommandManager& commands_;
   KitModel model_;
   DeviceModel device_;
-  juce::UndoManager undo_;
+  std::array<std::unique_ptr<juce::UndoManager>, DeviceModel::kKitCount>
+      undos_;
   juce::ApplicationProperties settings_;
-  DeviceDocument document_ {device_, model_, undo_, settings_};
+  DeviceDocument document_ {device_, model_, settings_};
   AudioEngine engine_ {kSlotCount};
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   // Per-pad layer controls, living in each pad's header row.
