@@ -10,8 +10,16 @@ constexpr int kPanelWidth = 210;
 constexpr int kPadding = 12;
 constexpr int kRowHeight = 24;
 constexpr int kRowGap = 6;
-constexpr int kKnobHeight = 78;
+constexpr int kKnobTextHeight = 18;
+constexpr int kKnobSize = 60;  // the dial square, textbox below it
+constexpr int kKnobHeight = kKnobSize + kKnobTextHeight;
 constexpr int kLabelWidth = 60;
+// The LookAndFeel draws checkbox squares at a small inset; labels and
+// the knob get the same nudge so everything left-aligns.
+constexpr int kAlignInset = 4;
+// LookAndFeel_V4::drawRotarySlider draws the dial reduced(10) inside
+// the slider bounds.
+constexpr int kV4RotaryMargin = 10;
 
 }  // namespace
 
@@ -31,17 +39,19 @@ PadSettingsPanel::PadSettingsPanel()
   curve_.onChange = [this] { Push(); };
   // Flush-left labels, nudged to line up with the checkbox squares
   // (the LookAndFeel draws those at a small inset).
-  curve_label_.setBorderSize(juce::BorderSize<int>(0, 4, 0, 0));
+  curve_label_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
   addAndMakeVisible(curve_label_);
   addAndMakeVisible(curve_);
 
   velocity_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
   velocity_.setRange(1, 127, 1);
   // The value box doubles as direct entry: click the number and type.
-  velocity_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 18);
+  velocity_.setTextBoxStyle(
+      juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
   velocity_.setTextBoxIsEditable(true);
   velocity_.onValueChange = [this] { Push(); };
-  velocity_label_.setBorderSize(juce::BorderSize<int>(0, 4, 0, 0));
+  velocity_label_.setBorderSize(
+      juce::BorderSize<int>(0, kAlignInset, 0, 0));
   addAndMakeVisible(velocity_label_);
   addAndMakeVisible(velocity_);
 
@@ -73,9 +83,15 @@ void PadSettingsPanel::resized()
   curve_.setBounds(curve_row);
   area.removeFromTop(kRowGap);
   // Knob on the left, aligned with the other controls; its label
-  // follows on the right, vertically centred on the knob.
+  // follows on the right, vertically centred on the knob. The slider
+  // gets exactly the dial's width — any extra and the dial drifts
+  // toward the centre of its bounds — and is shifted left by the
+  // margin LookAndFeel_V4 leaves around the dial, so the visible
+  // circle (not the widget bounds) is what left-aligns.
   auto knob_row = area.removeFromTop(kKnobHeight);
-  velocity_.setBounds(knob_row.removeFromLeft(84));
+  knob_row.removeFromLeft(kAlignInset);
+  velocity_.setBounds(
+      knob_row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
   velocity_label_.setBounds(knob_row.withHeight(kRowHeight)
           .withY(knob_row.getY() + (kKnobHeight - kRowHeight) / 2));
   area.removeFromTop(kRowGap);
