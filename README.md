@@ -19,7 +19,8 @@ and the app reopens your last document on launch.
 Each pad emulates the device's shared pad properties: the eight layer
 modes (MIX, FADE1, FADE2, XFADE, SWITCH, SW(MONO), ALTERNATE, HI-HAT)
 governing how the top and bottom layers split a hit, plus dynamics
-on/off and the four dynamics curves.
+on/off with the four dynamics curves (or a fixed strike level when
+dynamics is off).
 
 ## Interaction
 

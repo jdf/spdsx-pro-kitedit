@@ -21,8 +21,10 @@ namespace spdsx {
 // loadDocument refuses files stamped newer than current.
 enum class DeviceFormat : int {
   kInitial = 1,
+  // Adds per-pad fixedVelocity.
+  kFixedVelocity = 2,
 
-  kCurrent = kInitial,
+  kCurrent = kFixedVelocity,
 };
 
 class DeviceDocument : public juce::FileBasedDocument {

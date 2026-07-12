@@ -42,6 +42,10 @@ enum class DynamicsCurve {
 
 inline constexpr int kDynamicsCurveCount = 4;
 
+// The strike level a pad plays at when Dynamics is off (device default:
+// every factory kit ships with 127).
+inline constexpr int kDefaultFixedVelocity = 127;
+
 // Loudness gain 0..1 for a 1..127 velocity through the given curve.
 float DynamicsGain(DynamicsCurve curve, int velocity);
 

@@ -1,7 +1,10 @@
 #include "main_component.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
+#include <vector>
 
 #include "actions.h"
 #include "commands.h"
@@ -762,9 +765,11 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
   const LayerWeights weights = ComputeLayerWeights(params.mode, velocity,
       params.fade_point, params.fade_end, alternate_flip_[p], pedal_down);
   // Layer selection follows the strike velocity; loudness follows the
-  // dynamics settings (a fixed full level when dynamics is off).
-  const float loudness =
-      params.dynamics ? DynamicsGain(params.curve, velocity) : 1.0f;
+  // dynamics settings (dynamics off = every hit at the pad's fixed
+  // velocity level).
+  const float loudness = params.dynamics
+      ? DynamicsGain(params.curve, velocity)
+      : DynamicsGain(DynamicsCurve::kLinear, params.fixed_velocity);
   if (params.mode == LayerMode::kAlternate) {
     alternate_flip_[p] = !alternate_flip_[p];
   }
@@ -822,9 +827,27 @@ void MainComponent::ShowPadMenu(int pad)
     curve_menu.addItem(100 + c, juce::String(name.data(), name.size()),
         params.dynamics, params.curve == static_cast<DynamicsCurve>(c));
   }
+  // Fixed velocity only matters with dynamics off (mirroring the curve
+  // submenu, which only matters with dynamics on). Preset steps, plus
+  // the current value if it came from elsewhere (device sync, JSON).
+  juce::PopupMenu velocity_menu;
+  std::vector<int> velocities = {127, 112, 96, 80, 64, 48, 32, 16, 1};
+  if (std::find(velocities.begin(), velocities.end(),
+          params.fixed_velocity) == velocities.end())
+  {
+    velocities.push_back(params.fixed_velocity);
+    std::sort(velocities.begin(), velocities.end(), std::greater<>());
+  }
+  for (const int v : velocities) {
+    velocity_menu.addItem(
+        200 + v, juce::String(v), true, params.fixed_velocity == v);
+  }
   juce::PopupMenu menu;
   menu.addItem(1, "Dynamics", true, params.dynamics);
   menu.addSubMenu("Dynamics Curve", curve_menu, params.dynamics);
+  menu.addSubMenu(
+      "Fixed Velocity (" + juce::String(params.fixed_velocity) + ")",
+      velocity_menu, !params.dynamics);
   menu.addItem(2, "Trigger Reserve", true, params.trigger_reserve);
   menu.showMenuAsync(
       juce::PopupMenu::Options().withTargetComponent(
@@ -841,6 +864,8 @@ void MainComponent::ShowPadMenu(int pad)
           changed.trigger_reserve = !changed.trigger_reserve;
         } else if (result >= 100 && result < 100 + kDynamicsCurveCount) {
           changed.curve = static_cast<DynamicsCurve>(result - 100);
+        } else if (result > 200 && result <= 200 + 127) {
+          changed.fixed_velocity = result - 200;
         }
         undo().beginNewTransaction(
             "Change pad " + juce::String(pad + 1) + " dynamics");

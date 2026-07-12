@@ -31,6 +31,7 @@ juce::var PadToVar(const Pad& pad)
   obj->setProperty("dynamics", pad.params.dynamics);
   obj->setProperty(
       "dynamicsCurve", NameOf(DynamicsCurveName(pad.params.curve)));
+  obj->setProperty("fixedVelocity", pad.params.fixed_velocity);
   obj->setProperty("triggerReserve", pad.params.trigger_reserve);
   return juce::var(obj);
 }
@@ -62,6 +63,9 @@ Pad PadFromVar(const juce::var& v)
   pad.params.curve = ParseDynamicsCurve(
       v.getProperty("dynamicsCurve", "").toString().toStdString(),
       DynamicsCurve::kLinear);
+  pad.params.fixed_velocity = juce::jlimit(1, 127,
+      static_cast<int>(
+          v.getProperty("fixedVelocity", kDefaultFixedVelocity)));
   pad.params.trigger_reserve = v.getProperty("triggerReserve", false);
   return pad;
 }

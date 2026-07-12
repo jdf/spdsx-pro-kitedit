@@ -22,10 +22,13 @@ struct PadParams {
   LayerMode mode = LayerMode::kMix;
   int fade_point = kDefaultFadePoint;
   int fade_end = kDefaultFadeEnd;
-  // Respond to strike velocity? Off = fixed full volume.
+  // Respond to strike velocity? Off = every hit plays at the fixed
+  // velocity below.
   bool dynamics = true;
   // Velocity -> loudness transfer, when dynamics is on.
   DynamicsCurve curve = DynamicsCurve::kLinear;
+  // The strike level every hit plays at when dynamics is off (1..127).
+  int fixed_velocity = kDefaultFixedVelocity;
   // Device-only (read/write, not emulated): hold a strike until the
   // next click accent instead of sounding immediately.
   bool trigger_reserve = false;
