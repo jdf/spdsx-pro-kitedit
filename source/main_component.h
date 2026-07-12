@@ -120,6 +120,11 @@ private:
   std::atomic<int> hihat_cc_ {0};
   // Whether the H key (the keyboard's hi-hat pedal) is held.
   bool hihat_key_down_ = false;
+  // Trigger keys currently held, so OS auto-repeat doesn't machine-gun
+  // pads: keyPressed consumes repeats while a key is marked held, and
+  // keyStateChanged clears the mark on release.
+  std::array<bool, KitModel::kPadCount> held_pad_keys_ {};
+  bool held_space_ = false;
   // Velocity used by keyboard pad triggers (keys 1-9).
   juce::Slider velocity_slider_;
   juce::Label velocity_caption_;

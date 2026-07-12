@@ -439,8 +439,14 @@ void MainComponent::resized()
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
   if (key == juce::KeyPress::spaceKey) {
-    if (hovered_ >= 0) {
-      TriggerSlot(hovered_);
+    // OS auto-repeat re-sends keyPressed while held; only the first
+    // press of a trigger key plays (a drummer holding a stick down
+    // doesn't roll). Same for pads below.
+    if (!held_space_) {
+      held_space_ = true;
+      if (hovered_ >= 0) {
+        TriggerSlot(hovered_);
+      }
     }
     return true;
   }
@@ -461,8 +467,12 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     pedal_down = true;
   }
   if (pad >= 0) {
-    TriggerPad(
-        pad, static_cast<int>(velocity_slider_.getValue()), pedal_down);
+    auto& held = held_pad_keys_[static_cast<size_t>(pad)];
+    if (!held) {
+      held = true;
+      TriggerPad(
+          pad, static_cast<int>(velocity_slider_.getValue()), pedal_down);
+    }
     return true;
   }
   // The pedal itself is handled edge-triggered in keyStateChanged; consume
@@ -473,12 +483,28 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
   return false;
 }
 
-// keyPressed only reports presses; releases arrive here, so the H-key
-// pedal has to poll the actual key state to see both edges.
+// keyPressed only reports presses; releases arrive here, so anything
+// that cares about key-up (the H pedal, the auto-repeat guards) polls
+// the actual key state.
 bool MainComponent::keyStateChanged(bool /*is_key_down*/)
 {
   SetHiHatKeyDown(juce::KeyPress::isKeyCurrentlyDown('H')
       || juce::KeyPress::isKeyCurrentlyDown('h'));
+  if (held_space_
+      && !juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::spaceKey))
+  {
+    held_space_ = false;
+  }
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    // A held digit can morph between '1' and '!' if shift changes
+    // mid-hold; the key only counts as released when both are up.
+    if (held_pad_keys_[static_cast<size_t>(pad)]
+        && !juce::KeyPress::isKeyCurrentlyDown('1' + pad)
+        && !juce::KeyPress::isKeyCurrentlyDown("!@#$%^&*("[pad]))
+    {
+      held_pad_keys_[static_cast<size_t>(pad)] = false;
+    }
+  }
   return false;
 }
 
