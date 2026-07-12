@@ -189,7 +189,7 @@ private:
   std::atomic<bool> device_fetching_ {false};
   std::shared_ptr<std::atomic<int>> fetch_blocks_;
   SampleBrowser browser_;
-  DeviceSamplePanel device_samples_ {device_};
+  DeviceSamplePanel device_samples_ {device_, settings_};
   // The left panel: "Files" (the sample browser) and "Device" (the
   // wave pool) tabs.
   juce::TabbedComponent panel_tabs_ {juce::TabbedButtonBar::TabsAtTop};

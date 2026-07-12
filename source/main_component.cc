@@ -184,6 +184,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addAndMakeVisible(kit_chooser_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
+  device_samples_.on_preview = [](const device::SampleRecord& rec)
+  {
+    // Autoplay-gated selection preview, mirroring the file browser.
+    // Device waves have no local audio yet — this grows a real engine
+    // preview when the sample cache lands.
+    (void)rec;
+  };
 
   model_.AddListener(this);
   document_.on_history_reset = [this]
