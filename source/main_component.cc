@@ -2,9 +2,12 @@
 
 #include <cmath>
 #include <cstdio>
+#include <thread>
 
 #include "actions.h"
 #include "commands.h"
+#include "device/kit_image.h"
+#include "device/spdsx_device.h"
 #include "spectro.h"
 
 namespace spdsx {
@@ -250,7 +253,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
       commands::kFileOpen, commands::kFileSaveAs, commands::kImportKit,
-      commands::kImportDeviceDump, commands::kToggleBrowser,
+      commands::kLoadDeviceSamples, commands::kToggleBrowser,
       commands::kToggleAutoplay});
 }
 
@@ -291,10 +294,10 @@ void MainComponent::getCommandInfo(
           "Load a legacy single-kit .kit file into the current kit",
           "File", 0);
       break;
-    case commands::kImportDeviceDump:
-      info.setInfo("Import Device Dump...",
-          "Load the sample pool directory from an spdutil memory dump",
-          "File", 0);
+    case commands::kLoadDeviceSamples:
+      info.setInfo("Load Samples from Device",
+          "Read the wave pool directory over the serial link", "File", 0);
+      info.setActive(!device_fetching_);
       break;
     case commands::kToggleBrowser:
       info.setInfo("Sample Browser",
@@ -409,28 +412,8 @@ bool MainComponent::perform(const InvocationInfo& info)
           [this](juce::FileBasedDocument::SaveResult)
           { RefreshDocumentState(); });
       return true;
-    case commands::kImportDeviceDump:
-      dump_chooser_ = std::make_unique<juce::FileChooser>(
-          "Import a device memory dump (spdutil dump output)",
-          juce::File(), "*");
-      dump_chooser_->launchAsync(
-          juce::FileBrowserComponent::openMode
-              | juce::FileBrowserComponent::canSelectFiles,
-          [this](const juce::FileChooser& fc)
-          {
-            if (auto file = fc.getResult(); file.existsAsFile()) {
-              if (auto result = document_.ImportDeviceDump(file);
-                  result.failed())
-              {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon,
-                    "Import Device Dump", result.getErrorMessage());
-              } else {
-                MarkEdited();  // the pool is document content
-              }
-              RefreshDeviceSamples();
-            }
-          });
+    case commands::kLoadDeviceSamples:
+      LoadSamplesFromDevice();
       return true;
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);
@@ -476,6 +459,61 @@ void MainComponent::RefreshDocumentState()
   repaint(0, 0, getWidth(), kHeaderHeight);
   // Open/new/import can also swap the wave pool out from under the
   // device tab and any device-wave slots.
+  RefreshDeviceSamples();
+}
+
+void MainComponent::LoadSamplesFromDevice()
+{
+  if (device_fetching_.exchange(true)) {
+    return;  // a fetch is already running
+  }
+  commands_.commandStatusChanged();  // grey the menu item
+  auto blocks = std::make_shared<std::atomic<int>>(0);
+  fetch_blocks_ = blocks;
+  device_samples_.SetStatus(juce::String::fromUTF8("connecting\xe2\x80\xa6"));
+  // The dump is megabytes over a serial link; a detached worker owns
+  // the port and reports back through the message thread. It shares
+  // only the counter (by shared_ptr) and a SafePointer checked on the
+  // message thread, so quitting mid-fetch can't dangle.
+  juce::Component::SafePointer<MainComponent> safe(this);
+  std::thread([safe, blocks] {
+    std::vector<device::SampleRecord> pool;
+    juce::String error;
+    try {
+      device::SpdsxDevice dev(device::FindDevicePort());
+      const auto raw = dev.DumpBank(device::kBankSamples,
+          [&blocks](const device::Bytes&) { ++*blocks; });
+      pool = device::ParseSampleDir(device::CleanBulkImage(raw));
+      if (pool.empty()) {
+        error = "the device's reply held no sample directory";
+      }
+    } catch (const std::exception& e) {
+      error = e.what();
+    }
+    juce::MessageManager::callAsync(
+        [safe, pool = std::move(pool), error]() mutable {
+          if (safe != nullptr) {
+            safe->FinishDeviceFetch(std::move(pool), error);
+          }
+        });
+  }).detach();
+}
+
+void MainComponent::FinishDeviceFetch(
+    std::vector<device::SampleRecord> pool, const juce::String& error)
+{
+  device_fetching_ = false;
+  fetch_blocks_.reset();
+  device_samples_.SetStatus({});
+  commands_.commandStatusChanged();
+  if (error.isNotEmpty()) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon, "Load Samples from Device",
+        error);
+    return;
+  }
+  device_.set_sample_pool(std::move(pool));
+  MarkEdited();  // the pool is document content
   RefreshDeviceSamples();
 }
 
@@ -1068,6 +1106,13 @@ void MainComponent::timerCallback()
     could_undo_ = undo().canUndo();
     could_redo_ = undo().canRedo();
     commands_.commandStatusChanged();
+  }
+
+  // Progress line while a device fetch streams blocks.
+  if (device_fetching_ && fetch_blocks_ != nullptr) {
+    device_samples_.SetStatus(
+        juce::String::fromUTF8("loading from device\xe2\x80\xa6\n")
+        + juce::String(fetch_blocks_->load()) + " blocks");
   }
 
   // Autosave once edits have gone quiet; every mutation is persisted,

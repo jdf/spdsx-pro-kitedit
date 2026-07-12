@@ -1,6 +1,7 @@
 #include "device/spdsx_device.h"
 
 #include <chrono>
+#include <stdexcept>
 #include <thread>
 
 namespace spdsx::device {
@@ -67,6 +68,27 @@ Bytes Unwrap(const Bytes& frame) {
   const size_t take = len < avail ? len : avail;
   return Bytes(frame.begin() + kFrameHeaderSize,
       frame.begin() + kFrameHeaderSize + take);
+}
+
+std::string FindDevicePort()
+{
+  const auto candidates = ListUsbModemPorts();
+  if (candidates.empty()) {
+    throw std::runtime_error(
+        "no /dev/cu.usbmodem* ports found (device plugged in?)");
+  }
+  for (const auto& path : candidates) {
+    try {
+      SpdsxDevice dev(path);
+      if (!dev.Ping().empty()) {
+        return path;
+      }
+    } catch (const std::exception&) {
+      // Busy or vanished; try the next node.
+    }
+  }
+  throw std::runtime_error(
+      "no SPD-SX PRO answered (is the official app still open?)");
 }
 
 SpdsxDevice::SpdsxDevice(const std::string& port) : port_(port) {}

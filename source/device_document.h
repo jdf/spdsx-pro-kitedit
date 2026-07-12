@@ -61,11 +61,6 @@ public:
   // Reads a legacy single-kit .kit file (v1..v4) into the active kit.
   juce::Result ImportKitFile(const juce::File& file);
 
-  // Reads a device memory dump (spdutil dump output containing bank
-  // 0x20) and replaces the document's sample pool directory with the
-  // dump's. Stopgap until the app talks to the device itself.
-  juce::Result ImportDeviceDump(const juce::File& file);
-
   // Opens a device folder (or its device.json directly). All device
   // opening goes through here: FileBasedDocument::loadFrom insists the
   // target existsAsFile(), which a folder document never satisfies.

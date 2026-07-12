@@ -111,8 +111,14 @@ private:
   void SetDragTarget(int idx, bool whole_pad);
   void SetBrowserVisible(bool visible);
   void RefreshDocumentState();
+  // Reads the wave pool directory from the hardware on a worker thread
+  // (File > Load Samples from Device); FinishDeviceFetch lands the
+  // result back on the message thread.
+  void LoadSamplesFromDevice();
+  void FinishDeviceFetch(std::vector<device::SampleRecord> pool,
+      const juce::String& error);
   // Repopulates the device tab and re-resolves device-wave slots after
-  // the pool changes (dump import, open, new).
+  // the pool changes (device fetch, open, new).
   void RefreshDeviceSamples();
   // Syncs one slot's engine + display from the model, without marking
   // the document edited.
@@ -178,7 +184,10 @@ private:
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;
   std::unique_ptr<juce::FileChooser> open_chooser_;
-  std::unique_ptr<juce::FileChooser> dump_chooser_;
+  // Device-fetch state: the flag gates the command, the counter is
+  // shared with the worker thread for the progress line.
+  std::atomic<bool> device_fetching_ {false};
+  std::shared_ptr<std::atomic<int>> fetch_blocks_;
   SampleBrowser browser_;
   DeviceSamplePanel device_samples_ {device_};
   // The left panel: "Files" (the sample browser) and "Device" (the

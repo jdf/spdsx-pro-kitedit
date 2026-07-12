@@ -31,17 +31,26 @@ void DeviceSamplePanel::Refresh()
   repaint();
 }
 
+void DeviceSamplePanel::SetStatus(const juce::String& status)
+{
+  if (status_ != status) {
+    status_ = status;
+    repaint();
+  }
+}
+
 void DeviceSamplePanel::paint(juce::Graphics& g)
 {
-  if (device_.sample_pool().empty()) {
+  if (status_.isNotEmpty()) {
     g.setColour(kMeta);
     g.setFont(13.0f);
-    // fromUTF8: a plain char* literal would render the ellipsis as
-    // mojibake (JUCE reads char* strings byte-per-character).
+    g.drawFittedText(status_, getLocalBounds().reduced(12),
+        juce::Justification::centred, 4);
+  } else if (device_.sample_pool().empty()) {
+    g.setColour(kMeta);
+    g.setFont(13.0f);
     g.drawFittedText(
-        juce::String::fromUTF8(
-            "no device samples\n\nFile > Import Device Dump\xe2\x80\xa6\n"
-            "(spdutil dump --bank 0x20)"),
+        "no device samples\n\nFile > Load Samples from Device",
         getLocalBounds().reduced(12), juce::Justification::centred, 6);
   }
 }

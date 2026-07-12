@@ -17,8 +17,12 @@ class DeviceSamplePanel : public juce::Component,
 public:
   explicit DeviceSamplePanel(const DeviceModel& device);
 
-  // Call after the pool changes (dump import, open, new).
+  // Call after the pool changes (device fetch, open, new).
   void Refresh();
+
+  // A transient status line ("connecting…", "loading… N blocks") shown
+  // in place of the empty-pool hint; empty clears it.
+  void SetStatus(const juce::String& status);
 
   void paint(juce::Graphics& g) override;
   void resized() override;
@@ -33,6 +37,7 @@ public:
 private:
   const DeviceModel& device_;
   juce::ListBox list_;
+  juce::String status_;
 };
 
 }  // namespace spdsx

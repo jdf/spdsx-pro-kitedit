@@ -1,7 +1,5 @@
 #include "device_document.h"
 
-#include "device/kit_image.h"
-
 namespace spdsx {
 
 namespace {
@@ -380,23 +378,6 @@ juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
   return juce::Result::ok();
 }
 
-juce::Result DeviceDocument::ImportDeviceDump(const juce::File& file)
-{
-  juce::MemoryBlock data;
-  if (!file.loadFileAsData(data)) {
-    return juce::Result::fail("couldn't read " + file.getFullPathName());
-  }
-  const auto* bytes = static_cast<const uint8_t*>(data.getData());
-  const device::Bytes raw(bytes, bytes + data.getSize());
-  auto pool = device::ParseSampleDir(device::CleanBulkImage(raw));
-  if (pool.empty()) {
-    return juce::Result::fail(file.getFileName()
-        + " holds no sample directory (dump bank 0x20, or --all)");
-  }
-  device_.set_sample_pool(std::move(pool));
-  changed();
-  return juce::Result::ok();
-}
 
 // FileBasedDocument starts its open/save dialogs here; persisting it
 // keeps device dialogs anchored to device territory across sessions,
