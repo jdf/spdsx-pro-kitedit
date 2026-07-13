@@ -11,7 +11,10 @@ flash-commit handshake as pad-parameter writes (`6a 03 21` + poll
 (same layout as the firmware-version query `03/17`, arg at byte 15).
 Short 17-byte frame `f0 41 6a 03 <sub> 00×11 f7` for the commit begin/poll.
 
-## DELETE — simple, fully decoded
+## DELETE — simple, fully decoded, LIVE-VERIFIED (2026-07-13)
+`spdutil deletewave 1586` removed it: the pool dropped 1586→1585, the
+index vanished from `samples`, and a re-read errored cleanly. Works.
+
 Delete sample N (1586 = `32 06 00 00` LE at byte 15):
 ```
 6a 03 09  arg=1      begin session      -> 6a 7a ack
