@@ -146,6 +146,63 @@ std::string SpdsxDevice::FirmwareField(uint8_t field) {
   return s;
 }
 
+namespace {
+
+// A 32-byte control frame on the 0x09 family: f0 41 6a 03 <sub>, a 0x40
+// marker at byte 10, and a u32 argument at byte 15 (the position the
+// firmware-version query and the sample-delete both use).
+Bytes ControlFrame(uint8_t sub, uint32_t arg) {
+  Bytes p(32, 0x00);
+  p[0] = 0xF0;
+  p[1] = 0x41;
+  p[2] = 0x6A;
+  p[3] = 0x03;
+  p[4] = sub;
+  p[10] = 0x40;
+  p[15] = static_cast<uint8_t>(arg);
+  p[16] = static_cast<uint8_t>(arg >> 8);
+  p[17] = static_cast<uint8_t>(arg >> 16);
+  p[18] = static_cast<uint8_t>(arg >> 24);
+  p[31] = 0xF7;
+  return p;
+}
+
+// A short 17-byte control frame with no argument (commit begin/poll).
+Bytes ShortControl(uint8_t sub) {
+  Bytes p(17, 0x00);
+  p[0] = 0xF0;
+  p[1] = 0x41;
+  p[2] = 0x6A;
+  p[3] = 0x03;
+  p[4] = sub;
+  p[16] = 0xF7;
+  return p;
+}
+
+}  // namespace
+
+bool SpdsxDevice::Commit(double timeout_seconds) {
+  Command(ShortControl(0x21));  // begin; device acks 6a 7a
+  const auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::duration<double>(timeout_seconds);
+  while (std::chrono::steady_clock::now() < deadline) {
+    // Reply: f0 41 6a 02 .. 22 40 00 00 00 04 <status LE32> f7.
+    const Bytes r = Command(ShortControl(0x22));
+    if (r.size() >= 18 && r[8] == 0x22 && r[14] == 0x01) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+  return false;
+}
+
+void SpdsxDevice::DeleteWave(int sample_index) {
+  Command(ControlFrame(0x09, 1));  // begin session
+  Command(ControlFrame(0x1D, static_cast<uint32_t>(sample_index)));
+  Command(ControlFrame(0x09, 0));  // end session
+  Commit();
+}
+
 Bytes SpdsxDevice::SelectKit(int kit) {
   return Command(Dt1(kKitSelectAddr, EncodeKit(kit)));
 }

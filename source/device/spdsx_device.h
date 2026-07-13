@@ -46,6 +46,17 @@ class SpdsxDevice {
   // decoded from a capture): field 0 = version ("2.00"), field 3 =
   // build ("0094"). Empty on no/short reply.
   std::string FirmwareField(uint8_t field);
+  // Persists working changes to flash: control-family commit begin
+  // (6a 03 21) then poll (6a 03 22) until the status word reads done.
+  // Returns false on timeout. Same handshake the official app's WRITE
+  // button uses.
+  bool Commit(double timeout_seconds = 5.0);
+
+  // Deletes a sample from the device pool by index, then commits. The
+  // slot becomes empty; kits referencing it show no wave. Destructive
+  // and not undoable on the device.
+  void DeleteWave(int sample_index);
+
   Bytes SelectKit(int kit);
   Bytes SelectObject(ObjectKind kind, int index);
   // Focus (replies; drains) then write the pad-link group (fire-and-forget)

@@ -431,8 +431,10 @@ int Usage() {
       "  kit <N>     show kit N's pad params (live, or --from <dump>)\n"
       "  samples     list the device wave pool (live, or --from <dump>;\n"
       "              directory only — the dump carries no audio)\n"
-      "  readwave <N> read user wave N's .SMP off the device (--out FILE\n"
-      "              to save the raw RFWV); preloads aren't exportable\n"
+      "  readwave <N> read wave N's audio off the device (--out FILE:\n"
+      "              .wav = converted, else raw .SMP)\n"
+      "  deletewave <N>  delete sample N from the pool + commit\n"
+      "                  (DESTRUCTIVE, not undoable on the device)\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -631,6 +633,16 @@ int RunReadWave(const std::string& port_arg, int index,
         as_wav ? "wav" : "raw smp");
   }
   return smp.empty() ? 1 : 0;
+}
+
+int RunDeleteWave(const std::string& port_arg, int index) {
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s, deleting sample %d (then flash commit)...\n",
+      port.c_str(), index);
+  dev.DeleteWave(index);
+  std::printf("done\n");
+  return 0;
 }
 
 int RunSamples(const std::string& port_arg, const std::string& from_path) {
@@ -880,6 +892,13 @@ int main(int argc, char** argv) {
         return 2;
       }
       return RunReadWave(port, kit_arg, out_path);
+    }
+    if (command == "deletewave") {
+      if (kit_arg <= 0) {
+        std::fprintf(stderr, "deletewave needs a sample index\n");
+        return 2;
+      }
+      return RunDeleteWave(port, kit_arg);
     }
     if (command == "padlink") {
       if (group < 0) {
