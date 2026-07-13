@@ -86,11 +86,11 @@ class SpdsxDevice {
       double pace_seconds = 0.02);
 
   // Selects the kit, focuses the pad, then writes its hit-response layer
-  // params (mode, fades, dynamics, curve, fixed velocity, trigger
-  // reserve) as one DT1 per field. pad is 1-based. Only the seven mapped
-  // params are written; the hi-hat closed-pedal trio's storage offsets
-  // aren't verified yet. Changes hit working state; persist with Commit().
-  // NOTE: message bytes match captures, not yet driven against hardware.
+  // params (mode, fades, dynamics, curve, fixed velocity, hi-hat
+  // closed-pedal volume/fade-in/decay, trigger reserve) as one DT1 per
+  // field. pad is 1-based. Changes hit working state; persist with
+  // Commit(). NOTE: message bytes match captures, not yet driven end-to-
+  // end against hardware.
   void SetPadLayerParams(int kit, int pad, const PadDeviceParams& params,
       double pace_seconds = 0.02);
 

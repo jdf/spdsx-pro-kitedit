@@ -256,6 +256,9 @@ void SpdsxDevice::SetPadLayerParams(int kit, int pad,
   write(0x03, params.dynamics);
   write(0x04, params.dynamics_curve);
   write(0x05, params.fixed_velocity);
+  write(0x07, params.hi_hat_volume);
+  write(0x08, params.hi_hat_fade_in);
+  write(0x09, params.hi_hat_decay);
   write(0x13, params.trigger_reserve);
 }
 

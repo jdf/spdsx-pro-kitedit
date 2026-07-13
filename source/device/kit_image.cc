@@ -56,6 +56,9 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       pp.dynamics = clean_image[p + kPadDynamics];
       pp.dynamics_curve = clean_image[p + kPadDynCurve];
       pp.fixed_velocity = clean_image[p + kPadFixedVel];
+      pp.hi_hat_volume = clean_image[p + kPadHiHatVolume];
+      pp.hi_hat_fade_in = clean_image[p + kPadHiHatFadeIn];
+      pp.hi_hat_decay = clean_image[p + kPadHiHatDecay];
       pp.trigger_reserve = clean_image[p + kPadTrigReserve];
       // The layer table: top = layer pad*2, bottom = pad*2 + 1.
       const size_t top = rec + kLayerTableBase

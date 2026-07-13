@@ -30,10 +30,9 @@ inline constexpr int kLayerModeCount = 8;
 inline constexpr int kDefaultFadePoint = 80;
 inline constexpr int kDefaultFadeEnd = 127;
 
-// HI-HAT closed-pedal shaping defaults. Provisional: chosen to match
-// the factory USER KIT bytes at the (unverified) kit-record offsets
-// +0x06/+0x07/+0x08 read as fade-in/volume/decay; confirm with a live
-// diff when those offsets get mapped.
+// HI-HAT closed-pedal shaping defaults, matching the factory USER KIT:
+// the device stores volume @kit-record +0x07, fade-in @0x08, decay @0x09
+// (mapped live 2026-07-13 by capturing the app's writes on a hi-hat pad).
 inline constexpr int kDefaultHiHatVolume = 80;
 inline constexpr int kDefaultHiHatFadeIn = 0;
 inline constexpr int kDefaultHiHatDecay = 25;

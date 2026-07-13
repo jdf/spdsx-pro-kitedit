@@ -414,7 +414,14 @@ int RunSelfTest() {
         spdsx::device::Dt1(spdsx::device::PadParamAddr(1, 0x00), {0x03})
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 00 03 57 f7")
         && spdsx::device::Dt1(spdsx::device::PadParamAddr(1, 0x01), {0x51})
-            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 01 51 08 f7");
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 01 51 08 f7")
+        // Hi-hat pad 9: volume@0x07=100, fade-in@0x08=50, decay@0x09=77.
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(9, 0x07), {0x64})
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 07 64 67 f7")
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(9, 0x08), {0x32})
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 08 32 18 f7")
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(9, 0x09), {0x4d})
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 09 4d 7c f7");
     all_ok = all_ok && padparam_ok;
     std::printf("%-8s pad layer-param write bytes (sync)\n",
         padparam_ok ? "OK" : "FAIL");

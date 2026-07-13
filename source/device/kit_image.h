@@ -53,6 +53,12 @@ inline constexpr size_t kPadFadeEnd = 0x02;
 inline constexpr size_t kPadDynamics = 0x03;
 inline constexpr size_t kPadDynCurve = 0x04;
 inline constexpr size_t kPadFixedVel = 0x05;
+// HI-HAT closed-pedal shaping (mapped live 2026-07-13 by capturing the
+// app's writes on a hi-hat pad; supersedes the earlier +0x06/07/08
+// guess): volume @0x07, fade-in @0x08, decay @0x09.
+inline constexpr size_t kPadHiHatVolume = 0x07;
+inline constexpr size_t kPadHiHatFadeIn = 0x08;
+inline constexpr size_t kPadHiHatDecay = 0x09;
 inline constexpr size_t kPadTrigReserve = 0x13;
 
 // Per-layer table within a kit record; each layer block starts with the
@@ -76,6 +82,10 @@ struct PadDeviceParams {
   uint8_t dynamics_curve = 0;
   uint8_t fixed_velocity = 0;
   uint8_t trigger_reserve = 0;
+  // HI-HAT closed-pedal shaping (used only in HI-HAT mode).
+  uint8_t hi_hat_volume = 0;
+  uint8_t hi_hat_fade_in = 0;
+  uint8_t hi_hat_decay = 0;
   // Wave (sample pool index) per layer; 0 = no sample.
   uint16_t wave_top = 0;
   uint16_t wave_bottom = 0;
