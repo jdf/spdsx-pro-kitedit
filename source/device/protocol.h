@@ -68,6 +68,14 @@ Bytes KitNameAddr(int i);
 // 0x4d; the trailing 0x01 selects the wave-number field.
 Bytes PadWaveAddr(PadSlot slot);
 
+// Address of a pad's layer parameter, current-kit + focused-pad relative
+// (select the kit and focus the pad first). pad is 1-based (pad 1 ->
+// 0x20 .. pad 9 -> 0x28); param is the parameter index, which equals the
+// byte offset within the pad's kit-record block: 0x00 layer mode, 0x01
+// fade point, 0x02 fade end, 0x03 dynamics, 0x04 dynamics curve, 0x05
+// fixed velocity, 0x13 trigger reserve.
+Bytes PadParamAddr(int pad, int param);
+
 // ---- Sample-pool registration (upload directory records) ----
 //
 // Registering an uploaded wave writes two DT1 records into the sample's

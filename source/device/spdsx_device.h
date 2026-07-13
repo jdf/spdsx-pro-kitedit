@@ -12,6 +12,7 @@
 #include <functional>
 #include <string>
 
+#include "device/kit_image.h"  // PadDeviceParams
 #include "device/protocol.h"
 #include "device/serial_port.h"
 
@@ -82,6 +83,15 @@ class SpdsxDevice {
   // one of its slots. NOTE: message bytes match captures, but the full
   // sequence has not yet been driven against hardware.
   void SetPadWave(int kit, int pad, PadSlot slot, int sample,
+      double pace_seconds = 0.02);
+
+  // Selects the kit, focuses the pad, then writes its hit-response layer
+  // params (mode, fades, dynamics, curve, fixed velocity, trigger
+  // reserve) as one DT1 per field. pad is 1-based. Only the seven mapped
+  // params are written; the hi-hat closed-pedal trio's storage offsets
+  // aren't verified yet. Changes hit working state; persist with Commit().
+  // NOTE: message bytes match captures, not yet driven against hardware.
+  void SetPadLayerParams(int kit, int pad, const PadDeviceParams& params,
       double pace_seconds = 0.02);
 
   using ProgressCallback = std::function<void(size_t done, size_t total)>;

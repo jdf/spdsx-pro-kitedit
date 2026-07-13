@@ -103,6 +103,11 @@ Bytes PadWaveAddr(PadSlot slot) {
   return {0x06, 0x00, param, 0x01};
 }
 
+Bytes PadParamAddr(int pad, int param) {
+  return {0x06, 0x00, static_cast<uint8_t>(0x1F + pad),
+      static_cast<uint8_t>(param)};
+}
+
 Bytes BulkRequest(uint8_t sub, uint8_t bank, uint32_t arg) {
   return {0xF0, 0x41, 0x6C, 0x03, sub, 0x00, 0x00, 0x00, 0x00, bank, 0x00,
       0x00, static_cast<uint8_t>(arg & 0xFF),

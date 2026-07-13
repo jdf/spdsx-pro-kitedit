@@ -242,6 +242,23 @@ void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
+void SpdsxDevice::SetPadLayerParams(int kit, int pad,
+    const PadDeviceParams& params, double pace_seconds) {
+  SelectKit(kit);
+  SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
+  auto write = [&](int param, uint8_t value) {
+    Send(Dt1(PadParamAddr(pad, param), {value}));
+    std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+  };
+  write(0x00, params.layer_mode);
+  write(0x01, params.fade_point);
+  write(0x02, params.fade_end);
+  write(0x03, params.dynamics);
+  write(0x04, params.dynamics_curve);
+  write(0x05, params.fixed_velocity);
+  write(0x13, params.trigger_reserve);
+}
+
 Bytes SpdsxDevice::ReadBulkFrame(double idle_timeout, double body_timeout) {
   // Short wait for the frame header (its absence means the device has
   // gone idle), then a longer wait for a possibly ~64KB body.

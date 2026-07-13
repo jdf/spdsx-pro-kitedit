@@ -406,6 +406,18 @@ int RunSelfTest() {
     all_ok = all_ok && pcm_rfwv_ok;
     std::printf("%-8s PcmToRfwv header + MD5 checksum (upload)\n",
         pcm_rfwv_ok ? "OK" : "FAIL");
+
+    // Pad-layer-param write (sync push). Byte-exact vs paramlog-padparams
+    // capture: pad 1 layer mode = 3 (XFADE) -> 06 00 20 00 03, and pad 1
+    // fade point = 0x51 -> 06 00 20 01 51.
+    const bool padparam_ok =
+        spdsx::device::Dt1(spdsx::device::PadParamAddr(1, 0x00), {0x03})
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 00 03 57 f7")
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(1, 0x01), {0x51})
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 01 51 08 f7");
+    all_ok = all_ok && padparam_ok;
+    std::printf("%-8s pad layer-param write bytes (sync)\n",
+        padparam_ok ? "OK" : "FAIL");
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
