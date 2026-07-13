@@ -65,10 +65,13 @@ std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image);
 // /SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D<N/100>/W<N>.SMP.
 std::string RemoteWavePath(int index);
 
-// The header of a `.SMP` (RFWV) wave file (32 bytes, verified against a
-// device export): magic, data length (= file size - 8), sample rate,
-// channels, and bits/sample; signed LE PCM follows at kRfwvHeaderSize.
-inline constexpr size_t kRfwvHeaderSize = 32;
+// The header of a `.SMP` (RFWV) wave file (512 bytes, verified against
+// device exports): the first 32 bytes are the fields below (magic, data
+// length = file size - 8, sample rate, channels, bits/sample), then a
+// fixed 480-byte metadata/padding block (byte-identical across files),
+// then signed-LE PCM at kRfwvHeaderSize. Reading PCM from offset 32
+// instead plays that block as a ~5-10ms burst of noise at the start.
+inline constexpr size_t kRfwvHeaderSize = 512;
 struct RfwvHeader {
   bool valid = false;
   uint32_t data_bytes = 0;

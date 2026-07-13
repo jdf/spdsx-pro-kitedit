@@ -77,16 +77,21 @@ bytes end to end (payload + framing).
   audio and white-noise alternating ~0.34s each (confirmed + fixed live
   2026-07-12). A `.SMP` file is 65536 payload bytes per full frame.
 
-## `.SMP` / RFWV = 32-byte header (verified from a live export)
+## `.SMP` / RFWV = 512-byte header (verified from live exports)
 ```
-0x00 "RFWV"         0x0c u16 channels
-0x04 u32 data_bytes 0x0e u16 (0)
-     (= size - 8)   0x10 u32 bits_per_sample (16)
-0x08 u32 rate       0x14..0x1f reserved 0
-                    0x20 signed-LE PCM
+0x00  "RFWV"          0x0c u16 channels
+0x04  u32 data_bytes  0x0e u16 (0)
+      (= size - 8)    0x10 u32 bits_per_sample (16)
+0x08  u32 rate        0x14..0x1f reserved 0
+0x20..0x200  fixed 480-byte metadata/padding block
+             (byte-identical across files — NOT audio)
+0x200 signed-LE PCM
 ```
-`spdutil readwave <N> --out f.SMP` reads a user wave live (mono and
-2MB-stereo both verified end to end, converted to WAV and played).
+PCM starts at 0x200, NOT 0x20 — the 480 bytes at 0x20 are a fixed
+non-audio block; playing from 0x20 gives a ~5-10ms noise click at the
+start (caught + fixed live 2026-07-12). `spdutil readwave <N> --out
+f.SMP` reads a user wave live (mono and 2MB-stereo both verified end to
+end, converted to WAV, played click-free).
 
 ## What is SOLID vs still fuzzy
 Solid: the channel, the `03/00/07/04/13/03` command set, path

@@ -596,8 +596,13 @@ int RunReadWave(const std::string& port_arg, int index,
       });
   std::printf("\n%zu bytes read\n", smp.size());
   const auto hdr = spdsx::device::ParseRfwvHeader(smp);
-  std::printf("RFWV: valid=%d  %u Hz  %u ch  %u data bytes\n", hdr.valid,
-      hdr.sample_rate, hdr.channels, hdr.data_bytes);
+  const size_t pcm = smp.size() > spdsx::device::kRfwvHeaderSize
+      ? smp.size() - spdsx::device::kRfwvHeaderSize
+      : 0;
+  std::printf("RFWV: valid=%d  %u Hz  %u ch  %u-bit  %zu PCM bytes"
+      "  (%.2f s)\n", hdr.valid, hdr.sample_rate, hdr.channels,
+      hdr.bits_per_sample,
+      pcm, hdr.channels ? pcm / 2.0 / hdr.channels / 48000.0 : 0.0);
   if (!out_path.empty() && !WriteFile(out_path, smp)) {
     std::fprintf(stderr, "couldn't write %s\n", out_path.c_str());
     return 1;
