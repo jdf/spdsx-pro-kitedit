@@ -70,6 +70,13 @@ The `.SMP` = a 512-byte RFWV header + signed-LE PCM. Verified: readback
 - **The values look diffuse** (no low-bit structure, no obvious linear
   relationship between rows), consistent with a real hash/CRC rather than
   a small packed field.
+- **Not text.** Every packed value has bytes ≥ 0x80 and/or control bytes
+  (A `62 45 9d 09`, B `ee 8a b5 3f`, C `f1 c1 c7 7d`, D `55 19 d9 bf`), so
+  in no byte order is it printable ASCII. Rules out a packed name,
+  category code, or the four user "tag" strings (which jdf also confirms
+  were left unset on these uploads). On the wire the field is 8 bytes each
+  in 0x00–0x0F, but that is just the SysEx nibble encoding of these 4
+  binary bytes, not characters.
 - **32 bits exactly**, and the app clearly *computes* it locally: it is
   not present in any device reply (§3).
 
