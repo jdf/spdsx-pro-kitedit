@@ -22,9 +22,12 @@ const fds = new Set();
 function h(b){ return Array.from(b, x=>x.toString(16).padStart(2,'0')).join(' '); }
 function isWriteFrame(b){ return b.length>=3 && b[0]==0x0d && b[1]==0x60 && b[2]==0xe0; }
 
-// Full reads: the whole point here is the data payload. 64KB ceiling
-// keeps a runaway state-dump from flooding, but a wave read fits.
-const READ_HEAD = 1 << 16;
+// We want the read LOOP and its length/offset arithmetic, not the raw
+// audio (that comes over the real transfer). Request frames are writes
+// and always logged whole; a modest head on reads shows every reply's
+// framing/length without dumping a 10MB export (or the 8MB startup
+// state-load) into the log.
+const READ_HEAD = 96;
 function dump(dir, fd, buf, n){
   if(n<=0) return;
   const isRead = dir[0] === '<';
