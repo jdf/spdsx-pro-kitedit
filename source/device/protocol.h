@@ -63,10 +63,14 @@ Bytes NibbleEncode(int value);
 // kit first).
 Bytes KitNameAddr(int i);
 
-// Wave-assignment address for a pad slot, current-kit + focused-pad relative
-// (select the kit and focus the pad first). Top slot uses param 0x4c, bottom
-// 0x4d; the trailing 0x01 selects the wave-number field.
-Bytes PadWaveAddr(PadSlot slot);
+// Wave-assignment address for a pad's slot, current-kit relative (select
+// the kit first). The slot byte is pad+layer encoded: 0x40 + 2*(pad-1) +
+// layer (pad 1-based; top layer 0, bottom 1) — pad 1 top 0x40 .. pad 9
+// bottom 0x51 (mapped live 2026-07-13 across all 18 slots). The trailing
+// 0x01 selects the wave-number field; PadWaveEnableAddr's trailing 0x00
+// is the companion "slot in use" flag the app sets to 1 alongside.
+Bytes PadWaveAddr(int pad, PadSlot slot);
+Bytes PadWaveEnableAddr(int pad, PadSlot slot);
 
 // Address of a pad's layer parameter, current-kit + focused-pad relative
 // (select the kit and focus the pad first). pad is 1-based (pad 1 ->

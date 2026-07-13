@@ -188,15 +188,25 @@ int RunSelfTest() {
   check(focus == FromHex("f0 41 10 00 00 00 00 16 12 28 00 00 00 06 52 f7"),
       "focus pad7", focus);
   const Bytes top = spdsx::device::Dt1(
-      spdsx::device::PadWaveAddr(spdsx::device::PadSlot::kTop),
+      spdsx::device::PadWaveAddr(7, spdsx::device::PadSlot::kTop),
       spdsx::device::NibbleEncode(127));
   check(top == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"),
       "pad7 top wave 127", top);
   const Bytes bot = spdsx::device::Dt1(
-      spdsx::device::PadWaveAddr(spdsx::device::PadSlot::kBottom),
+      spdsx::device::PadWaveAddr(7, spdsx::device::PadSlot::kBottom),
       spdsx::device::NibbleEncode(203));
   check(bot == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"),
       "pad7 bottom wave 203", bot);
+  // Pad+layer-encoded slot addresses, verified live across all 18 slots:
+  // pad 9 bottom = 0x51, and the companion enable-flag write.
+  check(spdsx::device::PadWaveAddr(9, spdsx::device::PadSlot::kBottom)
+          == FromHex("06 00 51 01"),
+      "pad9 bottom slot addr 0x51",
+      spdsx::device::PadWaveAddr(9, spdsx::device::PadSlot::kBottom));
+  check(spdsx::device::PadWaveEnableAddr(1, spdsx::device::PadSlot::kTop)
+          == FromHex("06 00 40 00"),
+      "pad1 top enable-flag addr 0x40",
+      spdsx::device::PadWaveEnableAddr(1, spdsx::device::PadSlot::kTop));
 
   std::printf("\n--- bulk image split ---\n");
   // A synthetic two-block image: bank 0x10 then 0x20, so the splitter's

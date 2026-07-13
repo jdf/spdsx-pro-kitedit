@@ -98,9 +98,20 @@ Bytes KitNameAddr(int i) {
   return {0x06, 0x00, 0x00, static_cast<uint8_t>(i)};
 }
 
-Bytes PadWaveAddr(PadSlot slot) {
-  const uint8_t param = slot == PadSlot::kTop ? 0x4C : 0x4D;
-  return {0x06, 0x00, param, 0x01};
+namespace {
+// The pad+layer-encoded slot byte: 0x40 + 2*(pad-1) + layer.
+uint8_t PadSlotByte(int pad, PadSlot slot) {
+  return static_cast<uint8_t>(0x40 + 2 * (pad - 1)
+      + (slot == PadSlot::kBottom ? 1 : 0));
+}
+}  // namespace
+
+Bytes PadWaveAddr(int pad, PadSlot slot) {
+  return {0x06, 0x00, PadSlotByte(pad, slot), 0x01};
+}
+
+Bytes PadWaveEnableAddr(int pad, PadSlot slot) {
+  return {0x06, 0x00, PadSlotByte(pad, slot), 0x00};
 }
 
 Bytes PadParamAddr(int pad, int param) {

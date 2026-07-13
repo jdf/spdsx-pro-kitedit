@@ -238,7 +238,12 @@ void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
     double pace_seconds) {
   SelectKit(kit);
   SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
-  Send(Dt1(PadWaveAddr(slot), NibbleEncode(sample)));
+  // The slot address is pad+layer encoded, so this targets the right pad
+  // for any pad (not just pad 7). Write the wave number, then the
+  // companion "slot in use" flag the app sets alongside.
+  Send(Dt1(PadWaveAddr(pad, slot), NibbleEncode(sample)));
+  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+  Send(Dt1(PadWaveEnableAddr(pad, slot), {0x01}));
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
