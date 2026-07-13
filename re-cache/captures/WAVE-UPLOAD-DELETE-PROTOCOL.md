@@ -60,4 +60,26 @@ interplay and the exact `03/18`/`03/19` roles are the other things to
 pin during implementation, verifying each upload by reading it back with
 `readwave` + confirming in `samples`.
 
+### Upload live attempt (2026-07-13) — FAILED, hung the device
+Implemented the sequence (WriteRemoteFile) and ran it with the `03/06`
+tag = 0. Result: the readback found no file, and the device stopped
+answering pings entirely (serial node still present) — needed a power
+cycle. Conclusion: the 3-byte `03/06` field is load-bearing and must be
+correct; a wrong value desyncs the device (it mis-parses the trailing
+payload as commands and hangs). The field is NOT the payload length,
+sum, or CRC (checked). Correlating the capture's acks:
+```
+seek 03/07 (req …04 00) -> ack 00 00 04 00      (echoes 04 00)
+03/19    -> ack 0e 2a 10 20
+PCM 03/06 (req tag 03 0d 12) -> ack 03 0d 12
+hdr 03/06 (req tag 00 04 00) -> ack 00 04 00
+```
+The PCM tag `03 0d 12` doesn't come from any visible preceding ack, so
+it looks like a device-side flash address / write handle the app
+tracks — not reconstructable offline. NEXT (before any more live
+writes, which risk hanging the unit): a dedicated capture that varies
+sample SIZE across two uploads to see how the tag moves with length,
+and/or watch for a command whose reply seeds it. Until then sendwave is
+unsafe. Delete is unaffected and works.
+
 Full capture: fileops-1.log.
