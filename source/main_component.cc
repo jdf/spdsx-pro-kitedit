@@ -606,17 +606,37 @@ void MainComponent::DownloadKitSamples()
   }
   device_fetching_ = true;
   commands_.commandStatusChanged();
+  // Which waves this run covers, and the shared progress the worker
+  // publishes: the wave currently transferring and its permille. The
+  // timer reads these to drive each slot's throbber/ring.
+  download_indices_.clear();
+  for (const auto& [index, dest] : want) {
+    download_indices_.push_back(index);
+  }
+  download_current_ = std::make_shared<std::atomic<int>>(0);
+  download_permille_ = std::make_shared<std::atomic<int>>(0);
+  UpdateDownloadIndicators();
   device_samples_.SetStatus(
       juce::String::fromUTF8("downloading samples\xe2\x80\xa6"));
   juce::Component::SafePointer<MainComponent> safe(this);
-  std::thread([safe, want] {
+  auto current = download_current_;
+  auto permille = download_permille_;
+  std::thread([safe, want, current, permille] {
     juce::String error;
     int done = 0;
     try {
       device::SpdsxDevice dev(device::FindDevicePort());
       for (const auto& [index, dest] : want) {
-        const device::Bytes wav =
-            device::RfwvToWav(dev.ReadRemoteWave(index));
+        permille->store(0);
+        current->store(index);
+        const device::Bytes smp = dev.ReadRemoteWave(
+            index, [permille](size_t got, size_t total) {
+              permille->store(total > 0
+                      ? static_cast<int>(got * 1000 / total)
+                      : 0);
+            });
+        const device::Bytes wav = device::RfwvToWav(smp);
+        current->store(0);
         if (wav.empty()) {
           continue;  // skip a wave that didn't convert
         }
@@ -640,6 +660,37 @@ void MainComponent::DownloadKitSamples()
   }).detach();
 }
 
+void MainComponent::UpdateDownloadIndicators()
+{
+  if (download_indices_.empty()) {
+    return;
+  }
+  const int current =
+      download_current_ != nullptr ? download_current_->load() : 0;
+  const float progress =
+      download_permille_ != nullptr ? download_permille_->load() / 1000.0f
+                                    : 0.0f;
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      const LayerSample& s = model_.sample(pad, layer);
+      if (!s.is_device()
+          || std::find(download_indices_.begin(), download_indices_.end(),
+                 s.device_index)
+              == download_indices_.end())
+      {
+        continue;
+      }
+      auto& slot = *slots_[static_cast<size_t>(
+          pad * KitModel::kLayersPerPad + layer)];
+      if (s.device_index == current) {
+        slot.SetDownloadState(SampleSlot::DownloadState::kActive, progress);
+      } else {
+        slot.SetDownloadState(SampleSlot::DownloadState::kPending);
+      }
+    }
+  }
+}
+
 void MainComponent::OnWaveCached(int sample_index)
 {
   // Refresh any slot in the active kit now backed by this cached wave.
@@ -659,6 +710,18 @@ void MainComponent::FinishKitSampleDownload(
   device_fetching_ = false;
   device_samples_.SetStatus({});
   commands_.commandStatusChanged();
+  // Clear indicators and settle every affected slot to its final state
+  // (playable if cached, "on device" if it was skipped or failed).
+  download_indices_.clear();
+  download_current_.reset();
+  download_permille_.reset();
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      if (model_.sample(pad, layer).is_device()) {
+        SyncSlotFromModel(pad, layer);
+      }
+    }
+  }
   if (error.isNotEmpty() && done == 0) {
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon, "Download Kit Samples",
@@ -1278,6 +1341,8 @@ void MainComponent::timerCallback()
         juce::String::fromUTF8("loading from device\xe2\x80\xa6\n")
         + juce::String(fetch_blocks_->load()) + " blocks");
   }
+  // Animate the per-slot download throbbers/rings while fetching waves.
+  UpdateDownloadIndicators();
 
   // Autosave once edits have gone quiet; every mutation is persisted,
   // there is no explicit save.

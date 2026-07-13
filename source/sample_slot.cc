@@ -178,6 +178,7 @@ void SampleSlot::SetDeviceSample(const juce::String& name,
   image_ = juce::Image();
   playable_ = false;
   device_wave_ = true;
+  download_state_ = DownloadState::kNone;
   play_state_ = PlayState::kStopped;
   position_ = 0.0;
   play_button_.setVisible(false);
@@ -185,6 +186,20 @@ void SampleSlot::SetDeviceSample(const juce::String& name,
   stop_button_.setVisible(false);
   setMouseCursor(juce::MouseCursor::NormalCursor);
   repaint();
+}
+
+void SampleSlot::SetDownloadState(DownloadState state, float progress)
+{
+  const bool changed = state != download_state_
+      || (state == DownloadState::kActive
+          && std::abs(download_progress_ - progress) >= 0.005f);
+  download_state_ = state;
+  download_progress_ = progress;
+  // The throbber animates, so repaint every tick while pending; the
+  // determinate ring only needs a repaint when the value moves.
+  if (changed || state == DownloadState::kPending) {
+    repaint();
+  }
 }
 
 void SampleSlot::SetSampleMissing(const juce::String& name)
@@ -298,6 +313,47 @@ void SampleSlot::UpdateButtonColours()
   stop_button_.repaint();
 }
 
+void SampleSlot::PaintDownloadIndicator(juce::Graphics& g) const
+{
+  const auto centre = getLocalBounds().toFloat().getCentre();
+  constexpr float kRadius = 13.0f;
+  constexpr float kThickness = 3.0f;
+  constexpr float kTwoPi = juce::MathConstants<float>::twoPi;
+  if (download_state_ == DownloadState::kActive) {
+    // A faint full ring with a foreground arc from 12 o'clock,
+    // clockwise, filled to the progress fraction, plus a percentage.
+    juce::Path track;
+    track.addCentredArc(
+        centre.x, centre.y, kRadius, kRadius, 0.0f, 0.0f, kTwoPi, true);
+    g.setColour(kBorder);
+    g.strokePath(track, juce::PathStrokeType(kThickness));
+    juce::Path arc;
+    arc.addCentredArc(centre.x, centre.y, kRadius, kRadius, 0.0f, 0.0f,
+        juce::jlimit(0.0f, 1.0f, download_progress_) * kTwoPi, true);
+    g.setColour(kBorderHover);
+    g.strokePath(arc, juce::PathStrokeType(
+                          kThickness, juce::PathStrokeType::curved,
+                          juce::PathStrokeType::rounded));
+    g.setColour(kMetaText);
+    g.setFont(10.0f);
+    g.drawText(
+        juce::String(juce::roundToInt(download_progress_ * 100.0f)) + "%",
+        getLocalBounds(), juce::Justification::centred);
+  } else {
+    // Indeterminate throbber: a 270-degree arc sweeping around, phase
+    // from wall-clock time so it animates on repaint.
+    const float phase =
+        (juce::Time::getMillisecondCounter() % 900) / 900.0f * kTwoPi;
+    juce::Path arc;
+    arc.addCentredArc(centre.x, centre.y, kRadius, kRadius, 0.0f, phase,
+        phase + kTwoPi * 0.75f, true);
+    g.setColour(kIcon);
+    g.strokePath(arc, juce::PathStrokeType(
+                          kThickness, juce::PathStrokeType::curved,
+                          juce::PathStrokeType::rounded));
+  }
+}
+
 void SampleSlot::paint(juce::Graphics& g)
 {
   auto bounds = getLocalBounds().toFloat();
@@ -309,12 +365,16 @@ void SampleSlot::paint(juce::Graphics& g)
         bounds.reduced(kImageInset),
         juce::RectanglePlacement::stretchToFit);
   } else if (device_wave_) {
-    // No spectrogram until the wave's audio can be pulled off the
-    // device; the body says where the sound lives instead.
-    g.setColour(kPlaceholderText);
-    g.setFont(13.0f);
-    g.drawText("on device", getLocalBounds(),
-        juce::Justification::centred);
+    if (download_state_ != DownloadState::kNone) {
+      PaintDownloadIndicator(g);
+    } else {
+      // No spectrogram until the wave is downloaded; the body says
+      // where the sound lives instead.
+      g.setColour(kPlaceholderText);
+      g.setFont(13.0f);
+      g.drawText("on device", getLocalBounds(),
+          juce::Justification::centred);
+    }
   }
 
   // While this layer sounds, a wash in the velocity colour shows how

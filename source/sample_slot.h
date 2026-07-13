@@ -53,11 +53,18 @@ public:
   // The slot is assigned a file that can't be read (e.g. a .kit whose
   // sample moved): shows the name flagged as missing, no transport.
   void SetSampleMissing(const juce::String& name);
-  // The slot holds a wave from the device pool: name + duration shown,
-  // but nothing to play until sample transfer is implemented.
+  // The slot holds a wave from the device pool: name + duration shown.
+  // Not playable until its audio is downloaded into the cache.
   void SetDeviceSample(const juce::String& name, double duration_seconds);
   // Back to an empty slot.
   void ClearSample();
+
+  // Download indicator for an uncached device wave: kPending draws an
+  // indeterminate throbber (queued), kActive a determinate ring at
+  // `progress` (0..1) while that wave transfers, kNone the plain "on
+  // device" body. Only shown on device-wave slots.
+  enum class DownloadState { kNone, kPending, kActive };
+  void SetDownloadState(DownloadState state, float progress = 0.0f);
 
   // A file is assigned, readable or not.
   bool has_sample() const { return sample_name_.isNotEmpty(); }
@@ -103,6 +110,8 @@ private:
   juce::ShapeButton* ButtonFor(TransportAction action);
   void UpdateButtonColours();
   juce::Rectangle<int> InfoBarBounds() const;
+  // Draws the device-wave download indicator (throbber or ring).
+  void PaintDownloadIndicator(juce::Graphics& g) const;
 
   int index_;
   juce::String sample_name_;
@@ -112,6 +121,8 @@ private:
   int velocity_highlight_ = 0;
   bool playable_ = false;
   bool device_wave_ = false;
+  DownloadState download_state_ = DownloadState::kNone;
+  float download_progress_ = 0.0f;
   double position_ = 0.0;
   bool hovered_ = false;
   bool drag_hover_ = false;

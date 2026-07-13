@@ -137,6 +137,9 @@ private:
   void OnWaveCached(int sample_index);
   void FinishKitSampleDownload(
       const juce::String& error, int done, int total);
+  // Pushes the current download progress into each affected slot's
+  // indicator; called from the 30Hz timer while a fetch runs.
+  void UpdateDownloadIndicators();
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
@@ -202,6 +205,12 @@ private:
   // shared with the worker thread for the progress line.
   std::atomic<bool> device_fetching_ {false};
   std::shared_ptr<std::atomic<int>> fetch_blocks_;
+  // Kit-sample download: the pool indices this run covers, plus the
+  // wave currently transferring and its permille (published by the
+  // worker, read by the timer to animate slot indicators).
+  std::vector<int> download_indices_;
+  std::shared_ptr<std::atomic<int>> download_current_;
+  std::shared_ptr<std::atomic<int>> download_permille_;
   SampleBrowser browser_;
   DeviceSamplePanel device_samples_ {device_, settings_};
   // The left panel: "Files" (the sample browser) and "Device" (the
