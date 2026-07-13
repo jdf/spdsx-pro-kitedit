@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace spdsx::device {
@@ -66,6 +67,29 @@ Bytes KitNameAddr(int i);
 // (select the kit and focus the pad first). Top slot uses param 0x4c, bottom
 // 0x4d; the trailing 0x01 selects the wave-number field.
 Bytes PadWaveAddr(PadSlot slot);
+
+// ---- Sample-pool registration (upload directory records) ----
+//
+// Registering an uploaded wave writes two DT1 records into the sample's
+// 256-byte directory block, whose base DT1 address is
+//   0x2000000 + index*256 + offset
+// encoded as four big-endian 7-bit bytes (index 1586, offset 0x1b ->
+// 10 18 64 1b). Decoded from synthupload-1.log (2026-07-13); see
+// re-cache/captures/WAVE-UPLOAD-DELETE-PROTOCOL.md.
+Bytes SampleRecordAddr(int index, int offset);
+
+// The 151-byte "base" record (block offset 0x00). Byte 0x0c is a size
+// field (= frames / 4096 across the captured uploads); the rest is
+// constant. Content-independent apart from that size.
+Bytes SampleBaseRecord(int frames);
+
+// The 140-byte "name" record (block offset 0x1b): wavename[16] +
+// filename[100] (both space-padded) + a constant block, then a 32-bit
+// content hash at offset 0x84 as eight nibbles (one per byte, MSN
+// first). The hash's algorithm is unknown; pass 0 to test whether the
+// device recomputes it on flash-commit.
+Bytes SampleNameRecord(const std::string& wavename,
+    const std::string& filename, uint32_t content_hash);
 
 // ---- Bulk block transfer (device-state read) ----
 //
