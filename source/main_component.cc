@@ -493,11 +493,11 @@ void MainComponent::LoadDeviceState()
       juce::MessageBoxOptions()
           .withIconType(juce::MessageBoxIconType::WarningIcon)
           .withTitle("Load Device State")
-          .withMessage(
+          .withMessage(juce::String::fromUTF8(
               "This replaces EVERYTHING in this document with the "
               "device's current state: all 200 kits — names, sample "
               "assignments, layer parameters — and the wave pool.\n\n"
-              "Your local edits will be lost. This cannot be undone.")
+              "Your local edits will be lost. This cannot be undone."))
           .withButton("Replace Everything")
           .withButton("Cancel"),
       [safe](int result)
