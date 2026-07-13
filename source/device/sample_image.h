@@ -88,6 +88,19 @@ RfwvHeader ParseRfwvHeader(const Bytes& smp);
 // Returns empty if the RFWV header is invalid.
 Bytes RfwvToWav(const Bytes& smp);
 
+// Builds a device `.SMP` (RFWV) buffer around raw interleaved PCM: the
+// 512-byte header (magic, data length, rate, channels, bits) then the
+// PCM. Byte 0x20 holds an MD5 checksum of the 16 format-descriptor bytes
+// (0x04..0x13) which the device VALIDATES before it will play the wave —
+// a wrong or zero checksum plays silent (live-verified 2026-07-13). The
+// rest of the header (an app-side waveform overview, 0x30 onward) is left
+// zero: not needed for device playback, only the official app's display.
+// The device only plays 48 kHz / 16-bit material, so callers must resample
+// first; channels are preserved (mono and stereo both play). See
+// WAVE-EXPORT-PROTOCOL.md.
+Bytes PcmToRfwv(const Bytes& pcm, uint32_t sample_rate, uint16_t channels,
+    uint16_t bits_per_sample);
+
 }  // namespace spdsx::device
 
 #endif  // SPDSX_PATCHEDIT_SOURCE_DEVICE_SAMPLE_IMAGE_H_

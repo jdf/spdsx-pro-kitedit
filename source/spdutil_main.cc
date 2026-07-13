@@ -390,6 +390,22 @@ int RunSelfTest() {
     all_ok = all_ok && addr_ok && base_ok && name_ok;
     std::printf("%-8s sample record addr/base/name (register)\n",
         (addr_ok && base_ok && name_ok) ? "OK" : "FAIL");
+
+    // PcmToRfwv header (upload build path). For 4096 mono frames the
+    // playback-critical header prefix (0x00..0x2f, including the MD5
+    // checksum at 0x20) must byte-match the device's own (from synth1586,
+    // live-verified to play): a wrong checksum plays silent.
+    const Bytes built_smp =
+        spdsx::device::PcmToRfwv(Bytes(8192, 0), 48000, 1, 16);
+    const Bytes hdr_expect = FromHex(
+        "52 46 57 56 f8 21 00 00 80 bb 00 00 01 00 00 00 "
+        "10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "70 c7 26 87 b3 5a 08 cf 7f a5 e8 ce d1 e3 51 33");
+    const bool pcm_rfwv_ok = built_smp.size() == 512 + 8192
+        && std::equal(hdr_expect.begin(), hdr_expect.end(), built_smp.begin());
+    all_ok = all_ok && pcm_rfwv_ok;
+    std::printf("%-8s PcmToRfwv header + MD5 checksum (upload)\n",
+        pcm_rfwv_ok ? "OK" : "FAIL");
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");

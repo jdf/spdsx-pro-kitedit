@@ -82,16 +82,39 @@ bytes end to end (payload + framing).
 0x00  "RFWV"          0x0c u16 channels
 0x04  u32 data_bytes  0x0e u16 (0)
       (= size - 8)    0x10 u32 bits_per_sample (16)
-0x08  u32 rate        0x14..0x1f reserved 0
-0x20..0x200  fixed 480-byte metadata/padding block
-             (byte-identical across files — NOT audio)
+0x08  u32 rate        0x0c u16 channels   0x10 u32 bits
+0x14..0x1f  reserved 0
+0x20..0x2f  MD5(header[0x04..0x13])  -- format-descriptor checksum
+0x30..0x1ff app-side waveform overview (content-derived; not audio)
 0x200 signed-LE PCM
 ```
-PCM starts at 0x200, NOT 0x20 — the 480 bytes at 0x20 are a fixed
-non-audio block; playing from 0x20 gives a ~5-10ms noise click at the
-start (caught + fixed live 2026-07-12). `spdutil readwave <N> --out
+PCM starts at 0x200, NOT 0x20 — playing from 0x20 gives a ~5-10ms noise
+click (caught + fixed live 2026-07-12). `spdutil readwave <N> --out
 f.SMP` reads a user wave live (mono and 2MB-stereo both verified end to
 end, converted to WAV, played click-free).
+
+CORRECTION (2026-07-13): the old "0x20..0x200 fixed 480-byte block,
+byte-identical across files" was WRONG. It has two parts, both mapped by
+building files from scratch and playing them on the unit:
+- **0x20..0x2f = MD5 of the 16 format bytes at 0x04..0x13** (data_bytes,
+  rate, channels, bits). The device VALIDATES it: a zero/wrong checksum
+  registers and reads back fine but plays SILENT. Confirmed by playing a
+  hand-built sample with the correct MD5 (boops) vs zeroed (silent).
+- **0x30..0x1ff = a content-derived waveform overview** (differs even
+  between same-length files). NOT required for device playback — a
+  sample with this zeroed plays fine — so it is presumably only the
+  official app's display. Reproducing it is unsolved but unnecessary.
+
+## WRITE SIDE — building a playable SMP (2026-07-13, live-verified)
+`device::PcmToRfwv(pcm, rate, channels, bits)` builds the header above
+(magic, data_bytes = 512 + |pcm| - 8, rate, channels, bits, the MD5 at
+0x20, overview left 0) then appends the PCM. Selftest pins its 0x00..0x2f
+byte-exact to a real device header. The device is **48 kHz / 16-bit
+only for playback** (it STORES other rates/depths verbatim but won't play
+them — a 44.1 kHz upload read back byte-exact yet was silent), so callers
+resample to 48k/16-bit first; **channels are preserved** (stereo plays —
+preload index 1 is stereo). Uploading is `SpdsxDevice::UploadWave` — see
+WAVE-UPLOAD-DELETE-PROTOCOL.md.
 
 ## What is SOLID vs still fuzzy
 Solid: the channel, the `03/00/07/04/13/03` command set, path
