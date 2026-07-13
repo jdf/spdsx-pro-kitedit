@@ -57,6 +57,15 @@ class SpdsxDevice {
   // and not undoable on the device.
   void DeleteWave(int sample_index);
 
+  // Writes a `.SMP` (RFWV) buffer to a pool index's file on the device,
+  // replicating the official app's file-write sequence (channel 0x06).
+  // Does NOT register the sample in the directory or commit — the file
+  // can be read straight back by path for validation. The two per-write
+  // tag fields are still-unsettled (see the upload protocol memo), so
+  // they are exposed for live experimentation. IN PROGRESS.
+  void WriteRemoteFile(int sample_index, const Bytes& smp,
+      uint32_t pcm_tag = 0, uint32_t header_tag = 0);
+
   Bytes SelectKit(int kit);
   Bytes SelectObject(ObjectKind kind, int index);
   // Focus (replies; drains) then write the pad-link group (fire-and-forget)

@@ -635,6 +635,33 @@ int RunReadWave(const std::string& port_arg, int index,
   return smp.empty() ? 1 : 0;
 }
 
+int RunSendWave(const std::string& port_arg, int index,
+    const std::string& from_path) {
+  if (from_path.empty()) {
+    std::fprintf(stderr, "sendwave needs --from <file.smp>\n");
+    return 2;
+  }
+  const Bytes smp = ReadFile(from_path);
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s, writing %zu bytes to index %d (no register/"
+      "commit)...\n", port.c_str(), smp.size(), index);
+  dev.WriteRemoteFile(index, smp);
+  std::printf("wrote; reading back to compare...\n");
+  const Bytes back = dev.ReadRemoteWave(index);
+  std::printf("read back %zu bytes (sent %zu)\n", back.size(), smp.size());
+  if (back == smp) {
+    std::printf("MATCH — upload verified byte-for-byte\n");
+    return 0;
+  }
+  size_t first = 0;
+  while (first < back.size() && first < smp.size() && back[first] == smp[first]) {
+    ++first;
+  }
+  std::printf("MISMATCH — first differing byte at %zu (%#zx)\n", first, first);
+  return 1;
+}
+
 int RunDeleteWave(const std::string& port_arg, int index) {
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
@@ -899,6 +926,13 @@ int main(int argc, char** argv) {
         return 2;
       }
       return RunDeleteWave(port, kit_arg);
+    }
+    if (command == "sendwave") {
+      if (kit_arg <= 0) {
+        std::fprintf(stderr, "sendwave needs a target index\n");
+        return 2;
+      }
+      return RunSendWave(port, kit_arg, from_path);
     }
     if (command == "padlink") {
       if (group < 0) {

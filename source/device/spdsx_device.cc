@@ -1,5 +1,8 @@
 #include "device/spdsx_device.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <stdexcept>
 #include <thread>
@@ -269,6 +272,55 @@ Bytes FileRequest(uint8_t sub, const Bytes& body) {
 // Every f0 41 7a 02 data frame is a 14-byte header then payload bytes.
 constexpr size_t kFileFrameHeader = 14;
 
+void AppendStr(Bytes& b, const std::string& s) {
+  b.insert(b.end(), s.begin(), s.end());
+}
+
+// A length-prefixed path body (03/0a, 03/0c, 03/19): 9 zero bytes, the
+// path length INCLUDING its null, the path, then that null.
+Bytes PathBody(const std::string& path) {
+  Bytes b(9, 0x00);
+  b.push_back(static_cast<uint8_t>(path.size() + 1));
+  AppendStr(b, path);
+  b.push_back(0x00);
+  return b;
+}
+
+// Open-for-write body (03/00): like PathBody but with the write-mode
+// flag 0c 02 at bytes 3-4.
+Bytes OpenWriteBody(const std::string& path) {
+  Bytes b = PathBody(path);
+  b[3] = 0x0C;
+  b[4] = 0x02;
+  return b;
+}
+
+// Create-entry body (03/18): 8 zeros, the 03 10 marker, then the path
+// null-padded to a fixed 400-byte field.
+Bytes CreateBody(const std::string& path) {
+  Bytes b(8, 0x00);
+  b.push_back(0x03);
+  b.push_back(0x10);
+  Bytes field(400, 0x00);
+  std::copy(path.begin(), path.end(), field.begin());
+  b.insert(b.end(), field.begin(), field.end());
+  return b;
+}
+
+// A write-data frame body (03/06): u32 offset (0), the 40 00 marker, a
+// 3-byte tag, then the data. The tag is echoed in the ack; its meaning
+// is unsettled (see the upload protocol memo) so it is a parameter.
+Bytes WriteBody(const Bytes& data, uint32_t tag) {
+  Bytes b(5, 0x00);  // u32 offset 0 + one pad byte
+  b.push_back(0x40);
+  b.push_back(0x00);
+  b.push_back(static_cast<uint8_t>(tag));
+  b.push_back(static_cast<uint8_t>(tag >> 8));
+  b.push_back(static_cast<uint8_t>(tag >> 16));
+  b.insert(b.end(), data.begin(), data.end());
+  return b;
+}
+
 }  // namespace
 
 Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
@@ -337,6 +389,51 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
     smp.resize(size);  // trim a batch that overshot
   }
   return smp;
+}
+
+void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp,
+    uint32_t pcm_tag, uint32_t header_tag) {
+  if (smp.size() <= kRfwvHeaderSize) {
+    throw std::runtime_error("smp too small to have header + PCM");
+  }
+  const std::string smp_path = RemoteWavePath(sample_index);
+  const std::string tmp_path =
+      smp_path.substr(0, smp_path.size() - 4) + ".TMP";
+  const std::string dir = smp_path.substr(0, smp_path.rfind('/'));
+  const Bytes header(smp.begin(), smp.begin() + kRfwvHeaderSize);
+  const Bytes pcm(smp.begin() + kRfwvHeaderSize, smp.end());
+
+  auto step = [&](const char* label, const Bytes& req) {
+    const Bytes ack = Command(req);
+    if (std::getenv("SPDSX_TRACE") != nullptr) {
+      std::string hex;
+      char buf[4];
+      for (size_t i = 0; i < ack.size() && i < 16; ++i) {
+        std::snprintf(buf, sizeof(buf), "%02x ", ack[i]);
+        hex += buf;
+      }
+      std::fprintf(stderr, "  %-14s -> %s\n", label, hex.c_str());
+    }
+    return ack;
+  };
+  step("begin", ControlFrame(0x09, 1));
+  step("stat tmp", FileRequest(0x0A, PathBody(tmp_path)));
+  step("create", FileRequest(0x18, CreateBody(smp_path)));
+  const Bytes dack = step("dir", FileRequest(0x0C, PathBody(dir)));
+  Bytes handle(11, 0x00);
+  if (dack.size() >= 9) {
+    std::copy(dack.begin() + 4, dack.begin() + 9, handle.begin());
+  }
+  step("dir handle", FileRequest(0x0D, handle));
+  step("open write", FileRequest(0x00, OpenWriteBody(smp_path)));
+  Bytes seek(11, 0x00);
+  seek[8] = 0x04;
+  step("seek", FileRequest(0x07, seek));
+  step("begin write", FileRequest(0x19, PathBody("/SPDSXREMOTE//")));
+  step("write pcm", FileRequest(0x06, WriteBody(pcm, pcm_tag)));
+  step("seek 0", FileRequest(0x07, Bytes(11, 0x00)));
+  step("write hdr", FileRequest(0x06, WriteBody(header, header_tag)));
+  step("close", FileRequest(0x03, Bytes(11, 0x00)));
 }
 
 Bytes SpdsxDevice::DumpBank(uint8_t bank, const BlockCallback& on_block,
