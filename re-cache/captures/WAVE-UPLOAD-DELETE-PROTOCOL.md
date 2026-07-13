@@ -60,7 +60,33 @@ interplay and the exact `03/18`/`03/19` roles are the other things to
 pin during implementation, verifying each upload by reading it back with
 `readwave` + confirming in `samples`.
 
-### Upload live attempt (2026-07-13) — FAILED, hung the device
+### Upload CRACKED (2026-07-13, synthupload-1.log + live)
+Controlled uploads (2 same-size/diff-content, 3 sizes) settled it:
+
+**File write — WORKS, verified byte-for-byte.** The `03/06` write field
+is the payload length in **3-byte big-endian base-128 (7-bit)**:
+8192→`00 40 00`, 50834→`03 0d 12`. Same for A and B (diff content) ⇒
+not a checksum. Feeding 0 before was the hang (device read the wrong
+byte count). Also: SKIP the `03/19` free-space query (replay gets no
+ack; write completes without it) and give file ops a ~3s timeout. Then
+`WriteRemoteFile` → `readwave` round-trips exactly. The write does NOT
+register or commit; the file is readable by path only.
+
+**Register — mostly decoded, one unknown.** After the file write the app:
+`7a 03 0a` finalize temp; `6a 03 0b`/`0c arg=N` (register; `0c` reply
+carries the file size); a **DT1 write of the ~140-byte directory record**
+= 4 zeros + wavename[16] + filename[84] + `00 04 0b 00` + `Z4T2393 `
+(constant) + an **8-nibble tail**; then flash commit (`6a 03 21`/`22`).
+- Record DT1 address(N) = **0x200001b + N·256**, as 4×7-bit bytes
+  (1586→`10 18 64 1b`, 1587→`10 18 66 1b`). Cracked.
+- The 8-nibble tail is CONTENT-dependent (differs A vs B) — a 32-bit
+  hash of the audio (A=`0x62459d09`), NOT crc32/adler/sum of the PCM.
+  UNSOLVED. Either reverse it, or test whether the device recomputes it
+  on commit (a register write with a zero/placeholder tail) — the last
+  step to a full, pool-visible upload. Category/length fields still to
+  confirm too.
+
+### Earlier upload attempt (2026-07-13) — FAILED, hung the device
 Implemented the sequence (WriteRemoteFile) and ran it with the `03/06`
 tag = 0. Result: the readback found no file, and the device stopped
 answering pings entirely (serial node still present) — needed a power
