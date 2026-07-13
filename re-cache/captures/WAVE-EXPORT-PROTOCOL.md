@@ -50,20 +50,35 @@ Reply framing: `f0 41 7a 02 <sub> <u32 handle> 40 00 <...> <payload>`.
 The `02` sub byte differs per reply (`7d`, `7e`, `00`); looks like a
 rolling tag, not load-bearing. `7a` acks end `... 16 f7`.
 
-## What is SOLID vs still fuzzy
-Solid: the channel, the `03/00/07/04/13/03` command set, the path
-derivation, the RFWV header layout, PCM-16 mono @ 48k.
+## The read loop (confirmed 2026-07-12, `waveexport-2.log`, ~2 MB wave)
+For a file bigger than one reply the app loops the READ step, and the
+whole file comes across this channel (no fallback to the bulk `6c`
+family). Verified: a 2,031,788-byte RFWV reassembled to 2,033,099 read
+bytes end to end (payload + framing).
 
-Fuzzy (needs one more capture): the exact **offset/length field
-arithmetic** in `03/04`/`03/07`, and the **multi-block read loop** for
-files bigger than one reply — this sample was small (~19.7 KB) and the
-`bulkread.js` logger truncates reads to 48 bytes (`READ_HEAD`), so the
-data replies aren't reconstructable from this log. NEXT CAPTURE: export
-a LARGER user wave with `wavexport.js` (no read truncation, channel-6
-focus) to watch the read loop and confirm the length encoding. Then the
-transfer is mechanical to port into `spdsx_device` (channel-6 ops) +
-RFWV->PCM, feeding the local sample cache so device waves become
-playable/thumbnailed. PRELOADs stay unreadable (their `.SMP` files are
-presumably not exposed under `/SPDSXREMOTE/`, or export is blocked).
-```
-```
+- STAT `03/13` returns the size up front (here `... 08 <u32 33279>
+  <u32 0x1f00ac = 2,031,788>`), matching the RFWV data length.
+- Then repeated `03/04` READs. The device **caps each reply at ~512 KB**
+  and the app re-issues until the size is met. Observed per request:
+  512,288 / 524,568 / 524,568 / 524,568 / 458,700 bytes (sums to the
+  file). Full-batch requests carried length field `20 00 00`; the final
+  (short) request `1b 7d 34`. The exact field encoding (looks like a
+  requested byte count with a device-side 512 KB cap) is the last thing
+  to pin at implementation time — the robust port is: request a big
+  batch, read `02` frames until the device stops for that batch, repeat
+  until STAT size is consumed.
+- Each `02` data frame: `f0 41 7a 02 <tag> <u32 rolling> 40 00 <...>
+  <PCM> f7`, ~14-byte header then signed-16 LE PCM. One logical frame's
+  PCM spans many `read()` syscalls (only the first carries the magic),
+  so reassemble by byte count against the STAT/RFWV size, not by
+  scanning for `f7` (PCM contains `f7`).
+
+## What is SOLID vs still fuzzy
+Solid: the channel, the `03/00/07/04/13/03` command set, path
+derivation, RFWV header, PCM-16 mono @ 48k, the read loop, and that the
+entire file transfers this way. Fuzzy: the exact `03/04` length-field
+encoding and per-frame length delimiter — both easiest to finish live
+against the port while porting the transfer into `spdsx_device`
+(channel-6 ops) + RFWV->PCM -> local sample cache, so device waves
+become playable/thumbnailed. PRELOADs stay unreadable (their `.SMP`
+files aren't exposed under `/SPDSXREMOTE/`, or export is blocked).
