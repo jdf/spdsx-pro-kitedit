@@ -91,11 +91,17 @@ Bytes NibbleEncode(int value) {
       static_cast<uint8_t>(value & 0x0F)};
 }
 
-Bytes KitNameAddr(int i) {
+Bytes KitNameAddr(int kit, int i) {
   if (i < 0 || i >= kKitNameLength) {
     throw std::out_of_range("kit-name index 0-15");
   }
-  return {0x06, 0x00, 0x00, static_cast<uint8_t>(i)};
+  // The first two address bytes are the kit prefix (512 + 2*(kit-1),
+  // 7-bit split) — the same kit encoding pad-link uses. The old hardcoded
+  // 0x06 0x00 was simply kit 129's prefix, since all the RE was on 129.
+  Bytes addr = PadLinkPrefix(kit);
+  addr.push_back(0x00);
+  addr.push_back(static_cast<uint8_t>(i));
+  return addr;
 }
 
 namespace {
@@ -106,17 +112,25 @@ uint8_t PadSlotByte(int pad, PadSlot slot) {
 }
 }  // namespace
 
-Bytes PadWaveAddr(int pad, PadSlot slot) {
-  return {0x06, 0x00, PadSlotByte(pad, slot), 0x01};
+Bytes PadWaveAddr(int kit, int pad, PadSlot slot) {
+  Bytes addr = PadLinkPrefix(kit);  // kit-encoded prefix
+  addr.push_back(PadSlotByte(pad, slot));
+  addr.push_back(0x01);
+  return addr;
 }
 
-Bytes PadWaveEnableAddr(int pad, PadSlot slot) {
-  return {0x06, 0x00, PadSlotByte(pad, slot), 0x00};
+Bytes PadWaveEnableAddr(int kit, int pad, PadSlot slot) {
+  Bytes addr = PadLinkPrefix(kit);
+  addr.push_back(PadSlotByte(pad, slot));
+  addr.push_back(0x00);
+  return addr;
 }
 
-Bytes PadParamAddr(int pad, int param) {
-  return {0x06, 0x00, static_cast<uint8_t>(0x1F + pad),
-      static_cast<uint8_t>(param)};
+Bytes PadParamAddr(int kit, int pad, int param) {
+  Bytes addr = PadLinkPrefix(kit);  // kit-encoded prefix
+  addr.push_back(static_cast<uint8_t>(0x1F + pad));
+  addr.push_back(static_cast<uint8_t>(param));
+  return addr;
 }
 
 Bytes BulkRequest(uint8_t sub, uint8_t bank, uint32_t arg) {

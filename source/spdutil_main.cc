@@ -47,6 +47,7 @@ namespace {
 using spdsx::device::Bytes;
 using spdsx::device::BulkBlock;
 using spdsx::device::ObjectKind;
+using spdsx::device::PadSlot;
 
 std::string ToHex(const Bytes& b) {
   std::string s;
@@ -176,7 +177,7 @@ int RunSelfTest() {
       "nibble(203)", spdsx::device::NibbleEncode(203));
   // Kit-name char writes (kit 129 -> 'Z' at index 0 and 15).
   auto name_msg = [](int i) {
-    return spdsx::device::Dt1(spdsx::device::KitNameAddr(i), {0x5a});
+    return spdsx::device::Dt1(spdsx::device::KitNameAddr(129, i), {0x5a});
   };
   check(name_msg(0) == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 00 5a 20 f7"),
       "name[0]='Z'", name_msg(0));
@@ -188,25 +189,25 @@ int RunSelfTest() {
   check(focus == FromHex("f0 41 10 00 00 00 00 16 12 28 00 00 00 06 52 f7"),
       "focus pad7", focus);
   const Bytes top = spdsx::device::Dt1(
-      spdsx::device::PadWaveAddr(7, spdsx::device::PadSlot::kTop),
+      spdsx::device::PadWaveAddr(129, 7, spdsx::device::PadSlot::kTop),
       spdsx::device::NibbleEncode(127));
   check(top == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"),
       "pad7 top wave 127", top);
   const Bytes bot = spdsx::device::Dt1(
-      spdsx::device::PadWaveAddr(7, spdsx::device::PadSlot::kBottom),
+      spdsx::device::PadWaveAddr(129, 7, spdsx::device::PadSlot::kBottom),
       spdsx::device::NibbleEncode(203));
   check(bot == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"),
       "pad7 bottom wave 203", bot);
   // Pad+layer-encoded slot addresses, verified live across all 18 slots:
   // pad 9 bottom = 0x51, and the companion enable-flag write.
-  check(spdsx::device::PadWaveAddr(9, spdsx::device::PadSlot::kBottom)
+  check(spdsx::device::PadWaveAddr(129, 9, spdsx::device::PadSlot::kBottom)
           == FromHex("06 00 51 01"),
       "pad9 bottom slot addr 0x51",
-      spdsx::device::PadWaveAddr(9, spdsx::device::PadSlot::kBottom));
-  check(spdsx::device::PadWaveEnableAddr(1, spdsx::device::PadSlot::kTop)
+      spdsx::device::PadWaveAddr(129, 9, spdsx::device::PadSlot::kBottom));
+  check(spdsx::device::PadWaveEnableAddr(129, 1, spdsx::device::PadSlot::kTop)
           == FromHex("06 00 40 00"),
       "pad1 top enable-flag addr 0x40",
-      spdsx::device::PadWaveEnableAddr(1, spdsx::device::PadSlot::kTop));
+      spdsx::device::PadWaveEnableAddr(129, 1, spdsx::device::PadSlot::kTop));
 
   std::printf("\n--- bulk image split ---\n");
   // A synthetic two-block image: bank 0x10 then 0x20, so the splitter's
@@ -421,16 +422,16 @@ int RunSelfTest() {
     // capture: pad 1 layer mode = 3 (XFADE) -> 06 00 20 00 03, and pad 1
     // fade point = 0x51 -> 06 00 20 01 51.
     const bool padparam_ok =
-        spdsx::device::Dt1(spdsx::device::PadParamAddr(1, 0x00), {0x03})
+        spdsx::device::Dt1(spdsx::device::PadParamAddr(129, 1, 0x00), {0x03})
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 00 03 57 f7")
-        && spdsx::device::Dt1(spdsx::device::PadParamAddr(1, 0x01), {0x51})
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(129, 1, 0x01), {0x51})
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 20 01 51 08 f7")
         // Hi-hat pad 9: volume@0x07=100, fade-in@0x08=50, decay@0x09=77.
-        && spdsx::device::Dt1(spdsx::device::PadParamAddr(9, 0x07), {0x64})
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(129, 9, 0x07), {0x64})
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 07 64 67 f7")
-        && spdsx::device::Dt1(spdsx::device::PadParamAddr(9, 0x08), {0x32})
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(129, 9, 0x08), {0x32})
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 08 32 18 f7")
-        && spdsx::device::Dt1(spdsx::device::PadParamAddr(9, 0x09), {0x4d})
+        && spdsx::device::Dt1(spdsx::device::PadParamAddr(129, 9, 0x09), {0x4d})
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 09 4d 7c f7");
     all_ok = all_ok && padparam_ok;
     std::printf("%-8s pad layer-param write bytes (sync)\n",
@@ -519,6 +520,10 @@ int Usage() {
       "                  the pool so it shows in `samples`, then read the\n"
       "                  file back and report MATCH (writes the pool\n"
       "                  directory; use a fresh index)\n"
+      "  assign [K] --sample N --pad P.S   assign pool sample N to kit K\n"
+      "                  (default 1), pad P (1-9), slot S (0 top/1 bottom);\n"
+      "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
+      "                  not committed (revert with a power cycle)\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -770,6 +775,68 @@ int RunSendWave(const std::string& port_arg, int index,
   return 1;
 }
 
+// Parses a "P.S" pad spec: pad 1-9 before the dot, slot after (0 = top,
+// 1 = bottom). Returns false on a malformed spec.
+bool ParsePadSpec(const std::string& spec, int* pad, PadSlot* slot) {
+  const size_t dot = spec.find('.');
+  if (dot == std::string::npos) {
+    return false;
+  }
+  const int p = std::atoi(spec.substr(0, dot).c_str());
+  const int s = std::atoi(spec.substr(dot + 1).c_str());
+  if (p < 1 || p > spdsx::device::kPadsPerKit || (s != 0 && s != 1)) {
+    return false;
+  }
+  *pad = p;
+  *slot = s == 0 ? PadSlot::kTop : PadSlot::kBottom;
+  return true;
+}
+
+int RunAssign(const std::string& port_arg, int kit, int sample,
+    const std::string& pad_spec, bool commit) {
+  if (sample < 0 || pad_spec.empty()) {
+    std::fprintf(stderr, "assign needs --sample <index> and --pad <P.S> "
+        "(e.g. --pad 2.1 = pad 2 bottom slot)\n");
+    return 2;
+  }
+  int pad = 0;
+  PadSlot slot = PadSlot::kTop;
+  if (!ParsePadSpec(pad_spec, &pad, &slot)) {
+    std::fprintf(stderr, "bad --pad \"%s\"; want P.S with P 1-9, S 0(top)"
+        "/1(bottom)\n", pad_spec.c_str());
+    return 2;
+  }
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s: kit %d pad %d %s <- sample %d%s\n",
+      port.c_str(), kit, pad, slot == PadSlot::kTop ? "top" : "bottom",
+      sample, commit ? " (committing)" : " (working state)");
+  dev.SetPadWave(kit, pad, slot, sample);
+  if (commit) {
+    dev.Commit();
+  }
+  std::printf("done\n");
+  return 0;
+}
+
+int RunSetName(const std::string& port_arg, int kit, const std::string& name,
+    bool commit) {
+  if (name.empty()) {
+    std::fprintf(stderr, "setname needs --name <text>\n");
+    return 2;
+  }
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s: kit %d name <- \"%s\"%s\n", port.c_str(), kit,
+      name.c_str(), commit ? " (committing)" : " (working state)");
+  dev.SetKitName(kit, name);
+  if (commit) {
+    dev.Commit();
+  }
+  std::printf("done\n");
+  return 0;
+}
+
 int RunDeleteWave(const std::string& port_arg, int index) {
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
@@ -949,7 +1016,10 @@ int main(int argc, char** argv) {
   std::string verify_path;
   std::string from_path;
   std::string name_arg;
+  std::string pad_spec;
+  int sample_arg = -1;
   int kit_arg = 0;
+  bool commit_flag = false;
   bool dry_run = false;
   bool verbose = false;
 
@@ -969,7 +1039,14 @@ int main(int argc, char** argv) {
       } else if (arg == "--trigger") {
         objects.emplace_back(ObjectKind::kTrig, std::atoi(next().c_str()));
       } else if (arg == "--pad") {
-        objects.emplace_back(ObjectKind::kPad, std::atoi(next().c_str()));
+        // Dotted "P.S" is the assign pad+slot spec; a bare number is a
+        // padlink pad object.
+        const std::string v = next();
+        if (v.find('.') != std::string::npos) {
+          pad_spec = v;
+        } else {
+          objects.emplace_back(ObjectKind::kPad, std::atoi(v.c_str()));
+        }
       } else if (arg == "--range") {
         ranges.push_back(ParseRange(next()));
       } else if (arg == "--bank") {
@@ -986,6 +1063,10 @@ int main(int argc, char** argv) {
         from_path = next();
       } else if (arg == "--name") {
         name_arg = next();
+      } else if (arg == "--sample") {
+        sample_arg = std::atoi(next().c_str());
+      } else if (arg == "--commit") {
+        commit_flag = true;
       } else if (arg == "--dry-run") {
         dry_run = true;
       } else if (arg == "--verbose") {
@@ -1044,6 +1125,14 @@ int main(int argc, char** argv) {
         return 2;
       }
       return RunSendWave(port, kit_arg, from_path, name_arg);
+    }
+    if (command == "assign") {
+      return RunAssign(port, kit_arg > 0 ? kit_arg : 1, sample_arg, pad_spec,
+          commit_flag);
+    }
+    if (command == "setname") {
+      return RunSetName(port, kit_arg > 0 ? kit_arg : 1, name_arg,
+          commit_flag);
     }
     if (command == "padlink") {
       if (group < 0) {

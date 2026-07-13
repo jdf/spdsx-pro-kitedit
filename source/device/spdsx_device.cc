@@ -224,35 +224,35 @@ void SpdsxDevice::SetPadLink(int kit, ObjectKind kind, int index, int group,
 
 void SpdsxDevice::SetKitName(int kit, const std::string& name,
     double pace_seconds) {
-  SelectKit(kit);  // current-kit-relative; replies, drains
+  // The kit is encoded in the write address (KitNameAddr), so no kit
+  // select is needed to target it.
   for (int i = 0; i < kKitNameLength; ++i) {
     const uint8_t ch = i < static_cast<int>(name.size())
         ? static_cast<uint8_t>(name[i])
         : 0x20;  // space-pad
-    Send(Dt1(KitNameAddr(i), {ch}));
+    Send(Dt1(KitNameAddr(kit, i), {ch}));
     std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
   }
 }
 
 void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
     double pace_seconds) {
-  SelectKit(kit);
-  SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
-  // The slot address is pad+layer encoded, so this targets the right pad
-  // for any pad (not just pad 7). Write the wave number, then the
-  // companion "slot in use" flag the app sets alongside.
-  Send(Dt1(PadWaveAddr(pad, slot), NibbleEncode(sample)));
+  // Kit and pad+layer are both encoded in the address, so no kit select
+  // or pad focus is needed (the app assigns waves without either). Write
+  // the wave number, then the companion "slot in use" flag.
+  Send(Dt1(PadWaveAddr(kit, pad, slot), NibbleEncode(sample)));
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
-  Send(Dt1(PadWaveEnableAddr(pad, slot), {0x01}));
+  Send(Dt1(PadWaveEnableAddr(kit, pad, slot), {0x01}));
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
 void SpdsxDevice::SetPadLayerParams(int kit, int pad,
     const PadDeviceParams& params, double pace_seconds) {
-  SelectKit(kit);
+  // Kit and pad are both encoded in the write address, so no kit select
+  // is needed; focus the pad object (the app does before param edits).
   SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
   auto write = [&](int param, uint8_t value) {
-    Send(Dt1(PadParamAddr(pad, param), {value}));
+    Send(Dt1(PadParamAddr(kit, pad, param), {value}));
     std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
   };
   write(0x00, params.layer_mode);
