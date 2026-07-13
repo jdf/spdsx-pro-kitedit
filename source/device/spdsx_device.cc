@@ -307,16 +307,19 @@ Bytes CreateBody(const std::string& path) {
   return b;
 }
 
-// A write-data frame body (03/06): u32 offset (0), the 40 00 marker, a
-// 3-byte tag, then the data. The tag is echoed in the ack; its meaning
-// is unsettled (see the upload protocol memo) so it is a parameter.
-Bytes WriteBody(const Bytes& data, uint32_t tag) {
-  Bytes b(5, 0x00);  // u32 offset 0 + one pad byte
+// A write-data frame body (03/06): 5 zero bytes, the 40 00 marker, the
+// data length as 3 big-endian base-128 (7-bit) septets, then the data.
+// The length encoding was cracked with controlled uploads (2026-07-13):
+// e.g. 8192 -> 00 40 00, 50834 -> 03 0d 12. A wrong length desyncs the
+// device (it reads the wrong number of data bytes) and hangs it.
+Bytes WriteBody(const Bytes& data) {
+  const uint32_t n = static_cast<uint32_t>(data.size());
+  Bytes b(5, 0x00);
   b.push_back(0x40);
   b.push_back(0x00);
-  b.push_back(static_cast<uint8_t>(tag));
-  b.push_back(static_cast<uint8_t>(tag >> 8));
-  b.push_back(static_cast<uint8_t>(tag >> 16));
+  b.push_back(static_cast<uint8_t>((n >> 14) & 0x7F));
+  b.push_back(static_cast<uint8_t>((n >> 7) & 0x7F));
+  b.push_back(static_cast<uint8_t>(n & 0x7F));
   b.insert(b.end(), data.begin(), data.end());
   return b;
 }
@@ -391,8 +394,7 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
   return smp;
 }
 
-void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp,
-    uint32_t pcm_tag, uint32_t header_tag) {
+void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   if (smp.size() <= kRfwvHeaderSize) {
     throw std::runtime_error("smp too small to have header + PCM");
   }
@@ -404,7 +406,8 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp,
   const Bytes pcm(smp.begin() + kRfwvHeaderSize, smp.end());
 
   auto step = [&](const char* label, const Bytes& req) {
-    const Bytes ack = Command(req);
+    // Flash-backed file ops can take a few hundred ms to answer.
+    const Bytes ack = Command(req, 3.0);
     if (std::getenv("SPDSX_TRACE") != nullptr) {
       std::string hex;
       char buf[4];
@@ -429,10 +432,12 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp,
   Bytes seek(11, 0x00);
   seek[8] = 0x04;
   step("seek", FileRequest(0x07, seek));
-  step("begin write", FileRequest(0x19, PathBody("/SPDSXREMOTE//")));
-  step("write pcm", FileRequest(0x06, WriteBody(pcm, pcm_tag)));
+  // (The app also issues a 03/19 free-space query on "/SPDSXREMOTE//"
+  // here; its reply isn't consumed and replaying it gets no ack, so we
+  // skip it — the write completes without it.)
+  step("write pcm", FileRequest(0x06, WriteBody(pcm)));
   step("seek 0", FileRequest(0x07, Bytes(11, 0x00)));
-  step("write hdr", FileRequest(0x06, WriteBody(header, header_tag)));
+  step("write hdr", FileRequest(0x06, WriteBody(header)));
   step("close", FileRequest(0x03, Bytes(11, 0x00)));
 }
 
