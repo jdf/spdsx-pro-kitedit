@@ -104,7 +104,9 @@ block at `0x2000000 + N·256`, addressed as 4×7-bit bytes (N=1586: `+0x00`
   stores the field verbatim and otherwise IGNORES it. A sample uploaded
   with the hash field = 0 registers, gets its length measured by the
   device, and PLAYS perfectly on the unit (jdf confirmed). So we write 0
-  and never compute it.
+  and never compute it. Full data table + the exhaustive list of rejected
+  hypotheses (and the promising untried avenues) live in
+  `SAMPLE-RECORD-HASH.md`.
 
 ### UPLOAD SHIPPED + LIVE-VERIFIED (2026-07-13)
 Upload is one atomic action: `SpdsxDevice::UploadWave` (= WriteRemoteFile
