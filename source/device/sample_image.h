@@ -82,6 +82,12 @@ struct RfwvHeader {
 // Parses an RFWV header from the start of a `.SMP` payload.
 RfwvHeader ParseRfwvHeader(const Bytes& smp);
 
+// Converts a device `.SMP` (RFWV) buffer into a standard 16-bit PCM
+// WAV file image (44-byte header + the PCM at kRfwvHeaderSize onward),
+// ready to write to the sample cache and load like any audio file.
+// Returns empty if the RFWV header is invalid.
+Bytes RfwvToWav(const Bytes& smp);
+
 }  // namespace spdsx::device
 
 #endif  // SPDSX_PATCHEDIT_SOURCE_DEVICE_SAMPLE_IMAGE_H_

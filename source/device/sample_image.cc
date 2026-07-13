@@ -92,6 +92,56 @@ std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image)
   return records;
 }
 
+namespace {
+
+void PushLe32(Bytes& b, uint32_t v) {
+  b.push_back(static_cast<uint8_t>(v));
+  b.push_back(static_cast<uint8_t>(v >> 8));
+  b.push_back(static_cast<uint8_t>(v >> 16));
+  b.push_back(static_cast<uint8_t>(v >> 24));
+}
+void PushLe16(Bytes& b, uint16_t v) {
+  b.push_back(static_cast<uint8_t>(v));
+  b.push_back(static_cast<uint8_t>(v >> 8));
+}
+void PushStr(Bytes& b, const char* s) {
+  for (; *s; ++s) {
+    b.push_back(static_cast<uint8_t>(*s));
+  }
+}
+
+}  // namespace
+
+Bytes RfwvToWav(const Bytes& smp) {
+  const RfwvHeader h = ParseRfwvHeader(smp);
+  if (!h.valid || h.channels == 0 || h.bits_per_sample == 0
+      || smp.size() <= kRfwvHeaderSize) {
+    return {};
+  }
+  const uint32_t pcm_bytes =
+      static_cast<uint32_t>(smp.size() - kRfwvHeaderSize);
+  const uint16_t block_align =
+      static_cast<uint16_t>(h.channels * (h.bits_per_sample / 8));
+  const uint32_t byte_rate = h.sample_rate * block_align;
+  Bytes wav;
+  wav.reserve(44 + pcm_bytes);
+  PushStr(wav, "RIFF");
+  PushLe32(wav, 36 + pcm_bytes);  // file size - 8
+  PushStr(wav, "WAVE");
+  PushStr(wav, "fmt ");
+  PushLe32(wav, 16);                 // PCM fmt chunk size
+  PushLe16(wav, 1);                  // PCM
+  PushLe16(wav, h.channels);
+  PushLe32(wav, h.sample_rate);
+  PushLe32(wav, byte_rate);
+  PushLe16(wav, block_align);
+  PushLe16(wav, h.bits_per_sample);
+  PushStr(wav, "data");
+  PushLe32(wav, pcm_bytes);
+  wav.insert(wav.end(), smp.begin() + kRfwvHeaderSize, smp.end());
+  return wav;
+}
+
 std::string RemoteWavePath(int index)
 {
   char buf[80];

@@ -341,6 +341,21 @@ int RunSelfTest() {
     std::printf("%-8s RFWV header: %u Hz, %u ch, %u-bit, %u data bytes\n",
         rfwv_ok ? "OK" : "FAIL", hdr.sample_rate, hdr.channels,
         hdr.bits_per_sample, hdr.data_bytes);
+
+    // RfwvToWav: 512-byte header + 8 PCM bytes -> a 52-byte WAV with a
+    // RIFF/WAVE/fmt/data structure and the 8 PCM bytes preserved.
+    Bytes smp = rfwv;
+    smp.resize(spdsx::device::kRfwvHeaderSize, 0);
+    const Bytes tail = {1, 0, 2, 0, 3, 0, 4, 0};
+    smp.insert(smp.end(), tail.begin(), tail.end());
+    const Bytes wav = spdsx::device::RfwvToWav(smp);
+    const bool wav_ok = wav.size() == 44 + 8
+        && std::equal(wav.begin(), wav.begin() + 4, "RIFF")
+        && wav[8] == 'W' && wav[9] == 'A' && wav[22] == 1  // channels
+        && std::equal(wav.end() - 8, wav.end(), tail.begin());
+    all_ok = all_ok && wav_ok;
+    std::printf("%-8s RfwvToWav: %zu-byte WAV\n", wav_ok ? "OK" : "FAIL",
+        wav.size());
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
@@ -603,12 +618,17 @@ int RunReadWave(const std::string& port_arg, int index,
       "  (%.2f s)\n", hdr.valid, hdr.sample_rate, hdr.channels,
       hdr.bits_per_sample,
       pcm, hdr.channels ? pcm / 2.0 / hdr.channels / 48000.0 : 0.0);
-  if (!out_path.empty() && !WriteFile(out_path, smp)) {
-    std::fprintf(stderr, "couldn't write %s\n", out_path.c_str());
-    return 1;
-  }
   if (!out_path.empty()) {
-    std::printf("wrote %s\n", out_path.c_str());
+    // A .wav path gets the converted WAV; anything else the raw .SMP.
+    const bool as_wav = out_path.size() > 4
+        && out_path.compare(out_path.size() - 4, 4, ".wav") == 0;
+    const Bytes data = as_wav ? spdsx::device::RfwvToWav(smp) : smp;
+    if (data.empty() || !WriteFile(out_path, data)) {
+      std::fprintf(stderr, "couldn't write %s\n", out_path.c_str());
+      return 1;
+    }
+    std::printf("wrote %s (%s)\n", out_path.c_str(),
+        as_wav ? "wav" : "raw smp");
   }
   return smp.empty() ? 1 : 0;
 }
