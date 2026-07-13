@@ -1,5 +1,6 @@
 #include "main_component.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <thread>
@@ -184,12 +185,14 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addAndMakeVisible(kit_chooser_);
   browser_.on_preview = [this](const juce::File& file)
   { engine_.PreviewFile(file); };
-  device_samples_.on_preview = [](const device::SampleRecord& rec)
+  device_samples_.on_preview = [this](const device::SampleRecord& rec)
   {
-    // Autoplay-gated selection preview, mirroring the file browser.
-    // Device waves have no local audio yet — this grows a real engine
-    // preview when the sample cache lands.
-    (void)rec;
+    // Autoplay-gated selection preview, mirroring the file browser:
+    // audition a device wave once it's in the local cache.
+    const juce::File cached = document_.WaveCacheFile(rec.index);
+    if (cached != juce::File() && cached.existsAsFile()) {
+      engine_.PreviewFile(cached);
+    }
   };
 
   model_.AddListener(this);
@@ -260,8 +263,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
 {
   ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
       commands::kFileOpen, commands::kFileSaveAs, commands::kImportKit,
-      commands::kLoadDeviceState, commands::kToggleBrowser,
-      commands::kToggleAutoplay});
+      commands::kLoadDeviceState, commands::kDownloadKitSamples,
+      commands::kToggleBrowser, commands::kToggleAutoplay});
 }
 
 void MainComponent::getCommandInfo(
@@ -304,6 +307,13 @@ void MainComponent::getCommandInfo(
     case commands::kLoadDeviceState:
       info.setInfo("Load Device State...",
           "Replace this whole document with the device's current state",
+          "File", 0);
+      info.setActive(!device_fetching_);
+      break;
+    case commands::kDownloadKitSamples:
+      info.setInfo("Download Kit Samples",
+          "Fetch this kit's device waves into the local cache so they "
+          "play",
           "File", 0);
       info.setActive(!device_fetching_);
       break;
@@ -422,6 +432,9 @@ bool MainComponent::perform(const InvocationInfo& info)
       return true;
     case commands::kLoadDeviceState:
       LoadDeviceState();
+      return true;
+    case commands::kDownloadKitSamples:
+      DownloadKitSamples();
       return true;
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);
@@ -556,6 +569,105 @@ void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
   RefreshDocumentState();
 }
 
+void MainComponent::DownloadKitSamples()
+{
+  if (device_fetching_) {
+    return;
+  }
+  // The active kit's device waves that aren't cached yet, paired with
+  // their cache destinations (computed here on the message thread).
+  std::vector<std::pair<int, juce::File>> want;
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      const LayerSample& s = model_.sample(pad, layer);
+      if (!s.is_device()) {
+        continue;
+      }
+      const juce::File dest = document_.WaveCacheFile(s.device_index);
+      if (dest == juce::File() || dest.existsAsFile()) {
+        continue;  // no document location, or already cached
+      }
+      if (std::none_of(want.begin(), want.end(),
+              [&](const auto& p) { return p.first == s.device_index; }))
+      {
+        want.emplace_back(s.device_index, dest);
+      }
+    }
+  }
+  if (want.empty()) {
+    device_samples_.SetStatus("kit samples already cached");
+    juce::Timer::callAfterDelay(
+        1500, [safe = juce::Component::SafePointer<MainComponent>(this)] {
+          if (safe != nullptr) {
+            safe->device_samples_.SetStatus({});
+          }
+        });
+    return;
+  }
+  device_fetching_ = true;
+  commands_.commandStatusChanged();
+  device_samples_.SetStatus(
+      juce::String::fromUTF8("downloading samples\xe2\x80\xa6"));
+  juce::Component::SafePointer<MainComponent> safe(this);
+  std::thread([safe, want] {
+    juce::String error;
+    int done = 0;
+    try {
+      device::SpdsxDevice dev(device::FindDevicePort());
+      for (const auto& [index, dest] : want) {
+        const device::Bytes wav =
+            device::RfwvToWav(dev.ReadRemoteWave(index));
+        if (wav.empty()) {
+          continue;  // skip a wave that didn't convert
+        }
+        dest.getParentDirectory().createDirectory();
+        dest.replaceWithData(wav.data(), wav.size());
+        ++done;
+        juce::MessageManager::callAsync([safe, index] {
+          if (safe != nullptr) {
+            safe->OnWaveCached(index);
+          }
+        });
+      }
+    } catch (const std::exception& e) {
+      error = e.what();
+    }
+    juce::MessageManager::callAsync([safe, error, done, n = want.size()] {
+      if (safe != nullptr) {
+        safe->FinishKitSampleDownload(error, done, static_cast<int>(n));
+      }
+    });
+  }).detach();
+}
+
+void MainComponent::OnWaveCached(int sample_index)
+{
+  // Refresh any slot in the active kit now backed by this cached wave.
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      const LayerSample& s = model_.sample(pad, layer);
+      if (s.is_device() && s.device_index == sample_index) {
+        SyncSlotFromModel(pad, layer);
+      }
+    }
+  }
+}
+
+void MainComponent::FinishKitSampleDownload(
+    const juce::String& error, int done, int total)
+{
+  device_fetching_ = false;
+  device_samples_.SetStatus({});
+  commands_.commandStatusChanged();
+  if (error.isNotEmpty() && done == 0) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon, "Download Kit Samples",
+        error);
+    return;
+  }
+  (void)total;
+}
+
 void MainComponent::RefreshDeviceSamples()
 {
   device_samples_.Refresh();
@@ -617,23 +729,36 @@ void MainComponent::SyncSlotFromModel(int pad, int layer)
     return;
   }
   if (sample.is_device()) {
-    // A pool wave: name + duration from the directory; no audio to
-    // load until sample transfer is implemented.
-    engine_.Clear(idx);
     const auto* rec = device_.FindSample(sample.device_index);
-    slot.SetDeviceSample(rec != nullptr
-            ? juce::String(rec->wavename)
-            : "#" + juce::String(sample.device_index),
-        rec != nullptr ? static_cast<double>(rec->frames) / 48000.0 : 0.0);
+    const juce::String name = rec != nullptr
+        ? juce::String(rec->wavename)
+        : "#" + juce::String(sample.device_index);
+    // Cached device waves play and render like any file; uncached ones
+    // show a placeholder until the user downloads them.
+    const juce::File cached = document_.WaveCacheFile(sample.device_index);
+    if (cached != juce::File() && cached.existsAsFile()) {
+      LoadAudioIntoSlot(idx, cached, name);
+    } else {
+      engine_.Clear(idx);
+      slot.SetDeviceSample(name,
+          rec != nullptr ? static_cast<double>(rec->frames) / 48000.0
+                         : 0.0);
+    }
     return;
   }
-  const juce::File& file = sample.file;
+  LoadAudioIntoSlot(idx, sample.file, sample.file.getFileName());
+}
+
+void MainComponent::LoadAudioIntoSlot(
+    int idx, const juce::File& file, const juce::String& display_name)
+{
+  auto& slot = *slots_[static_cast<size_t>(idx)];
   auto info = engine_.Load(idx, file);
   if (!info) {
     // Unreadable (moved, unmounted, not audio): keep the assignment
     // visible so it survives a save/load round trip.
     engine_.Clear(idx);
-    slot.SetSampleMissing(file.getFileName());
+    slot.SetSampleMissing(display_name);
     return;
   }
   // Too-short files play fine but render no spectrogram; the slot just
@@ -645,8 +770,8 @@ void MainComponent::SyncSlotFromModel(int pad, int layer)
   {
     image = juce::ImageFileFormat::loadFrom(juce::File(png));
   }
-  slot.SetSample(file.getFileName(), info->duration_seconds,
-      info->sample_rate, image);
+  slot.SetSample(
+      display_name, info->duration_seconds, info->sample_rate, image);
 }
 
 void MainComponent::paint(juce::Graphics& g)

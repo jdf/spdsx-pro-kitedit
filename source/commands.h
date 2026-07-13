@@ -16,6 +16,7 @@ enum : juce::CommandID {
   kFileSaveAs,
   kImportKit,
   kLoadDeviceState,
+  kDownloadKitSamples,
   kToggleBrowser,
   kToggleAutoplay,
 };

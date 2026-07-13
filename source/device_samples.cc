@@ -124,8 +124,8 @@ void DeviceSamplePanel::paintListBoxItem(
   const auto cat = device::SampleCategoryName(rec->category);
   g.drawText(juce::String(cat.data(), cat.size()),
       area.removeFromRight(width / 3), juce::Justification::centredRight);
-  // Preloads never get local audio (the device can't export them), so
-  // they read dimmer than user waves.
+  // Factory preloads read dimmer than user imports, a simple at-a-
+  // glance distinction (both are cacheable/playable once downloaded).
   g.setColour(rec->is_preload() ? kMeta : kName);
   g.drawText(juce::String(rec->wavename), area,
       juce::Justification::centredLeft);

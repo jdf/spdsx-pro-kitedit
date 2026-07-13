@@ -61,6 +61,11 @@ public:
   // serializing or switching kits.
   void StashActiveKit();
 
+  // The cached WAV for a device pool wave, under the bundle's samples/
+  // dir (`samples/NNNNN.wav`). Invalid File when the document has no
+  // location yet. The file may not exist — callers check.
+  juce::File WaveCacheFile(int sample_index) const;
+
   // Reads a legacy single-kit .kit file (v1..v4) into the active kit.
   juce::Result ImportKitFile(const juce::File& file);
 

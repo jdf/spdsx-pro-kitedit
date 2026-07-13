@@ -196,6 +196,16 @@ void DeviceDocument::ResetToUntitled()
   setChangedFlag(false);
 }
 
+juce::File DeviceDocument::WaveCacheFile(int sample_index) const
+{
+  const juce::File dir = getFile();
+  if (dir == juce::File() || sample_index <= 0) {
+    return {};
+  }
+  return dir.getChildFile("samples").getChildFile(
+      juce::String(sample_index).paddedLeft('0', 5) + ".wav");
+}
+
 void DeviceDocument::StashActiveKit()
 {
   auto& kit = device_.kit(device_.current_kit());

@@ -125,6 +125,18 @@ private:
   // Syncs one slot's engine + display from the model, without marking
   // the document edited.
   void SyncSlotFromModel(int pad, int layer);
+  // Loads an audio file into a slot's engine channel + spectrogram
+  // under a display name (shared by local files and cached device
+  // waves).
+  void LoadAudioIntoSlot(
+      int idx, const juce::File& file, const juce::String& display_name);
+  // File > Download Kit Samples: fetches the active kit's uncached
+  // device waves into the bundle cache on a worker, refreshing slots as
+  // each lands.
+  void DownloadKitSamples();
+  void OnWaveCached(int sample_index);
+  void FinishKitSampleDownload(
+      const juce::String& error, int done, int total);
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
