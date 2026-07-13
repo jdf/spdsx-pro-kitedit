@@ -72,19 +72,63 @@ ack; write completes without it) and give file ops a ~3s timeout. Then
 `WriteRemoteFile` → `readwave` round-trips exactly. The write does NOT
 register or commit; the file is readable by path only.
 
-**Register — mostly decoded, one unknown.** After the file write the app:
-`7a 03 0a` finalize temp; `6a 03 0b`/`0c arg=N` (register; `0c` reply
-carries the file size); a **DT1 write of the ~140-byte directory record**
-= 4 zeros + wavename[16] + filename[84] + `00 04 0b 00` + `Z4T2393 `
-(constant) + an **8-nibble tail**; then flash commit (`6a 03 21`/`22`).
-- Record DT1 address(N) = **0x200001b + N·256**, as 4×7-bit bytes
-  (1586→`10 18 64 1b`, 1587→`10 18 66 1b`). Cracked.
-- The 8-nibble tail is CONTENT-dependent (differs A vs B) — a 32-bit
-  hash of the audio (A=`0x62459d09`), NOT crc32/adler/sum of the PCM.
-  UNSOLVED. Either reverse it, or test whether the device recomputes it
-  on commit (a register write with a zero/placeholder tail) — the last
-  step to a full, pool-visible upload. Category/length fields still to
-  confirm too.
+**Register — fully decoded except one 32-bit field (2026-07-13, refined).**
+After the file write the app does, in order (heartbeats `6a 03 15`/`16`
+interleaved — ignore them):
+```
+7a 03 0a  <path>.TMP            finalize/cleanup temp   -> 7a 7a ack
+6a 03 0b  arg=N                 register begin          -> 6a 7a ack
+6a 03 0c  arg=N                 register size (reply = file size)
+DT1 base record @ block+0x00                            -> 6a 7a ack
+DT1 name record @ block+0x1b                            -> 6a 02 ack
+6a 03 21 + poll 03 22           flash commit
+```
+There are **TWO** DT1 record writes into the sample's 256-byte directory
+block at `0x2000000 + N·256`, addressed as 4×7-bit bytes (N=1586: `+0x00`
+→ `10 18 64 00`, `+0x1b` → `10 18 64 1b`; verified in code as
+`SampleRecordAddr`):
+- **base record** (`+0x00`, 151 bytes): all constant EXCEPT byte `0x0c`
+  = a size field (= frames/4096 across the four synth uploads: 4096→1,
+  8192→2, 12288→3) and a 16-byte space field at `0x1f–0x2e`. **No hash
+  here.** Byte `0x18`=0x7f and a trailing `04 0b 00` are constant.
+- **name record** (`+0x1b`, 140 bytes): 4 zeros + wavename[16] (`0x04`) +
+  filename[100] (`0x14`, space-padded) + `00 04 0b 00 "Z4T2393 "`
+  (constant) + the **32-bit content hash at `0x84`** as 8 nibbles (one
+  per byte, MSN first; A=`0x62459d09`).
+- **The hash turned out to be irrelevant — UPLOAD IS DONE (live-verified
+  2026-07-13).** It is NOT any standard algorithm (all CRC-32 variants,
+  Adler-32, FNV-1/1a, djb2/sdbm/joaat, sum/fletcher/murmur3, POSIX cksum)
+  over ANY region, NOT a name-string hash, and NOT device-provided — a
+  proprietary value the app computes and jdf declined to disassemble for.
+  **It didn't matter:** the live test (below) proved the device simply
+  stores the field verbatim and otherwise IGNORES it. A sample uploaded
+  with the hash field = 0 registers, gets its length measured by the
+  device, and PLAYS perfectly on the unit (jdf confirmed). So we write 0
+  and never compute it.
+
+### UPLOAD SHIPPED + LIVE-VERIFIED (2026-07-13)
+Upload is one atomic action: `SpdsxDevice::UploadWave` (= WriteRemoteFile
++ RegisterWave, both private) and one CLI command `spdutil sendwave <N>
+--from f.smp [--name X.wav]` — there is no separate register command (a
+written-but-unregistered file is invisible to every UI), and no hash/tail
+option (the field is always written 0). Records are byte-exact vs this
+capture, guarded by `spdutil selftest`.
+
+Live test on hardware: uploaded a synth `.smp` to fresh indices 1590
+(hash 0) and 1591 (real hash 0x62459d09). Both appear in `samples` with
+the right name and read back byte-exact; **1590 (hash 0) plays perfectly
+on the device.** Two findings from diffing the resulting bank-0x20
+records against the app's own 1586 (identical content):
+- The device does **not** compute/recompute or validate the hash — it
+  stores whatever byte you send (1590 kept 0, 1591 kept the real value).
+- The parsed record's frame-count field (record 0x94, LE32) reads 0
+  immediately after upload but corrects itself later: it's a **bulk-dump
+  image coherency lag**, not a field we write. The device measured the
+  length correctly on its own (1590 showed 0.09 s once the image caught
+  up). Base-record byte 0x0c (= frames/4096) is the only length hint we
+  send; the exact count is device-derived.
+Only caveat left: whether the OFFICIAL app flags a hash-0 sample when it
+next loads state (jdf to eyeball); nothing on the device itself does.
 
 ### Earlier upload attempt (2026-07-13) — FAILED, hung the device
 Implemented the sequence (WriteRemoteFile) and ran it with the `03/06`
