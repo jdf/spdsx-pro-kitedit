@@ -140,6 +140,10 @@ private:
   // Pushes the current download progress into each affected slot's
   // indicator; called from the 30Hz timer while a fetch runs.
   void UpdateDownloadIndicators();
+  // Device waves in the active kit whose audio isn't cached yet.
+  int UncachedDeviceWaveCount() const;
+  // Shows/hides + labels the header transfer button from that count.
+  void UpdateTransferButton();
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
@@ -197,6 +201,8 @@ private:
   // Velocity used by keyboard pad triggers (keys 1-9).
   juce::Slider velocity_slider_;
   juce::Label velocity_caption_;
+  // Shown in the header when the active kit has uncached device waves.
+  juce::TextButton transfer_button_ {"Download samples"};
   // The unified kit control: arrows, kit menu, in-place rename.
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;

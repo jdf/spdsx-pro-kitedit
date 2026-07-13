@@ -135,18 +135,22 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     UpdatePadWidgets(pad);
   }
   // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
-  // their own. Low values audition the soft side of the fade modes.
-  velocity_slider_.setSliderStyle(juce::Slider::LinearBar);
+  // their own. Low values audition the soft side of the fade modes. A
+  // compact knob; click its value to type one in.
+  velocity_slider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
   velocity_slider_.setRange(1, 127, 1);
   velocity_slider_.setValue(
       settings_.getUserSettings()->getIntValue("uiVelocity", 100),
       juce::dontSendNotification);
-  // Same velocity-colour fill as the fade bars.
+  velocity_slider_.setTextBoxStyle(
+      juce::Slider::TextBoxRight, false, 30, 18);
+  velocity_slider_.setTextBoxIsEditable(true);
+  // Tint the dial with the same blue->amber->red velocity colour the
+  // fade bars use.
   auto tint_velocity_slider = [this]
   {
-    velocity_slider_.setColour(juce::Slider::trackColourId,
-        VelocityColour(static_cast<int>(velocity_slider_.getValue()))
-            .withAlpha(0.5f));
+    velocity_slider_.setColour(juce::Slider::rotarySliderFillColourId,
+        VelocityColour(static_cast<int>(velocity_slider_.getValue())));
   };
   tint_velocity_slider();
   velocity_slider_.onValueChange = [this, tint_velocity_slider]
@@ -161,6 +165,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   velocity_caption_.setColour(juce::Label::textColourId, kPadLabel);
   velocity_caption_.setJustificationType(juce::Justification::centredRight);
   addAndMakeVisible(velocity_caption_);
+
+  // Appears in the header only when the active kit references device
+  // waves not yet in the local cache; one click downloads them.
+  transfer_button_.onClick = [this] { DownloadKitSamples(); };
+  transfer_button_.setColour(
+      juce::TextButton::buttonColourId, juce::Colour(0xff2f6a4f));
+  addChildComponent(transfer_button_);
   // The unified kit control: arrows and menu switch kits (stashing the
   // old one), the pencil renames in place.
   kit_chooser_.kit_name = [this](int i)
@@ -481,6 +492,7 @@ void MainComponent::RefreshDocumentState()
   // Open/new/import can also swap the wave pool out from under the
   // device tab and any device-wave slots.
   RefreshDeviceSamples();
+  UpdateTransferButton();
 }
 
 void MainComponent::LoadDeviceState()
@@ -606,6 +618,7 @@ void MainComponent::DownloadKitSamples()
   }
   device_fetching_ = true;
   commands_.commandStatusChanged();
+  UpdateTransferButton();  // hide while the fetch runs
   // Which waves this run covers, and the shared progress the worker
   // publishes: the wave currently transferring and its permille. The
   // timer reads these to drive each slot's throbber/ring.
@@ -658,6 +671,41 @@ void MainComponent::DownloadKitSamples()
       }
     });
   }).detach();
+}
+
+int MainComponent::UncachedDeviceWaveCount() const
+{
+  std::vector<int> seen;
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+      const LayerSample& s = model_.sample(pad, layer);
+      if (!s.is_device()) {
+        continue;
+      }
+      const juce::File cached = document_.WaveCacheFile(s.device_index);
+      if ((cached == juce::File() || !cached.existsAsFile())
+          && std::find(seen.begin(), seen.end(), s.device_index)
+              == seen.end())
+      {
+        seen.push_back(s.device_index);
+      }
+    }
+  }
+  return static_cast<int>(seen.size());
+}
+
+void MainComponent::UpdateTransferButton()
+{
+  // Hidden while a fetch runs (its progress shows in the slots and the
+  // Device tab) and when nothing is missing.
+  const int n = device_fetching_ ? 0 : UncachedDeviceWaveCount();
+  transfer_button_.setButtonText(juce::String::fromUTF8("\xe2\x86\x93 ")
+      + juce::String(n) + (n == 1 ? " sample" : " samples"));
+  const bool show = n > 0;
+  if (show != transfer_button_.isVisible()) {
+    transfer_button_.setVisible(show);
+    resized();  // reclaim/space the header
+  }
 }
 
 void MainComponent::UpdateDownloadIndicators()
@@ -722,6 +770,7 @@ void MainComponent::FinishKitSampleDownload(
       }
     }
   }
+  UpdateTransferButton();
   if (error.isNotEmpty() && done == 0) {
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon, "Download Kit Samples",
@@ -897,16 +946,24 @@ juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const
 
 void MainComponent::resized()
 {
-  // The kit chooser owns the header centre; the velocity control sits
-  // at the right edge.
+  // Right edge of the header, laid out right-to-left: the compact
+  // velocity knob, then (when visible) the transfer button.
+  auto header = getLocalBounds().removeFromTop(kHeaderHeight);
+  header.removeFromRight(10);
+  auto vel = header.removeFromRight(96);
+  velocity_slider_.setBounds(vel.removeFromRight(62).withSizeKeepingCentre(
+      62, kHeaderHeight - 8));
+  velocity_caption_.setBounds(vel);
+  if (transfer_button_.isVisible()) {
+    header.removeFromRight(8);
+    transfer_button_.setBounds(
+        header.removeFromRight(120).withSizeKeepingCentre(120, 26));
+  }
+  // The kit chooser owns the header centre.
   kit_chooser_.setBounds(getLocalBounds()
           .removeFromTop(kHeaderHeight)
           .withSizeKeepingCentre(
               juce::jmin(500, getWidth() - 2 * 200), 28));
-  auto vel = juce::Rectangle<int>(getWidth() - 178, 0, 140, kHeaderHeight)
-                 .withSizeKeepingCentre(140, 20);
-  velocity_caption_.setBounds(vel.removeFromLeft(34));
-  velocity_slider_.setBounds(vel.reduced(2, 0));
   panel_tabs_.setBounds(
       0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
