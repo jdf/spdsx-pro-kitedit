@@ -819,6 +819,65 @@ int RunAssign(const std::string& port_arg, int kit, int sample,
   return 0;
 }
 
+// Parses a comma list "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,
+// trig" into pad params. Returns false if the count is wrong.
+bool ParseParamList(const std::string& spec,
+    spdsx::device::PadDeviceParams* p) {
+  std::vector<int> v;
+  size_t start = 0;
+  while (start <= spec.size()) {
+    const size_t comma = spec.find(',', start);
+    const std::string tok = spec.substr(start,
+        comma == std::string::npos ? std::string::npos : comma - start);
+    v.push_back(std::atoi(tok.c_str()));
+    if (comma == std::string::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  if (v.size() != 10) {
+    return false;
+  }
+  p->layer_mode = static_cast<uint8_t>(v[0]);
+  p->fade_point = static_cast<uint8_t>(v[1]);
+  p->fade_end = static_cast<uint8_t>(v[2]);
+  p->dynamics = static_cast<uint8_t>(v[3]);
+  p->dynamics_curve = static_cast<uint8_t>(v[4]);
+  p->fixed_velocity = static_cast<uint8_t>(v[5]);
+  p->hi_hat_volume = static_cast<uint8_t>(v[6]);
+  p->hi_hat_fade_in = static_cast<uint8_t>(v[7]);
+  p->hi_hat_decay = static_cast<uint8_t>(v[8]);
+  p->trigger_reserve = static_cast<uint8_t>(v[9]);
+  return true;
+}
+
+int RunSetParams(const std::string& port_arg, int kit, int pad,
+    const std::string& params_spec, bool commit) {
+  if (pad < 1 || pad > 9 || params_spec.empty()) {
+    std::fprintf(stderr, "setparams needs --pad <1-9> and --params "
+        "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,trig\n");
+    return 2;
+  }
+  spdsx::device::PadDeviceParams p;
+  if (!ParseParamList(params_spec, &p)) {
+    std::fprintf(stderr, "--params needs 10 comma-separated values\n");
+    return 2;
+  }
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s: kit %d pad %d params <- mode=%d fp=%d fe=%d "
+      "dyn=%d curve=%d fixvel=%d hh(%d,%d,%d) trig=%d%s\n", port.c_str(),
+      kit, pad, p.layer_mode, p.fade_point, p.fade_end, p.dynamics,
+      p.dynamics_curve, p.fixed_velocity, p.hi_hat_volume, p.hi_hat_fade_in,
+      p.hi_hat_decay, p.trigger_reserve, commit ? " (committing)" : "");
+  dev.SetPadLayerParams(kit, pad, p);
+  if (commit) {
+    dev.Commit();
+  }
+  std::printf("done\n");
+  return 0;
+}
+
 int RunSetName(const std::string& port_arg, int kit, const std::string& name,
     bool commit) {
   if (name.empty()) {
@@ -901,15 +960,16 @@ int RunKit(const std::string& port_arg, const std::string& from_path,
   const auto& k = kits[static_cast<size_t>(kit - 1)];
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
   std::printf("  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
-              "  top   bottom\n");
+              "  hhVol hhFadeIn hhDecay  top   bottom\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
-    std::printf("  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %5d\n",
+    std::printf("  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d\n",
         pad + 1, mode, p.fade_point, p.fade_end, p.dynamics ? "ON" : "OFF",
         curve, p.fixed_velocity, p.trigger_reserve ? "ON" : "OFF",
+        p.hi_hat_volume, p.hi_hat_fade_in, p.hi_hat_decay,
         p.wave_top, p.wave_bottom);
   }
   return 0;
@@ -1017,7 +1077,9 @@ int main(int argc, char** argv) {
   std::string from_path;
   std::string name_arg;
   std::string pad_spec;
+  std::string params_spec;
   int sample_arg = -1;
+  int pad_num = 0;
   int kit_arg = 0;
   bool commit_flag = false;
   bool dry_run = false;
@@ -1045,7 +1107,8 @@ int main(int argc, char** argv) {
         if (v.find('.') != std::string::npos) {
           pad_spec = v;
         } else {
-          objects.emplace_back(ObjectKind::kPad, std::atoi(v.c_str()));
+          pad_num = std::atoi(v.c_str());  // setparams uses a plain pad num
+          objects.emplace_back(ObjectKind::kPad, pad_num);
         }
       } else if (arg == "--range") {
         ranges.push_back(ParseRange(next()));
@@ -1065,6 +1128,8 @@ int main(int argc, char** argv) {
         name_arg = next();
       } else if (arg == "--sample") {
         sample_arg = std::atoi(next().c_str());
+      } else if (arg == "--params") {
+        params_spec = next();
       } else if (arg == "--commit") {
         commit_flag = true;
       } else if (arg == "--dry-run") {
@@ -1133,6 +1198,10 @@ int main(int argc, char** argv) {
     if (command == "setname") {
       return RunSetName(port, kit_arg > 0 ? kit_arg : 1, name_arg,
           commit_flag);
+    }
+    if (command == "setparams") {
+      return RunSetParams(port, kit_arg > 0 ? kit_arg : 1, pad_num,
+          params_spec, commit_flag);
     }
     if (command == "padlink") {
       if (group < 0) {
