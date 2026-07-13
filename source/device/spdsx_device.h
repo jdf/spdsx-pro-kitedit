@@ -57,11 +57,16 @@ class SpdsxDevice {
   // and not undoable on the device.
   void DeleteWave(int sample_index);
 
-  // Writes a `.SMP` (RFWV) buffer to a pool index's file on the device,
-  // replicating the official app's file-write sequence (channel 0x06).
-  // Does NOT register the sample in the directory or commit — the file
-  // can be read straight back by path for validation.
-  void WriteRemoteFile(int sample_index, const Bytes& smp);
+  // Uploads a wave to a pool index: writes its `.SMP` (RFWV) file to flash
+  // and registers it in the pool directory so it appears in `samples` and
+  // is assignable. Writing without registering leaves an orphan file no UI
+  // can see, so upload is one atomic action. Live-verified 2026-07-13: the
+  // uploaded sample shows in the pool, reads back byte-exact, and plays on
+  // the device. (The record's 0x84 "content hash" field, whose algorithm
+  // the official app uses but never shared, is written as 0 — the device
+  // ignores it entirely; see WAVE-UPLOAD-DELETE-PROTOCOL.md.)
+  void UploadWave(int sample_index, const Bytes& smp,
+      const std::string& wavename, const std::string& filename);
 
   Bytes SelectKit(int kit);
   Bytes SelectObject(ObjectKind kind, int index);
@@ -106,6 +111,15 @@ class SpdsxDevice {
  private:
   // Reads one transport frame's payload; empty on idle/malformed.
   Bytes ReadBulkFrame(double idle_timeout, double body_timeout);
+
+  // Upload primitives, composed by UploadWave (never used separately — a
+  // written-but-unregistered file is invisible to every UI).
+  // WriteRemoteFile replicates the official app's channel-0x06 file write
+  // (live-verified byte-exact); RegisterWave writes the two DT1 directory
+  // records at 0x2000000 + N*256 and flash-commits.
+  void WriteRemoteFile(int sample_index, const Bytes& smp);
+  void RegisterWave(int sample_index, int frames,
+      const std::string& wavename, const std::string& filename);
 
   SerialPort port_;
 };

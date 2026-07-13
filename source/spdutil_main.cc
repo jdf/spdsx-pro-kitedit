@@ -356,6 +356,40 @@ int RunSelfTest() {
     all_ok = all_ok && wav_ok;
     std::printf("%-8s RfwvToWav: %zu-byte WAV\n", wav_ok ? "OK" : "FAIL",
         wav.size());
+
+    // Sample-registration directory records (upload protocol). Byte-exact
+    // vs synthupload-1.log sample 1587 (B_noise_4096, 4096 frames, record
+    // tail 0xee8ab53f) — address, base record, and name record.
+    const bool addr_ok =
+        spdsx::device::SampleRecordAddr(1587, 0x00)
+            == Bytes({0x10, 0x18, 0x66, 0x00})
+        && spdsx::device::SampleRecordAddr(1587, 0x1b)
+            == Bytes({0x10, 0x18, 0x66, 0x1b});
+    const Bytes base1587 = spdsx::device::SampleBaseRecord(4096);
+    const Bytes base_expect = FromHex(
+        "00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 "
+        "00 00 00 00 7f 00 00 00 00 00 00 20 20 20 20 20 20 20 20 20 "
+        "20 20 20 20 20 20 20 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 04 0b 00");
+    const bool base_ok = base1587 == base_expect;
+    const Bytes name1587 = spdsx::device::SampleNameRecord(
+        "B_noise_4096", "B_noise_4096.wav", 0xee8ab53f);
+    const Bytes name_expect = FromHex(
+        "00 00 00 00 42 5f 6e 6f 69 73 65 5f 34 30 39 36 20 20 20 20 "
+        "42 5f 6e 6f 69 73 65 5f 34 30 39 36 2e 77 61 76 20 20 20 20 "
+        "20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 "
+        "20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 "
+        "20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 "
+        "20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 "
+        "00 04 0b 00 5a 34 54 32 33 39 33 20 0e 0e 08 0a 0b 05 03 0f");
+    const bool name_ok = name1587 == name_expect;
+    all_ok = all_ok && addr_ok && base_ok && name_ok;
+    std::printf("%-8s sample record addr/base/name (register)\n",
+        (addr_ok && base_ok && name_ok) ? "OK" : "FAIL");
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
@@ -435,6 +469,11 @@ int Usage() {
       "              .wav = converted, else raw .SMP)\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
+      "  sendwave <N> --from F.smp [--name X.wav]\n"
+      "                  upload a wave: write the file AND register it in\n"
+      "                  the pool so it shows in `samples`, then read the\n"
+      "                  file back and report MATCH (writes the pool\n"
+      "                  directory; use a fresh index)\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -636,29 +675,53 @@ int RunReadWave(const std::string& port_arg, int index,
 }
 
 int RunSendWave(const std::string& port_arg, int index,
-    const std::string& from_path) {
+    const std::string& from_path, const std::string& name_arg) {
   if (from_path.empty()) {
     std::fprintf(stderr, "sendwave needs --from <file.smp>\n");
     return 2;
   }
   const Bytes smp = ReadFile(from_path);
+  if (smp.size() <= 512) {
+    std::fprintf(stderr, "smp too small (%zu bytes)\n", smp.size());
+    return 1;
+  }
+  // Derive the pool names: --name gives the filename field (e.g.
+  // "Kick.wav"); the wavename is that without the extension, capped at 16.
+  // Both default to the source file's basename.
+  std::string filename = name_arg;
+  if (filename.empty()) {
+    const size_t slash = from_path.find_last_of('/');
+    filename = slash == std::string::npos ? from_path
+                                          : from_path.substr(slash + 1);
+  }
+  std::string wavename = filename;
+  const size_t dot = wavename.find_last_of('.');
+  if (dot != std::string::npos) {
+    wavename = wavename.substr(0, dot);
+  }
+  if (wavename.size() > 16) {
+    wavename = wavename.substr(0, 16);
+  }
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
-  std::printf("opened %s, writing %zu bytes to index %d (no register/"
-      "commit)...\n", port.c_str(), smp.size(), index);
-  dev.WriteRemoteFile(index, smp);
-  std::printf("wrote; reading back to compare...\n");
+  std::printf("opened %s: uploading %zu bytes to index %d as \"%s\" / "
+      "\"%s\"...\n", port.c_str(), smp.size(), index,
+      wavename.c_str(), filename.c_str());
+  dev.UploadWave(index, smp, wavename, filename);
+  std::printf("uploaded; reading back to compare the file...\n");
   const Bytes back = dev.ReadRemoteWave(index);
-  std::printf("read back %zu bytes (sent %zu)\n", back.size(), smp.size());
-  if (back == smp) {
-    std::printf("MATCH — upload verified byte-for-byte\n");
+  const bool match = back == smp;
+  if (match) {
+    std::printf("file MATCH — check the pool with `spdutil samples` and "
+        "`spdutil readwave %d`\n", index);
     return 0;
   }
   size_t first = 0;
   while (first < back.size() && first < smp.size() && back[first] == smp[first]) {
     ++first;
   }
-  std::printf("MISMATCH — first differing byte at %zu (%#zx)\n", first, first);
+  std::printf("read back %zu bytes (sent %zu); file MISMATCH — first "
+      "differing byte at %zu (%#zx)\n", back.size(), smp.size(), first, first);
   return 1;
 }
 
@@ -840,6 +903,7 @@ int main(int argc, char** argv) {
   std::string out_path;
   std::string verify_path;
   std::string from_path;
+  std::string name_arg;
   int kit_arg = 0;
   bool dry_run = false;
   bool verbose = false;
@@ -875,6 +939,8 @@ int main(int argc, char** argv) {
         verify_path = next();
       } else if (arg == "--from") {
         from_path = next();
+      } else if (arg == "--name") {
+        name_arg = next();
       } else if (arg == "--dry-run") {
         dry_run = true;
       } else if (arg == "--verbose") {
@@ -932,7 +998,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "sendwave needs a target index\n");
         return 2;
       }
-      return RunSendWave(port, kit_arg, from_path);
+      return RunSendWave(port, kit_arg, from_path, name_arg);
     }
     if (command == "padlink") {
       if (group < 0) {

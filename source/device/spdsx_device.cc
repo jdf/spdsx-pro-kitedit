@@ -441,6 +441,56 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   step("close", FileRequest(0x03, Bytes(11, 0x00)));
 }
 
+void SpdsxDevice::RegisterWave(int sample_index, int frames,
+    const std::string& wavename, const std::string& filename) {
+  // Replays the official app's post-write register sequence (decoded from
+  // synthupload-1.log, 2026-07-13): finalize the temp file, open a register
+  // slot for N, then write two DT1 directory records into the block at
+  // 0x2000000 + N*256 and flash-commit. The name record's 32-bit hash
+  // field is written as 0; the device ignores it (live-verified — a
+  // zero-hash sample registers, measures, and plays normally).
+  const std::string smp_path = RemoteWavePath(sample_index);
+  const std::string tmp_path =
+      smp_path.substr(0, smp_path.size() - 4) + ".TMP";
+
+  auto trace = [&](const char* label, const Bytes& ack) {
+    if (std::getenv("SPDSX_TRACE") == nullptr) return;
+    std::string hex;
+    char buf[4];
+    for (size_t i = 0; i < ack.size() && i < 16; ++i) {
+      std::snprintf(buf, sizeof(buf), "%02x ", ack[i]);
+      hex += buf;
+    }
+    std::fprintf(stderr, "  %-14s -> %s\n", label, hex.c_str());
+  };
+
+  trace("finalize tmp",
+      Command(FileRequest(0x0A, PathBody(tmp_path)), 3.0));
+  trace("register 0b", Command(ControlFrame(0x0B, sample_index), 3.0));
+  trace("register 0c", Command(ControlFrame(0x0C, sample_index), 3.0));
+  trace("base record",
+      Command(Dt1(SampleRecordAddr(sample_index, 0x00),
+          SampleBaseRecord(frames)), 3.0));
+  trace("name record",
+      Command(Dt1(SampleRecordAddr(sample_index, 0x1B),
+          SampleNameRecord(wavename, filename, /*content_hash=*/0)), 3.0));
+  Commit();
+}
+
+void SpdsxDevice::UploadWave(int sample_index, const Bytes& smp,
+    const std::string& wavename, const std::string& filename) {
+  // The full upload: write the wave file to flash, then register it in the
+  // pool directory (writing without registering leaves an orphan file no
+  // UI can see, so the two are never done separately). `frames` = 16-bit
+  // mono sample count, drives the directory record's size field.
+  if (smp.size() <= kRfwvHeaderSize) {
+    throw std::runtime_error("smp too small to have header + PCM");
+  }
+  const int frames = static_cast<int>((smp.size() - kRfwvHeaderSize) / 2);
+  WriteRemoteFile(sample_index, smp);
+  RegisterWave(sample_index, frames, wavename, filename);
+}
+
 Bytes SpdsxDevice::DumpBank(uint8_t bank, const BlockCallback& on_block,
     double idle_timeout, double block_timeout) {
   // The official app's load handshake (decoded 2026-07-12): PREPARE every
