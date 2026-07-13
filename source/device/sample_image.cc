@@ -115,6 +115,7 @@ RfwvHeader ParseRfwvHeader(const Bytes& smp)
   h.sample_rate = ReadLe32(smp, 8);
   h.channels =
       static_cast<uint16_t>(smp[12] | static_cast<uint16_t>(smp[13]) << 8);
+  h.bits_per_sample = static_cast<uint16_t>(ReadLe32(smp, 16));
   return h;
 }
 

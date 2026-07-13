@@ -330,15 +330,17 @@ int RunSelfTest() {
     const bool path_ok = spdsx::device::RemoteWavePath(1554)
         == "/SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D015/W01554.SMP";
     const Bytes rfwv = FromHex(
-        "52 46 57 56 14 4d 00 00 80 bb 00 00 01 00");
+        "52 46 57 56 14 4d 00 00 80 bb 00 00 01 00 00 00 "
+        "10 00 00 00 00 00 00 00");
     const auto hdr = spdsx::device::ParseRfwvHeader(rfwv);
     const bool rfwv_ok = hdr.valid && hdr.data_bytes == 0x4d14
-        && hdr.sample_rate == 48000 && hdr.channels == 1;
+        && hdr.sample_rate == 48000 && hdr.channels == 1
+        && hdr.bits_per_sample == 16;
     all_ok = all_ok && path_ok && rfwv_ok;
     std::printf("%-8s remote path\n", path_ok ? "OK" : "FAIL");
-    std::printf("%-8s RFWV header: %u Hz, %u ch, %u data bytes\n",
+    std::printf("%-8s RFWV header: %u Hz, %u ch, %u-bit, %u data bytes\n",
         rfwv_ok ? "OK" : "FAIL", hdr.sample_rate, hdr.channels,
-        hdr.data_bytes);
+        hdr.bits_per_sample, hdr.data_bytes);
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
@@ -414,6 +416,8 @@ int Usage() {
       "  kit <N>     show kit N's pad params (live, or --from <dump>)\n"
       "  samples     list the device wave pool (live, or --from <dump>;\n"
       "              directory only — the dump carries no audio)\n"
+      "  readwave <N> read user wave N's .SMP off the device (--out FILE\n"
+      "              to save the raw RFWV); preloads aren't exportable\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -577,6 +581,31 @@ int RunKits(const std::string& port_arg, const std::string& from_path) {
     std::printf("  %3zu  %s\n", i + 1, kits[i].name.c_str());
   }
   return kits.empty() ? 1 : 0;
+}
+
+int RunReadWave(const std::string& port_arg, int index,
+    const std::string& out_path) {
+  const std::string port = ResolvePort(port_arg);
+  spdsx::device::SpdsxDevice dev(port);
+  std::printf("opened %s, reading wave %d (%s)...\n", port.c_str(), index,
+      spdsx::device::RemoteWavePath(index).c_str());
+  const Bytes smp = dev.ReadRemoteWave(index,
+      [](size_t done, size_t total) {
+        std::printf("\r  %zu / %zu bytes", done, total);
+        std::fflush(stdout);
+      });
+  std::printf("\n%zu bytes read\n", smp.size());
+  const auto hdr = spdsx::device::ParseRfwvHeader(smp);
+  std::printf("RFWV: valid=%d  %u Hz  %u ch  %u data bytes\n", hdr.valid,
+      hdr.sample_rate, hdr.channels, hdr.data_bytes);
+  if (!out_path.empty() && !WriteFile(out_path, smp)) {
+    std::fprintf(stderr, "couldn't write %s\n", out_path.c_str());
+    return 1;
+  }
+  if (!out_path.empty()) {
+    std::printf("wrote %s\n", out_path.c_str());
+  }
+  return smp.empty() ? 1 : 0;
 }
 
 int RunSamples(const std::string& port_arg, const std::string& from_path) {
@@ -819,6 +848,13 @@ int main(int argc, char** argv) {
     }
     if (command == "kit") {
       return RunKit(port, from_path, kit_arg);
+    }
+    if (command == "readwave") {
+      if (kit_arg <= 0) {
+        std::fprintf(stderr, "readwave needs a sample index\n");
+        return 2;
+      }
+      return RunReadWave(port, kit_arg, out_path);
     }
     if (command == "padlink") {
       if (group < 0) {

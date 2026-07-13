@@ -65,13 +65,16 @@ std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image);
 // /SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D<N/100>/W<N>.SMP.
 std::string RemoteWavePath(int index);
 
-// The header of a `.SMP` (RFWV) wave file: magic then data length,
-// sample rate, channel count. 16-bit signed LE PCM follows.
+// The header of a `.SMP` (RFWV) wave file (32 bytes, verified against a
+// device export): magic, data length (= file size - 8), sample rate,
+// channels, and bits/sample; signed LE PCM follows at kRfwvHeaderSize.
+inline constexpr size_t kRfwvHeaderSize = 32;
 struct RfwvHeader {
   bool valid = false;
   uint32_t data_bytes = 0;
   uint32_t sample_rate = 0;
   uint16_t channels = 0;
+  uint16_t bits_per_sample = 0;
 };
 // Parses an RFWV header from the start of a `.SMP` payload.
 RfwvHeader ParseRfwvHeader(const Bytes& smp);

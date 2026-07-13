@@ -62,6 +62,18 @@ class SpdsxDevice {
   void SetPadWave(int kit, int pad, PadSlot slot, int sample,
       double pace_seconds = 0.02);
 
+  using ProgressCallback = std::function<void(size_t done, size_t total)>;
+
+  // Reads a user wave's `.SMP` file off the device over the remote-file
+  // protocol (family f0 41 7a, channel 0x06 — see
+  // re-cache/captures/WAVE-EXPORT-PROTOCOL.md): OPEN the derived path,
+  // STAT for the size, then loop READ (the device caps each reply at
+  // ~512KB) until the whole file is in hand, then CLOSE. Returns the
+  // raw `.SMP` bytes (RFWV header + PCM). Throws on protocol failure.
+  // Preload waves aren't exportable; only user waves resolve.
+  Bytes ReadRemoteWave(int sample_index,
+      const ProgressCallback& on_progress = {}, double idle_timeout = 1.0);
+
   using BlockCallback = std::function<void(const Bytes& block)>;
 
   // Streams a whole bank (0x10/0x20/0x30/0x40) and returns the reassembled

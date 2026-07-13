@@ -4,12 +4,15 @@
 #include <stdexcept>
 #include <thread>
 
+#include "device/sample_image.h"
+
 namespace spdsx::device {
 
 namespace {
 
 constexpr uint8_t kFrameHead[] = {0x0d, 0x60, 0xe0};
 constexpr uint8_t kFrameTail[] = {0x01, 0x00, 0x00, 0x00};
+constexpr uint8_t kChFile = 0x06;
 constexpr uint8_t kChDt1 = 0x07;
 constexpr uint8_t kChBulk = 0x08;
 constexpr uint8_t kChControl = 0x09;
@@ -19,7 +22,8 @@ constexpr uint32_t kMaxFrameLen = 4096;
 constexpr uint32_t kMaxBulkFrameLen = 1 << 17;
 
 // hdr[3] selects a channel by message family: 41 10 = DT1 params,
-// 41 6a = control/status, 41 6c = bulk block transfer.
+// 41 6a = control/status, 41 6c = bulk block transfer, 41 7a = remote
+// file transfer (wave export).
 uint8_t ChannelFor(const Bytes& payload) {
   if (payload.size() >= 3 && payload[1] == 0x41) {
     if (payload[2] == 0x10) {
@@ -30,6 +34,9 @@ uint8_t ChannelFor(const Bytes& payload) {
     }
     if (payload[2] == 0x6C) {
       return kChBulk;
+    }
+    if (payload[2] == 0x7A) {
+      return kChFile;
     }
   }
   return kChDt1;
@@ -190,6 +197,89 @@ Bytes SpdsxDevice::ReadBulkFrame(double idle_timeout, double body_timeout) {
     return {};
   }
   return port_.ReadExact(len, body_timeout);
+}
+
+namespace {
+
+// A remote-file request: f0 41 7a 03 <sub> + <body> + f7.
+Bytes FileRequest(uint8_t sub, const Bytes& body) {
+  Bytes p = {0xF0, 0x41, 0x7A, 0x03, sub};
+  p.insert(p.end(), body.begin(), body.end());
+  p.push_back(0xF7);
+  return p;
+}
+
+// Every f0 41 7a 02 data frame is a 14-byte header then payload bytes.
+constexpr size_t kFileFrameHeader = 14;
+
+}  // namespace
+
+Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
+    const ProgressCallback& on_progress, double idle_timeout) {
+  const std::string path = RemoteWavePath(sample_index);
+  // OPEN: 9 zero bytes, then the path length INCLUDING its null, then
+  // the path and that null.
+  Bytes open_body(9, 0x00);
+  open_body.push_back(static_cast<uint8_t>(path.size() + 1));
+  open_body.insert(open_body.end(), path.begin(), path.end());
+  open_body.push_back(0x00);
+  const Bytes ack = Command(FileRequest(0x00, open_body));
+  if (ack.size() < 4 || ack[3] != 0x7A) {
+    throw std::runtime_error("device rejected OPEN of " + path
+        + " (preload wave, or not present?)");
+  }
+
+  // STAT: reply is f0 41 7a 02 .. 08 <u32 attr> <u32 size> f7; the file
+  // size is the second u32 (offset 18).
+  const Bytes sr = Command(FileRequest(0x13, Bytes(11, 0x00)));
+  if (sr.size() < 22) {
+    throw std::runtime_error("short STAT reply for " + path);
+  }
+  const uint32_t size = static_cast<uint32_t>(sr[18])
+      | static_cast<uint32_t>(sr[19]) << 8
+      | static_cast<uint32_t>(sr[20]) << 16
+      | static_cast<uint32_t>(sr[21]) << 24;
+
+  // SEEK to 0 (all-zero body), then loop READ. Each READ asks for a big
+  // batch (0x200000 in the length field at body[7]); the device caps
+  // its reply, so re-request until we've collected `size` bytes.
+  Command(FileRequest(0x07, Bytes(11, 0x00)));
+  const Bytes read_body = {0, 0, 0, 0, 0, 0, 0, 0x20, 0, 0, 0};
+
+  Bytes smp;
+  smp.reserve(size);
+  while (smp.size() < size) {
+    port_.Write(Wrap(FileRequest(0x04, read_body)));
+    bool got_any = false;
+    for (;;) {
+      const Bytes frame = ReadBulkFrame(idle_timeout, 5.0);
+      // Each data frame is a 14-byte header, the payload, then a
+      // trailing 0xf7 (the SysEx terminator) — drop BOTH ends. Missing
+      // the f7 leaves an odd byte per frame that shifts every following
+      // frame's sample alignment (audible as alternating audio/noise).
+      if (frame.size() <= kFileFrameHeader + 1 || frame[3] != 0x02) {
+        break;  // batch drained (idle) or a non-data frame
+      }
+      smp.insert(
+          smp.end(), frame.begin() + kFileFrameHeader, frame.end() - 1);
+      got_any = true;
+      if (on_progress) {
+        on_progress(smp.size(), size);
+      }
+      if (smp.size() >= size) {
+        break;
+      }
+    }
+    if (!got_any) {
+      break;  // device stopped sending; avoid an infinite loop
+    }
+  }
+
+  Command(FileRequest(0x03, Bytes(11, 0x00)));  // CLOSE
+  if (smp.size() > size) {
+    smp.resize(size);  // trim a batch that overshot
+  }
+  return smp;
 }
 
 Bytes SpdsxDevice::DumpBank(uint8_t bank, const BlockCallback& on_block,
