@@ -148,6 +148,16 @@ std::unique_ptr<DeviceDb> DeviceDb::Open(const juce::File& path,
     Exec(db, "PRAGMA foreign_keys=ON;");
     Exec(db, kSchemaSql);
     Exec(db, ("PRAGMA user_version=" + std::to_string(kSchemaVersion)).c_str());
+    // Document metadata for future compatibility read paths: a version to
+    // branch on, plus one-time provenance. schema_version is upserted (it
+    // tracks this build); created_utc/app are written once.
+    Exec(db, ("INSERT INTO meta(key,value) VALUES('schema_version','"
+              + std::to_string(kSchemaVersion)
+              + "') ON CONFLICT(key) DO UPDATE SET value=excluded.value;")
+                 .c_str());
+    Exec(db, "INSERT OR IGNORE INTO meta(key,value) VALUES"
+             "('app','spdsx-patchedit'),"
+             "('created_utc', strftime('%Y-%m-%dT%H:%M:%SZ','now'));");
   } catch (const std::exception& e) {
     error = juce::String("schema init failed: ") + e.what();
     sqlite3_close(db);
@@ -347,6 +357,12 @@ void DeviceDb::PutAudio(int sample_index, const void* data, size_t bytes)
   s.Int(1, sample_index);
   s.Blob(2, data, bytes);
   s.RunOnce();
+}
+
+int DeviceDb::SchemaVersion()
+{
+  Stmt s(db_, "SELECT value FROM meta WHERE key='schema_version';");
+  return s.Step() ? s.ColText(0).getIntValue() : 0;
 }
 
 void DeviceDb::CaptureBase()

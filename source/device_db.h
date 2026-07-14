@@ -51,6 +51,11 @@ public:
   juce::MemoryBlock GetAudio(int sample_index);  // empty if none
   void PutAudio(int sample_index, const void* data, size_t bytes);
 
+  // The schema/document version stored in the meta table (0 if absent).
+  // The loader can refuse to open a file newer than kCurrentSchemaVersion.
+  static constexpr int kCurrentSchemaVersion = 1;
+  int SchemaVersion();
+
   // Copies the current snapshot onto the base snapshot — the clean point
   // a sync establishes (after Load Device State or a successful push).
   void CaptureBase();
