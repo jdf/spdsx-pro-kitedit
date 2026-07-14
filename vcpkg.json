@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "dependencies": [
     "juce",
-    "specgram"
+    "specgram",
+    "sqlite3"
   ],
   "vcpkg-configuration": {
     "overlay-ports": [

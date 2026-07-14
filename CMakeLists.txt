@@ -32,6 +32,8 @@ find_package(JUCE CONFIG REQUIRED)
 # specgram comes from the overlay port in ports/, which builds the sibling
 # specs checkout.
 find_package(specgram CONFIG REQUIRED)
+# The document is a SQLite database (kits, pads, samples-with-audio-blobs).
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 # The document is a folder; declaring it as a package (LSTypeIsPackage +
 # a UTI conforming to com.apple.package) makes Finder and the file
@@ -82,6 +84,7 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit"
 
 target_sources(spdsx-patchedit PRIVATE
     source/audio.cc
+    source/device_db.cc
     source/device_document.cc
     source/device_samples.cc
     source/kit_chooser.cc
@@ -102,6 +105,7 @@ target_link_libraries(spdsx-patchedit PRIVATE
     juce::juce_gui_basics
     specgram::specgram
     spdsx_device
+    unofficial::sqlite3::sqlite3
     juce::juce_recommended_config_flags
 )
 
