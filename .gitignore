@@ -2,6 +2,7 @@
 .idea/
 .vs/
 build/
+build-coverage/
 cmake-build-*/
 prefix/
 CMakeLists.txt.user

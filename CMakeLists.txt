@@ -82,3 +82,74 @@ target_include_directories(spdsx_device PUBLIC source)
 # and the harness that verifies the protocol port byte-for-byte.
 add_executable(spdutil source/spdutil_main.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
+
+# ---- Unit tests & coverage ----
+# One aggregating test binary compiles every source/*_test.h (through
+# testing/all_tests.cc) alongside the production translation units, so line
+# coverage is attributed to our code. It is a JUCE console app because most
+# headers pull in JUCE; the two entry points (main.cc, spdutil_main.cc) are
+# left out so gtest_main provides main().
+option(SPDSX_TESTS "Build unit tests" ON)
+option(SPDSX_COVERAGE "Instrument the test build for LLVM source-based coverage" OFF)
+
+if(SPDSX_TESTS)
+    enable_testing()
+    find_package(GTest CONFIG REQUIRED)
+
+    juce_add_console_app(spdsx_tests PRODUCT_NAME "spdsx_tests")
+    target_sources(spdsx_tests PRIVATE
+        testing/all_tests.cc
+        source/audio.cc
+        source/device_db.cc
+        source/device_document.cc
+        source/device_samples.cc
+        source/kit_chooser.cc
+        source/layers.cc
+        source/main_component.cc
+        source/pad_settings.cc
+        source/sample_browser.cc
+        source/sample_slot.cc
+        source/spectro.cc
+    )
+    target_include_directories(spdsx_tests PRIVATE source testing)
+    target_compile_definitions(spdsx_tests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+    )
+    target_link_libraries(spdsx_tests PRIVATE
+        juce::juce_audio_utils
+        juce::juce_gui_basics
+        specgram::specgram
+        spdsx_device
+        unofficial::sqlite3::sqlite3
+        GTest::gtest
+        GTest::gtest_main
+        juce::juce_recommended_config_flags
+    )
+
+    if(SPDSX_COVERAGE)
+        # Source-based coverage (Apple clang): instrument both the test TUs and
+        # the JUCE-free device lib, whose pure headers are prime test targets.
+        set(_spdsx_cov_flags -fprofile-instr-generate -fcoverage-mapping)
+        target_compile_options(spdsx_tests PRIVATE ${_spdsx_cov_flags})
+        target_link_options(spdsx_tests PRIVATE ${_spdsx_cov_flags})
+        target_compile_options(spdsx_device PRIVATE ${_spdsx_cov_flags})
+    endif()
+
+    include(GoogleTest)
+    gtest_discover_tests(spdsx_tests)
+
+    # `coverage`: run the suite under instrumentation and print a report scoped
+    # to source/ (see testing/coverage.sh). Needs -DSPDSX_COVERAGE=ON, i.e. the
+    # `coverage` preset.
+    add_custom_target(coverage
+        COMMAND ${CMAKE_COMMAND} -E env
+            "SPDSX_TESTS_BIN=$<TARGET_FILE:spdsx_tests>"
+            "SPDSX_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/source"
+            "SPDSX_COVERAGE_DIR=${CMAKE_CURRENT_BINARY_DIR}/coverage"
+            bash "${CMAKE_CURRENT_SOURCE_DIR}/testing/coverage.sh"
+        DEPENDS spdsx_tests
+        USES_TERMINAL
+        VERBATIM
+    )
+endif()

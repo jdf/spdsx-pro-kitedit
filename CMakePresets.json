@@ -9,12 +9,26 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
+    },
+    {
+      "name": "coverage",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SPDSX_TESTS": "ON",
+        "SPDSX_COVERAGE": "ON"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "default",
       "configurePreset": "default"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
     }
   ]
 }
