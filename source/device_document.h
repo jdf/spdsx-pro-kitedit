@@ -46,6 +46,12 @@ public:
   // histories are per-kit and survive switching.
   std::function<void()> on_history_reset;
 
+  // Fired with true just before and false just after the model is
+  // reloaded from stored kit data (kit switch, open, load, reset). The UI
+  // uses it to tell a load's change-listener storm apart from real user
+  // edits (e.g. so it doesn't mark a kit dirty-vs-device on load).
+  std::function<void(bool loading)> on_model_reload;
+
   juce::String getDocumentTitle() override;
 
   // Resets to a fresh untitled device (File > New, after any save

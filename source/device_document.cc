@@ -219,6 +219,9 @@ void DeviceDocument::StashActiveKit()
 
 void DeviceDocument::LoadActiveKitIntoModel()
 {
+  if (on_model_reload) {
+    on_model_reload(true);
+  }
   const KitData& kit = device_.kit(device_.current_kit());
   model_.set_name(kit.name);
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -226,6 +229,9 @@ void DeviceDocument::LoadActiveKitIntoModel()
     model_.set_sample(pad, 0, stored.samples.first);
     model_.set_sample(pad, 1, stored.samples.second);
     model_.SetPadParams(pad, stored.params);
+  }
+  if (on_model_reload) {
+    on_model_reload(false);
   }
 }
 

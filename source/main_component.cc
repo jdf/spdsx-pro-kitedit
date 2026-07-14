@@ -173,6 +173,12 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       juce::TextButton::buttonColourId, juce::Colour(0xff2f6a4f));
   addChildComponent(transfer_button_);
   addAndMakeVisible(connection_dot_);
+  // The primary sync action: appears when the active kit has edits not
+  // yet pushed to the device.
+  save_button_.onClick = [this] { SaveChangesToDevice(); };
+  save_button_.setColour(
+      juce::TextButton::buttonColourId, juce::Colour(0xffb5761f));
+  addChildComponent(save_button_);
   // The unified kit control: arrows and menu switch kits (stashing the
   // old one), the pencil renames in place.
   kit_chooser_.kit_name = [this](int i)
@@ -187,6 +193,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       MarkEdited();  // persists the new current kit
       RefreshKitSelector();
       RefreshDocumentState();
+      UpdateSaveButton();  // reflect the newly-active kit's dirty state
     }
   };
   kit_chooser_.on_rename = [this](const juce::String& name)
@@ -215,7 +222,12 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
         u->clearUndoHistory();
       }
     }
+    // A wholesale content replacement (open/new/import/load device state)
+    // is the clean baseline: nothing is un-pushed.
+    kit_device_dirty_.fill(false);
+    UpdateSaveButton();
   };
+  document_.on_model_reload = [this](bool loading) { model_loading_ = loading; };
   // Start as a fresh untitled device, so the model reflects kit 1 and
   // every header widget agrees with it.
   document_.ResetToUntitled();
@@ -745,9 +757,40 @@ void MainComponent::PollConnection()
         safe->connection_dot_.SetConnected(connected);
         safe->commands_.commandStatusChanged();  // re-enable device menu items
         safe->UpdateTransferButton();
+        safe->UpdateSaveButton();  // enable/disable with connection
       }
     });
   }).detach();
+}
+
+void MainComponent::MarkDeviceDirty()
+{
+  // A load reissues every change listener; only real edits count.
+  if (model_loading_) {
+    return;
+  }
+  kit_device_dirty_[static_cast<size_t>(device_.current_kit())] = true;
+  UpdateSaveButton();
+}
+
+void MainComponent::UpdateSaveButton()
+{
+  const bool dirty =
+      kit_device_dirty_[static_cast<size_t>(device_.current_kit())];
+  save_button_.setEnabled(DeviceConnected());
+  if (dirty != save_button_.isVisible()) {
+    save_button_.setVisible(dirty);
+    resized();  // reclaim/space the header
+  }
+}
+
+void MainComponent::SaveChangesToDevice()
+{
+  // TODO: push the active kit to the device (upload new local samples +
+  // register, reassign layers, write name/waves/params, commit). For now
+  // this just clears the dirty flag so the button behaviour is testable.
+  kit_device_dirty_[static_cast<size_t>(device_.current_kit())] = false;
+  UpdateSaveButton();
 }
 
 void MainComponent::UpdateDownloadIndicators()
@@ -859,6 +902,7 @@ void MainComponent::KitNameChanged()
 {
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   MarkEdited();
+  MarkDeviceDirty();
   RefreshDocumentState();
 }
 
@@ -869,6 +913,7 @@ void MainComponent::KitNameChanged()
 void MainComponent::SampleChanged(int pad, int layer)
 {
   MarkEdited();
+  MarkDeviceDirty();
   SyncSlotFromModel(pad, layer);
 }
 
@@ -1002,6 +1047,11 @@ void MainComponent::resized()
     header.removeFromRight(8);
     transfer_button_.setBounds(
         header.removeFromRight(120).withSizeKeepingCentre(120, 26));
+  }
+  if (save_button_.isVisible()) {
+    header.removeFromRight(8);
+    save_button_.setBounds(
+        header.removeFromRight(180).withSizeKeepingCentre(180, 26));
   }
   // The kit chooser owns the header centre.
   kit_chooser_.setBounds(getLocalBounds()
@@ -1334,6 +1384,7 @@ void MainComponent::UpdatePadWidgets(int pad)
 void MainComponent::PadParamsChanged(int pad)
 {
   MarkEdited();
+  MarkDeviceDirty();
   UpdatePadWidgets(pad);
   // Keep an open settings panel honest when undo/redo (or anything
   // else) changes the pad underneath it.

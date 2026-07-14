@@ -176,6 +176,15 @@ private:
   // updating device_connected_ + the header dot + command enablement.
   // Skipped while a device operation holds the port.
   void PollConnection();
+  // Marks the active kit as changed-since-last-device-push (unless a kit
+  // load is in progress) and refreshes the save button.
+  void MarkDeviceDirty();
+  // Shows/enables the header "Save Changes to Device" button: visible when
+  // the active kit has un-pushed edits, enabled when a device is connected.
+  void UpdateSaveButton();
+  // Pushes the active kit's edits to the device. (Not yet implemented —
+  // currently clears the dirty flag as a placeholder.)
+  void SaveChangesToDevice();
   // True only while the device answered the most recent probe. Actions
   // that need the hardware (Load Device State, Download Kit Samples) are
   // disabled otherwise.
@@ -244,6 +253,13 @@ private:
   std::atomic<bool> device_connected_ {false};
   std::atomic<bool> conn_check_running_ {false};
   juce::uint32 last_conn_check_ms_ = 0;
+  // "Save Changes to Device" header button + per-kit dirty-vs-device
+  // tracking. model_loading_ suppresses dirtying during kit loads (which
+  // fire the same change listeners as user edits).
+  juce::TextButton save_button_ {
+      juce::String::fromUTF8("Save Changes to Device")};
+  std::array<bool, DeviceModel::kKitCount> kit_device_dirty_ {};
+  bool model_loading_ = false;
   // The unified kit control: arrows, kit menu, in-place rename.
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;
