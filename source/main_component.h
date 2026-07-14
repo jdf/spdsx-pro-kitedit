@@ -162,6 +162,9 @@ private:
   // device waves into the bundle cache on a worker, refreshing slots as
   // each lands.
   void DownloadKitSamples();
+  // Message-thread landing for a downloaded wave: stores its blob in the
+  // document, then refreshes the slots that use it.
+  void OnWaveDownloaded(int sample_index, const device::Bytes& wav);
   void OnWaveCached(int sample_index);
   void FinishKitSampleDownload(
       const juce::String& error, int done, int total);

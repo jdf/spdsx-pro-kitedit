@@ -1,39 +1,21 @@
-// Whole-device persistence: the document is a FOLDER named *.spdsx
-// (declared as a macOS package in the app's Info.plist, so Finder shows
-// it as a single file) holding device.json — every kit on the device —
-// plus, eventually, a samples/ cache of audio pulled from the hardware.
-//
-// The manifest is human-readable JSON: a format version and 200 kits,
-// each a name and nine pads in the same shape the old single-kit .kit
-// format used. Sample paths stay absolute references for now; pool
-// indices join them when device sample extraction lands.
+// Whole-device persistence: the document is a single `*.spdsx` file, a
+// SQLite database (see device_db.h) holding every kit + the sample-pool
+// directory with cached audio as BLOBs. The in-memory model
+// (DeviceModel/KitModel) is unchanged; this class bridges it to the DB.
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_H_
 
+#include <memory>
 #include <vector>
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "device/kit_image.h"
+#include "device_db.h"
 #include "device_model.h"
 #include "kit_model.h"
 
 namespace spdsx {
-
-// The device.json schema version. Bump when the schema changes;
-// loadDocument refuses files stamped newer than current.
-enum class DeviceFormat : int {
-  kInitial = 1,
-  // Adds per-pad fixedVelocity.
-  kFixedVelocity = 2,
-  // Adds per-pad hiHatVolume/hiHatFadeIn/hiHatDecay.
-  kHiHatPedal = 3,
-  // Pad sample entries may be device pool indices (numbers) as well as
-  // file paths (strings); adds the "samples" pool directory.
-  kSamplePool = 4,
-
-  kCurrent = kSamplePool,
-};
 
 class DeviceDocument : public juce::FileBasedDocument {
 public:
@@ -67,10 +49,13 @@ public:
   // serializing or switching kits.
   void StashActiveKit();
 
-  // The cached WAV for a device pool wave, under the bundle's samples/
-  // dir (`samples/NNNNN.wav`). Invalid File when the document has no
-  // location yet. The file may not exist — callers check.
-  juce::File WaveCacheFile(int sample_index) const;
+  // Whether the document holds cached audio for a pool wave.
+  bool HasCachedAudio(int sample_index) const;
+  // A playable WAV file for a cached pool wave, extracted on demand from
+  // the DB blob into a temp cache. Invalid File if not cached.
+  juce::File CachedWaveFile(int sample_index);
+  // Stores a downloaded wave's WAV image as the pool wave's audio blob.
+  void StoreWaveAudio(int sample_index, const juce::MemoryBlock& wav);
 
   // Reads a legacy single-kit .kit file (v1..v4) into the active kit.
   juce::Result ImportKitFile(const juce::File& file);
@@ -105,10 +90,14 @@ protected:
 private:
   void LoadActiveKitIntoModel();
   void ResetHistory();
+  // Opens (creating if new) the DB at `file`, replacing db_.
+  juce::Result OpenDb(const juce::File& file);
 
   DeviceModel& device_;
   KitModel& model_;
   juce::ApplicationProperties& settings_;
+  // The open document's database (null while untitled).
+  std::unique_ptr<DeviceDb> db_;
 };
 
 }  // namespace spdsx

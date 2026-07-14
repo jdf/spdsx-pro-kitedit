@@ -208,8 +208,8 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   {
     // Autoplay-gated selection preview, mirroring the file browser:
     // audition a device wave once it's in the local cache.
-    const juce::File cached = document_.WaveCacheFile(rec.index);
-    if (cached != juce::File() && cached.existsAsFile()) {
+    const juce::File cached = document_.CachedWaveFile(rec.index);
+    if (cached != juce::File()) {
       engine_.PreviewFile(cached);
     }
   };
@@ -259,9 +259,7 @@ void MainComponent::OpenLastDocument()
 {
   const juce::File last(
       settings_.getUserSettings()->getValue("lastDeviceFile"));
-  if ((last.isDirectory() || last.existsAsFile())
-      && document_.OpenDevice(last).wasOk())
-  {
+  if (last.existsAsFile() && document_.OpenDevice(last).wasOk()) {
     RefreshKitSelector();
     RefreshDocumentState();
     return;
@@ -271,7 +269,7 @@ void MainComponent::OpenLastDocument()
   const auto fallback =
       juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
           .getChildFile("SPD-SX PRO.spdsx");
-  if (!(fallback.isDirectory() && document_.OpenDevice(fallback).wasOk())) {
+  if (!(fallback.existsAsFile() && document_.OpenDevice(fallback).wasOk())) {
     document_.CreateNew(fallback);
   }
   RefreshKitSelector();
@@ -397,20 +395,16 @@ bool MainComponent::perform(const InvocationInfo& info)
           });
       return true;
     case commands::kFileOpen:
-      // Our own chooser: FileBasedDocument's open path refuses folder
-      // documents (see DeviceDocument::OpenDevice). Directories stay
-      // selectable for unregistered packages.
       document_.Autosave();
       open_chooser_ = std::make_unique<juce::FileChooser>(
           "Open a device",
           juce::File(
               settings_.getUserSettings()->getValue("lastDeviceFile"))
               .getParentDirectory(),
-          "*.spdsx;device.json");
+          "*.spdsx");
       open_chooser_->launchAsync(
           juce::FileBrowserComponent::openMode
-              | juce::FileBrowserComponent::canSelectFiles
-              | juce::FileBrowserComponent::canSelectDirectories,
+              | juce::FileBrowserComponent::canSelectFiles,
           [this](const juce::FileChooser& fc)
           {
             const auto file = fc.getResult();
@@ -599,23 +593,17 @@ void MainComponent::DownloadKitSamples()
   if (device_fetching_) {
     return;
   }
-  // The active kit's device waves that aren't cached yet, paired with
-  // their cache destinations (computed here on the message thread).
-  std::vector<std::pair<int, juce::File>> want;
+  // The active kit's device waves whose audio isn't cached in the
+  // document yet (computed here on the message thread).
+  std::vector<int> want;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       const LayerSample& s = model_.sample(pad, layer);
-      if (!s.is_device()) {
+      if (!s.is_device() || document_.HasCachedAudio(s.device_index)) {
         continue;
       }
-      const juce::File dest = document_.WaveCacheFile(s.device_index);
-      if (dest == juce::File() || dest.existsAsFile()) {
-        continue;  // no document location, or already cached
-      }
-      if (std::none_of(want.begin(), want.end(),
-              [&](const auto& p) { return p.first == s.device_index; }))
-      {
-        want.emplace_back(s.device_index, dest);
+      if (std::find(want.begin(), want.end(), s.device_index) == want.end()) {
+        want.push_back(s.device_index);
       }
     }
   }
@@ -635,10 +623,7 @@ void MainComponent::DownloadKitSamples()
   // Which waves this run covers, and the shared progress the worker
   // publishes: the wave currently transferring and its permille. The
   // timer reads these to drive each slot's throbber/ring.
-  download_indices_.clear();
-  for (const auto& [index, dest] : want) {
-    download_indices_.push_back(index);
-  }
+  download_indices_ = want;
   download_current_ = std::make_shared<std::atomic<int>>(0);
   download_permille_ = std::make_shared<std::atomic<int>>(0);
   UpdateDownloadIndicators();
@@ -652,7 +637,7 @@ void MainComponent::DownloadKitSamples()
     int done = 0;
     try {
       device::SpdsxDevice dev(device::FindDevicePort());
-      for (const auto& [index, dest] : want) {
+      for (const int index : want) {
         permille->store(0);
         current->store(index);
         const device::Bytes smp = dev.ReadRemoteWave(
@@ -661,19 +646,20 @@ void MainComponent::DownloadKitSamples()
                       ? static_cast<int>(got * 1000 / total)
                       : 0);
             });
-        const device::Bytes wav = device::RfwvToWav(smp);
+        device::Bytes wav = device::RfwvToWav(smp);
         current->store(0);
         if (wav.empty()) {
           continue;  // skip a wave that didn't convert
         }
-        dest.getParentDirectory().createDirectory();
-        dest.replaceWithData(wav.data(), wav.size());
         ++done;
-        juce::MessageManager::callAsync([safe, index] {
-          if (safe != nullptr) {
-            safe->OnWaveCached(index);
-          }
-        });
+        // Store the blob + refresh slots on the message thread (the DB is
+        // only touched there).
+        juce::MessageManager::callAsync(
+            [safe, index, wav = std::move(wav)] {
+              if (safe != nullptr) {
+                safe->OnWaveDownloaded(index, wav);
+              }
+            });
       }
     } catch (const std::exception& e) {
       error = e.what();
@@ -695,8 +681,7 @@ int MainComponent::UncachedDeviceWaveCount() const
       if (!s.is_device()) {
         continue;
       }
-      const juce::File cached = document_.WaveCacheFile(s.device_index);
-      if ((cached == juce::File() || !cached.existsAsFile())
+      if (!document_.HasCachedAudio(s.device_index)
           && std::find(seen.begin(), seen.end(), s.device_index)
               == seen.end())
       {
@@ -824,6 +809,15 @@ void MainComponent::UpdateDownloadIndicators()
   }
 }
 
+void MainComponent::OnWaveDownloaded(int sample_index,
+    const device::Bytes& wav)
+{
+  // On the message thread: store the blob in the document, then refresh.
+  document_.StoreWaveAudio(sample_index,
+      juce::MemoryBlock(wav.data(), wav.size()));
+  OnWaveCached(sample_index);
+}
+
 void MainComponent::OnWaveCached(int sample_index)
 {
   // Refresh any slot in the active kit now backed by this cached wave.
@@ -934,8 +928,8 @@ void MainComponent::SyncSlotFromModel(int pad, int layer)
         : "#" + juce::String(sample.device_index);
     // Cached device waves play and render like any file; uncached ones
     // show a placeholder until the user downloads them.
-    const juce::File cached = document_.WaveCacheFile(sample.device_index);
-    if (cached != juce::File() && cached.existsAsFile()) {
+    const juce::File cached = document_.CachedWaveFile(sample.device_index);
+    if (cached != juce::File()) {
       LoadAudioIntoSlot(idx, cached, name);
     } else {
       engine_.Clear(idx);
