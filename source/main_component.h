@@ -23,6 +23,34 @@
 
 namespace spdsx {
 
+// A small header status light: green when the device is connected, gray
+// when not. Set from the connection poller.
+class ConnectionDot : public juce::Component,
+                      public juce::SettableTooltipClient {
+public:
+  ConnectionDot() { setTooltip("No device connected"); }
+  void SetConnected(bool connected)
+  {
+    if (connected != connected_) {
+      connected_ = connected;
+      setTooltip(connected ? "SPD-SX PRO connected" : "No device connected");
+      repaint();
+    }
+  }
+  void paint(juce::Graphics& g) override
+  {
+    const auto dot = getLocalBounds().toFloat().withSizeKeepingCentre(10, 10);
+    g.setColour(connected_ ? juce::Colour(0xff35c65a)
+                           : juce::Colour(0xff6b6b6b));
+    g.fillEllipse(dot);
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.drawEllipse(dot, 1.0f);
+  }
+
+private:
+  bool connected_ = false;
+};
+
 class MainComponent : public juce::Component,
                       public juce::ApplicationCommandTarget,
                       public juce::DragAndDropContainer,
@@ -144,6 +172,14 @@ private:
   int UncachedDeviceWaveCount() const;
   // Shows/hides + labels the header transfer button from that count.
   void UpdateTransferButton();
+  // Periodically probes for the device on a worker thread (throttled),
+  // updating device_connected_ + the header dot + command enablement.
+  // Skipped while a device operation holds the port.
+  void PollConnection();
+  // True only while the device answered the most recent probe. Actions
+  // that need the hardware (Load Device State, Download Kit Samples) are
+  // disabled otherwise.
+  bool DeviceConnected() const { return device_connected_.load(); }
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
@@ -203,6 +239,11 @@ private:
   juce::Label velocity_caption_;
   // Shown in the header when the active kit has uncached device waves.
   juce::TextButton transfer_button_ {"Download samples"};
+  // Header connection light + its polling state.
+  ConnectionDot connection_dot_;
+  std::atomic<bool> device_connected_ {false};
+  std::atomic<bool> conn_check_running_ {false};
+  juce::uint32 last_conn_check_ms_ = 0;
   // The unified kit control: arrows, kit menu, in-place rename.
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;

@@ -172,6 +172,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   transfer_button_.setColour(
       juce::TextButton::buttonColourId, juce::Colour(0xff2f6a4f));
   addChildComponent(transfer_button_);
+  addAndMakeVisible(connection_dot_);
   // The unified kit control: arrows and menu switch kits (stashing the
   // old one), the pencil renames in place.
   kit_chooser_.kit_name = [this](int i)
@@ -319,14 +320,14 @@ void MainComponent::getCommandInfo(
       info.setInfo("Load Device State...",
           "Replace this whole document with the device's current state",
           "File", 0);
-      info.setActive(!device_fetching_);
+      info.setActive(!device_fetching_ && DeviceConnected());
       break;
     case commands::kDownloadKitSamples:
       info.setInfo("Download Kit Samples",
           "Fetch this kit's device waves into the local cache so they "
           "play",
           "File", 0);
-      info.setActive(!device_fetching_);
+      info.setActive(!device_fetching_ && DeviceConnected());
       break;
     case commands::kToggleBrowser:
       info.setInfo("Sample Browser",
@@ -702,10 +703,51 @@ void MainComponent::UpdateTransferButton()
   transfer_button_.setButtonText(juce::String::fromUTF8("\xe2\x86\x93 ")
       + juce::String(n) + (n == 1 ? " sample" : " samples"));
   const bool show = n > 0;
+  // Greyed when the device isn't connected — there's nothing to download
+  // from, but keep it visible so the pending count still shows.
+  transfer_button_.setEnabled(DeviceConnected());
   if (show != transfer_button_.isVisible()) {
     transfer_button_.setVisible(show);
     resized();  // reclaim/space the header
   }
+}
+
+void MainComponent::PollConnection()
+{
+  // One probe at a time, throttled; skip while a device operation holds
+  // the port (we're plainly connected then, and a second open would
+  // clash).
+  constexpr juce::uint32 kPollIntervalMs = 2000;
+  if (device_fetching_ || conn_check_running_.load()) {
+    return;
+  }
+  const juce::uint32 now = juce::Time::getMillisecondCounter();
+  if (last_conn_check_ms_ != 0 && now - last_conn_check_ms_ < kPollIntervalMs) {
+    return;
+  }
+  last_conn_check_ms_ = now;
+  conn_check_running_ = true;
+  juce::Component::SafePointer<MainComponent> safe(this);
+  std::thread([safe] {
+    bool connected = false;
+    try {
+      connected = !device::FindDevicePort().empty();
+    } catch (const std::exception&) {
+      connected = false;  // no node, or nothing answered
+    }
+    juce::MessageManager::callAsync([safe, connected] {
+      if (safe == nullptr) {
+        return;
+      }
+      safe->conn_check_running_ = false;
+      if (connected != safe->device_connected_.load()) {
+        safe->device_connected_ = connected;
+        safe->connection_dot_.SetConnected(connected);
+        safe->commands_.commandStatusChanged();  // re-enable device menu items
+        safe->UpdateTransferButton();
+      }
+    });
+  }).detach();
 }
 
 void MainComponent::UpdateDownloadIndicators()
@@ -949,6 +991,8 @@ void MainComponent::resized()
   // Right edge of the header, laid out right-to-left: the compact
   // velocity knob, then (when visible) the transfer button.
   auto header = getLocalBounds().removeFromTop(kHeaderHeight);
+  // Connection light at the far left of the header.
+  connection_dot_.setBounds(header.removeFromLeft(24));
   header.removeFromRight(10);
   auto vel = header.removeFromRight(96);
   velocity_slider_.setBounds(vel.removeFromRight(62).withSizeKeepingCentre(
@@ -1391,6 +1435,8 @@ void MainComponent::timerCallback()
     could_redo_ = undo().canRedo();
     commands_.commandStatusChanged();
   }
+
+  PollConnection();
 
   // Progress line while a device fetch streams blocks.
   if (device_fetching_ && fetch_blocks_ != nullptr) {
