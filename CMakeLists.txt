@@ -78,8 +78,9 @@ add_library(spdsx_device STATIC
 )
 target_include_directories(spdsx_device PUBLIC source)
 
-# spdutil: CLI for the device — ping/info/padlink, offline selftest —
-# and the harness that verifies the protocol port byte-for-byte.
+# spdutil: CLI for the device — ping/info/dump/kits/samples, the wave
+# read/write ops, and padlink. The protocol itself is verified by the
+# source/device/*_test.cc suites, byte-for-byte against the captures.
 add_executable(spdutil source/spdutil_main.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
 

@@ -138,7 +138,7 @@ inline constexpr uint32_t kBulkNextChunk = 0x24;
 
 Bytes BulkRequest(uint8_t sub, uint8_t bank, uint32_t arg);
 
-// PREPARE request for a bank (kept for the selftest's byte-exact check):
+// PREPARE request for a bank:
 //   f0 41 6c 03 05 00 00 00 00 <bank> 00 00 00 00 00 00 f7
 Bytes BulkReadRequest(uint8_t bank);
 
