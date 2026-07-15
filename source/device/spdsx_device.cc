@@ -87,7 +87,8 @@ std::string FindDevicePort() {
   }
   for (const auto& path : candidates) {
     try {
-      SpdsxDevice dev(path);
+      MacOSSerialPort serial(path);
+      SpdsxDevice dev(&serial);
       if (!dev.Ping().empty()) {
         return path;
       }
@@ -99,11 +100,11 @@ std::string FindDevicePort() {
       "no SPD-SX PRO answered (is the official app still open?)");
 }
 
-SpdsxDevice::SpdsxDevice(const std::string& port)
+SpdsxDevice::SpdsxDevice(SerialPort* port)
     : port_(port) {}
 
 Bytes SpdsxDevice::ReadFrame(double timeout_seconds) {
-  const Bytes hdr = port_.ReadExact(kFrameHeaderSize, timeout_seconds);
+  const Bytes hdr = port_->ReadExact(kFrameHeaderSize, timeout_seconds);
   if (hdr.size() < kFrameHeaderSize) {
     return {};
   }
@@ -111,16 +112,16 @@ Bytes SpdsxDevice::ReadFrame(double timeout_seconds) {
   if (len == 0 || len > kMaxFrameLen) {
     return {};
   }
-  return port_.ReadExact(len, timeout_seconds);
+  return port_->ReadExact(len, timeout_seconds);
 }
 
 Bytes SpdsxDevice::Command(const Bytes& payload, double timeout_seconds) {
-  port_.Write(Wrap(payload));
+  port_->Write(Wrap(payload));
   return ReadFrame(timeout_seconds);
 }
 
 void SpdsxDevice::Send(const Bytes& payload) {
-  port_.Write(Wrap(payload));
+  port_->Write(Wrap(payload));
 }
 
 Bytes SpdsxDevice::Ping() {
@@ -274,7 +275,7 @@ void SpdsxDevice::SetPadLayerParams(int kit,
 Bytes SpdsxDevice::ReadBulkFrame(double idle_timeout, double body_timeout) {
   // Short wait for the frame header (its absence means the device has
   // gone idle), then a longer wait for a possibly ~64KB body.
-  const Bytes hdr = port_.ReadExact(kFrameHeaderSize, idle_timeout);
+  const Bytes hdr = port_->ReadExact(kFrameHeaderSize, idle_timeout);
   if (hdr.size() < kFrameHeaderSize) {
     return {};
   }
@@ -285,7 +286,7 @@ Bytes SpdsxDevice::ReadBulkFrame(double idle_timeout, double body_timeout) {
   if (len == 0 || len > kMaxBulkFrameLen) {
     return {};
   }
-  return port_.ReadExact(len, body_timeout);
+  return port_->ReadExact(len, body_timeout);
 }
 
 namespace {
@@ -390,7 +391,7 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
   Bytes smp;
   smp.reserve(size);
   while (smp.size() < size) {
-    port_.Write(Wrap(FileRequest(0x04, read_body)));
+    port_->Write(Wrap(FileRequest(0x04, read_body)));
     bool got_any = false;
     for (;;) {
       const Bytes frame = ReadBulkFrame(idle_timeout, 5.0);
@@ -540,7 +541,7 @@ Bytes SpdsxDevice::DumpBank(uint8_t bank,
   Bytes image;
   constexpr int kMaxChunks = 4096;  // safety cap against a stuck loop
   for (int chunk = 0; chunk < kMaxChunks; ++chunk) {
-    port_.Write(Wrap(BulkRequest(kBulkRead, bank, kBulkNextChunk)));
+    port_->Write(Wrap(BulkRequest(kBulkRead, bank, kBulkNextChunk)));
     int blocks_this_chunk = 0;
     for (;;) {
       const Bytes payload = ReadBulkFrame(idle_timeout, block_timeout);

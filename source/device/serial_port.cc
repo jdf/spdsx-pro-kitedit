@@ -38,7 +38,7 @@ std::vector<std::string> ListUsbModemPorts() {
   return ports;
 }
 
-SerialPort::SerialPort(const std::string& path, int baud) {
+MacOSSerialPort::MacOSSerialPort(const std::string& path, int baud) {
   fd_ = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd_ < 0) {
     throw std::runtime_error("cannot open " + path + ": "
@@ -72,13 +72,13 @@ SerialPort::SerialPort(const std::string& path, int baud) {
   ::tcflush(fd_, TCIOFLUSH);
 }
 
-SerialPort::~SerialPort() {
+MacOSSerialPort::~MacOSSerialPort() {
   if (fd_ >= 0) {
     ::close(fd_);
   }
 }
 
-void SerialPort::Write(const Bytes& data) {
+void MacOSSerialPort::Write(const Bytes& data) {
   size_t offset = 0;
   while (offset < data.size()) {
     const ssize_t n = ::write(fd_, data.data() + offset, data.size() - offset);
@@ -93,7 +93,7 @@ void SerialPort::Write(const Bytes& data) {
   }
 }
 
-Bytes SerialPort::ReadExact(size_t n, double timeout_seconds) {
+Bytes MacOSSerialPort::ReadExact(size_t n, double timeout_seconds) {
   Bytes buf;
   buf.reserve(n);
   const double deadline = NowSeconds() + timeout_seconds;

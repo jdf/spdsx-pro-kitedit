@@ -32,7 +32,9 @@ std::string FindDevicePort();
 
 class SpdsxDevice {
 public:
-  explicit SpdsxDevice(const std::string& port);
+  // Borrows the port: it must outlive the device. Taking the channel rather
+  // than a path is what lets a test drive every op against a fake.
+  explicit SpdsxDevice(SerialPort* port);
 
   // Writes a framed payload and waits for the device's framed reply. Use for
   // messages that reply (kit-select, object-focus, reads).
@@ -143,7 +145,7 @@ private:
                     const std::string& wavename,
                     const std::string& filename);
 
-  SerialPort port_;
+  SerialPort* port_;  // borrowed; outlives this
 };
 
 }  // namespace spdsx::device
