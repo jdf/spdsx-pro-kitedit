@@ -364,6 +364,25 @@ TEST_F(DeviceDocumentTest, AFailedSaveAsLeavesTheDocumentStillSaving)
   EXPECT_EQ(other_model.name(), juce::String("STILL SAVING"));
 }
 
+// Worst case: the copy fails and the original has gone too (the volume it
+// lived on disappeared). Report that, rather than only the failed copy --
+// there is no database to save into any more.
+TEST_F(DeviceDocumentTest, SaveDocumentReportsWhenTheOriginalIsGoneToo)
+{
+  const juce::File dir = temp.dir().getChildFile("vanishing");
+  ASSERT_TRUE(dir.createDirectory().wasOk());
+  ASSERT_TRUE(doc->CreateNew(dir.getChildFile("dev.spdsx")).wasOk());
+
+  dir.deleteRecursively();
+
+  const juce::Result result =
+      doc->saveDocument(temp.file("no/such/dir/moved.spdsx"));
+
+  ASSERT_TRUE(result.failed());
+  EXPECT_TRUE(result.getErrorMessage().contains("couldn't reopen"))
+      << result.getErrorMessage();
+}
+
 // ---- Cached wave audio ----
 
 TEST_F(DeviceDocumentTest, CachedAudioRoundTripsAndExtractsAPlayableFile)
