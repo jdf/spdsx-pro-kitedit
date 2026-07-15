@@ -263,6 +263,14 @@ TEST(KitNameAddr, IsTheKitPrefixThenTheCharacterIndex) {
   EXPECT_EQ(KitNameAddr(200, 0), Bytes({0x07, 0x0e, 0x00, 0x00}));
 }
 
+// Byte-exact: writing 'Z' into the first and last character of kit 129's name.
+TEST(KitNameAddr, MatchesTheCapturedKitNameWrites) {
+  EXPECT_EQ(Dt1(KitNameAddr(129, 0), {0x5a}),
+            FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 00 5a 20 f7"));
+  EXPECT_EQ(Dt1(KitNameAddr(129, 15), {0x5a}),
+            FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 0f 5a 11 f7"));
+}
+
 TEST(KitNameAddr, RefusesACharacterOutsideTheNameField) {
   EXPECT_THROW((void)KitNameAddr(1, -1), std::out_of_range);
   EXPECT_THROW((void)KitNameAddr(1, kKitNameLength), std::out_of_range);
@@ -273,6 +281,26 @@ TEST(KitNameAddr, RefusesACharacterOutsideTheNameField) {
 TEST(PadWaveAddr, MatchesTheCapturedSlotAddresses) {
   EXPECT_EQ(PadWaveAddr(129, 1, PadSlot::kTop), FromHex("06 00 40 01"));
   EXPECT_EQ(PadWaveEnableAddr(129, 1, PadSlot::kTop), FromHex("06 00 40 00"));
+  // Pad 9's bottom slot is the far end of the range, verified live.
+  EXPECT_EQ(PadWaveAddr(129, 9, PadSlot::kBottom), FromHex("06 00 51 01"));
+}
+
+// The whole assignment message for pad 7, both slots: the wave travels
+// nibble-encoded because 127 and 203 will not fit in a 7-bit data byte.
+TEST(PadWaveAddr, MatchesTheCapturedWaveAssignments) {
+  EXPECT_EQ(
+      Dt1(PadWaveAddr(129, 7, PadSlot::kTop), NibbleEncode(127)),
+      FromHex("f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"));
+  EXPECT_EQ(
+      Dt1(PadWaveAddr(129, 7, PadSlot::kBottom), NibbleEncode(203)),
+      FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"));
+}
+
+// Focusing an object is what a pad-link write needs first.
+TEST(ObjectSelect, MatchesTheCapturedFocusMessage) {
+  EXPECT_EQ(kObjectSelectAddr, FromHex("28 00 00 00"));
+  EXPECT_EQ(Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 7)}),
+            FromHex("f0 41 10 00 00 00 00 16 12 28 00 00 00 06 52 f7"));
 }
 
 // The 18 slots run 0x40 (pad 1 top) to 0x51 (pad 9 bottom), contiguous and
@@ -319,6 +347,31 @@ TEST(PadParamAddr, IsTheKitPrefixThenThePadThenTheParamIndex) {
   EXPECT_EQ(PadParamAddr(200, 1, 0x05), Bytes({0x07, 0x0e, 0x20, 0x05}));
 }
 
+// Byte-exact against the paramlog-padparams capture: the writes the sync push
+// sends. The hi-hat trio is the one that was mapped live after an earlier
+// guess put it a byte out.
+TEST(PadParamAddr, MatchesTheCapturedPadParamWrites) {
+  const struct {
+    int pad;
+    int param;
+    uint8_t value;
+    const char* hex;
+  } cases[] = {
+      // Pad 1: layer mode = XFADE, then fade point = 0x51.
+      {1, 0x00, 0x03, "f0 41 10 00 00 00 00 16 12 06 00 20 00 03 57 f7"},
+      {1, 0x01, 0x51, "f0 41 10 00 00 00 00 16 12 06 00 20 01 51 08 f7"},
+      // Pad 9 (the hi-hat): volume, fade-in, decay.
+      {9, 0x07, 0x64, "f0 41 10 00 00 00 00 16 12 06 00 28 07 64 67 f7"},
+      {9, 0x08, 0x32, "f0 41 10 00 00 00 00 16 12 06 00 28 08 32 18 f7"},
+      {9, 0x09, 0x4d, "f0 41 10 00 00 00 00 16 12 06 00 28 09 4d 7c f7"},
+  };
+
+  for (const auto& c : cases) {
+    EXPECT_EQ(Dt1(PadParamAddr(129, c.pad, c.param), {c.value}), FromHex(c.hex))
+        << "pad " << c.pad << " param " << c.param;
+  }
+}
+
 // ---- Bulk transfer ----
 
 TEST(BulkRequest, HasTheBulkFrameWithTheBankAndArg) {
@@ -344,6 +397,14 @@ TEST(BulkReadRequest, IsThePrepareForABank) {
   for (const uint8_t bank : {kBankKits, kBankSamples, kBankMeta, kBankConfig}) {
     EXPECT_EQ(BulkReadRequest(bank), BulkRequest(kBulkPrepare, bank, 0));
   }
+}
+
+// Byte-exact: the stream-a-bank request the official app sends.
+TEST(BulkReadRequest, MatchesTheCapturedRequests) {
+  EXPECT_EQ(BulkReadRequest(kBankKits),
+            FromHex("f0 41 6c 03 05 00 00 00 00 10 00 00 00 00 00 00 f7"));
+  EXPECT_EQ(BulkReadRequest(kBankSamples),
+            FromHex("f0 41 6c 03 05 00 00 00 00 20 00 00 00 00 00 00 f7"));
 }
 
 // ---- SplitBulkImage ----
