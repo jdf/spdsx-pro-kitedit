@@ -249,10 +249,19 @@ juce::Result DeviceDocument::saveDocument(const juce::File& chosen)
 {
   StashActiveKit();
   // Save As / move: carry the existing database (with its audio blobs) to
-  // the new path, then continue writing there.
+  // the new path, then continue writing there. Closing first is what makes
+  // the file safe to copy — in WAL mode a clean close is what checkpoints it.
   if (db_ != nullptr && getFile() != juce::File() && getFile() != chosen) {
+    const juce::File previous = getFile();
     db_.reset();
-    if (!getFile().copyFileTo(chosen)) {
+    if (!previous.copyFileTo(chosen)) {
+      // Reopen the one we just closed: left without a database the document
+      // would go on taking edits while Autosave silently dropped every one.
+      if (const auto r = OpenDb(previous); r.failed()) {
+        return juce::Result::fail("couldn't copy document to "
+            + chosen.getFullPathName() + ", and couldn't reopen "
+            + previous.getFileName() + ": " + r.getErrorMessage());
+      }
       return juce::Result::fail("couldn't copy document to "
           + chosen.getFullPathName());
     }

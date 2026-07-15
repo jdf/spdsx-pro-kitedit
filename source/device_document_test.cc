@@ -346,6 +346,24 @@ TEST_F(DeviceDocumentTest, SaveDocumentReportsAFailedCopy)
       << result.getErrorMessage();
 }
 
+// Carrying the database across means closing it first, so a copy that fails
+// must put it back: otherwise the document keeps taking edits for the rest of
+// the session while Autosave silently drops every one of them.
+TEST_F(DeviceDocumentTest, AFailedSaveAsLeavesTheDocumentStillSaving)
+{
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  ASSERT_TRUE(doc->saveDocument(temp.file("no/such/dir/moved.spdsx")).failed());
+
+  model.set_name("STILL SAVING");
+  doc->Autosave();
+
+  DeviceModel other_device;
+  KitModel other_model;
+  TestDocument other(other_device, other_model, settings);
+  ASSERT_TRUE(other.OpenDevice(path()).wasOk());
+  EXPECT_EQ(other_model.name(), juce::String("STILL SAVING"));
+}
+
 // ---- Cached wave audio ----
 
 TEST_F(DeviceDocumentTest, CachedAudioRoundTripsAndExtractsAPlayableFile)
