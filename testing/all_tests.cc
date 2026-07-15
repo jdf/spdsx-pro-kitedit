@@ -26,5 +26,4 @@ const ::testing::Environment* const kJuceEnv =
 TEST(TestingInfra, LinksAndRuns) { SUCCEED(); }
 
 // ---- per-header test suites (source/*_test.h), one #include each ----
-// #include "device/protocol_test.h"
-// #include "layers_test.h"
+#include "kit_model_test.h"
