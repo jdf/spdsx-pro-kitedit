@@ -274,8 +274,11 @@ std::string RemoteWavePath(int index) {
 
 RfwvHeader ParseRfwvHeader(const Bytes& smp) {
   RfwvHeader h;
-  // RFWV magic, then u32 data length, u32 sample rate, u16 channels.
-  if (smp.size() < 14 || smp[0] != 'R' || smp[1] != 'F' || smp[2] != 'W'
+  // RFWV magic, then u32 data length, u32 sample rate, u16 channels, and
+  // bits/sample at 0x10 — so the fields run to 0x13 and anything shorter than
+  // 20 bytes is not a header. (Reading them needs the whole 20: the buffer
+  // comes off the device, so a truncated one must be refused, not parsed.)
+  if (smp.size() < 20 || smp[0] != 'R' || smp[1] != 'F' || smp[2] != 'W'
       || smp[3] != 'V') {
     return h;
   }
