@@ -6,11 +6,9 @@
 #include "actions.h"
 
 // Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::actions_test
-{
+namespace spdsx::actions_test {
 
-class ActionsTest : public ::testing::Test
-{
+class ActionsTest : public ::testing::Test {
 protected:
   KitModel model;
 };

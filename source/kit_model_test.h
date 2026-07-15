@@ -12,13 +12,11 @@
 // Test-local helpers go in a per-header namespace: every *_test.h compiles
 // into one translation unit (testing/all_tests.cc), so helpers at global or
 // anonymous-namespace scope would collide between suites.
-namespace spdsx::kit_model_test
-{
+namespace spdsx::kit_model_test {
 
 // Records what the model announced, so the tests can assert both that a
 // notification fired and that it carried the right pad/layer.
-class RecordingListener : public KitModel::Listener
-{
+class RecordingListener : public KitModel::Listener {
 public:
   void KitNameChanged() override { ++name_changes; }
 
@@ -34,8 +32,7 @@ public:
   std::vector<int> params;
 };
 
-class KitModelTest : public ::testing::Test
-{
+class KitModelTest : public ::testing::Test {
 protected:
   void SetUp() override { model.AddListener(&listener); }
 

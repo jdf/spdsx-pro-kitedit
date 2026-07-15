@@ -14,8 +14,7 @@
 #include "temp_dir.h"
 
 // Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::device_db_test
-{
+namespace spdsx::device_db_test {
 
 // A model with something distinctive in every field the store persists.
 DeviceModel EditedModel()
@@ -76,8 +75,7 @@ void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected)
   }
 }
 
-class DeviceDbTest : public ::testing::Test
-{
+class DeviceDbTest : public ::testing::Test {
 protected:
   void SetUp() override
   {

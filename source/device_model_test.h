@@ -11,8 +11,7 @@
 #include "device_model.h"
 
 // Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::device_model_test
-{
+namespace spdsx::device_model_test {
 
 device::SampleRecord Record(int index, std::string wavename)
 {
