@@ -105,6 +105,7 @@ if(SPDSX_TESTS)
         source/device/kit_image_test.cc
         source/device/protocol_test.cc
         source/device/sample_image_test.cc
+        source/device/spdsx_device_test.cc
         source/device_db_test.cc
         source/device_document_test.cc
         source/device_model_test.cc
