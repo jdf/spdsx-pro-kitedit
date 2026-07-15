@@ -1,7 +1,10 @@
 #include "device/spdsx_device.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -506,6 +509,233 @@ TEST_F(SpdsxDeviceTest, UploadWaveSizesTheRecordFromThePcmLength) {
 
   EXPECT_EQ(port.payloads()[14],
             Dt1(SampleRecordAddr(1587, 0x00), SampleBaseRecord(2048)));
+}
+
+// ---- DumpBank ----
+//
+// The streaming reads pull until the device runs dry, so what a fake has to
+// get right is how a batch ends: an idle read, or a frame that is not data.
+
+// One bank-0x20-family data block, as the device streams them.
+Bytes BulkBlockFrame(uint8_t bank, const Bytes& data) {
+  Bytes p = {0xF0, 0x41, 0x6C, 0x02, 0x00, 0x00, 0x00, 0x00, bank};
+  p.insert(p.end(), data.begin(), data.end());
+  p.push_back(0xF7);
+  return p;
+}
+
+// The device's generic ack — not data, so it ends a batch.
+Bytes BulkAck() {
+  return {0xF0, 0x41, 0x6C, 0x7A, 0x00, 0x00, 0x00, 0x00, 0x10, 0xF7};
+}
+
+TEST_F(SpdsxDeviceTest, DumpBankFollowsThePrepareBeginReadEndHandshake) {
+  for (int i = 0; i < 5; ++i) {
+    port.QueueReply(BulkAck());  // four prepares, then begin
+  }
+  port.QueueReply(BulkBlockFrame(0x10, {0xaa}));
+
+  dev.DumpBank(kBankKits, {}, 0.01, 0.01);
+
+  const std::vector<Bytes> sent = port.payloads();
+  // Every bank is prepared, whichever one is being read.
+  ASSERT_GE(sent.size(), 8u);
+  EXPECT_EQ(sent[0], BulkRequest(kBulkPrepare, kBankKits, 0));
+  EXPECT_EQ(sent[1], BulkRequest(kBulkPrepare, kBankSamples, 0));
+  EXPECT_EQ(sent[2], BulkRequest(kBulkPrepare, kBankMeta, 0));
+  EXPECT_EQ(sent[3], BulkRequest(kBulkPrepare, kBankConfig, 0));
+  EXPECT_EQ(sent[4], BulkRequest(kBulkBegin, kBankKits, 0));
+  EXPECT_EQ(sent[5], BulkRequest(kBulkRead, kBankKits, kBulkNextChunk));
+  // A read that yields nothing ends it, then END.
+  EXPECT_EQ(sent[6], BulkRequest(kBulkRead, kBankKits, kBulkNextChunk));
+  EXPECT_EQ(sent.back(), BulkRequest(kBulkEnd, kBankKits, 0));
+}
+
+// The image is the block frames concatenated with their headers on — the
+// layout SplitBulkImage parses and the RE image cache stores. Which means
+// the two have to agree, so check them against each other.
+TEST_F(SpdsxDeviceTest, DumpBankReturnsAnImageSplitBulkImageCanParse) {
+  for (int i = 0; i < 5; ++i) {
+    port.QueueReply(BulkAck());
+  }
+  port.QueueReply(BulkBlockFrame(0x10, {0xaa, 0xbb}));
+  port.QueueReply(BulkBlockFrame(0x20, {0xcc}));
+
+  const Bytes image = dev.DumpBank(kBankKits, {}, 0.01, 0.01);
+
+  const std::vector<BulkBlock> blocks = SplitBulkImage(image);
+  ASSERT_EQ(blocks.size(), 2u);
+  EXPECT_EQ(blocks[0].bank, 0x10);
+  EXPECT_EQ(blocks[1].bank, 0x20);
+  EXPECT_EQ(image, [] {
+    Bytes want = BulkBlockFrame(0x10, {0xaa, 0xbb});
+    const Bytes second = BulkBlockFrame(0x20, {0xcc});
+    want.insert(want.end(), second.begin(), second.end());
+    return want;
+  }());
+}
+
+TEST_F(SpdsxDeviceTest, DumpBankReportsEachBlockAsItArrives) {
+  for (int i = 0; i < 5; ++i) {
+    port.QueueReply(BulkAck());
+  }
+  port.QueueReply(BulkBlockFrame(0x10, {0xaa}));
+  port.QueueReply(BulkBlockFrame(0x10, {0xbb}));
+
+  std::vector<Bytes> seen;
+  dev.DumpBank(
+      kBankKits,
+      [&](const Bytes& block) { seen.push_back(block); },
+      0.01,
+      0.01);
+
+  ASSERT_EQ(seen.size(), 2u);
+  EXPECT_EQ(seen[0], BulkBlockFrame(0x10, {0xaa}));
+  EXPECT_EQ(seen[1], BulkBlockFrame(0x10, {0xbb}));
+}
+
+// An ack rather than data means this batch is done, not that the bank is.
+TEST_F(SpdsxDeviceTest, DumpBankTreatsANonDataFrameAsTheEndOfABatch) {
+  for (int i = 0; i < 5; ++i) {
+    port.QueueReply(BulkAck());
+  }
+  port.QueueReply(BulkBlockFrame(0x10, {0xaa}));
+  port.QueueReply(BulkAck());  // ends the batch mid-stream
+  port.QueueReply(BulkBlockFrame(0x10, {0xbb}));  // the next batch's block
+
+  const Bytes image = dev.DumpBank(kBankKits, {}, 0.01, 0.01);
+
+  EXPECT_EQ(SplitBulkImage(image).size(), 2u);  // both, across two batches
+}
+
+TEST_F(SpdsxDeviceTest, DumpBankOfAnEmptyBankIsEmptyAndStillEnds) {
+  for (int i = 0; i < 5; ++i) {
+    port.QueueReply(BulkAck());
+  }
+
+  EXPECT_TRUE(dev.DumpBank(kBankKits, {}, 0.01, 0.01).empty());
+  EXPECT_EQ(port.payloads().back(), BulkRequest(kBulkEnd, kBankKits, 0));
+}
+
+// ---- ReadRemoteWave ----
+
+// A file data frame: 14 header bytes, the payload, then the SysEx f7.
+Bytes FileDataFrame(const Bytes& data) {
+  Bytes p = {0xF0, 0x41, 0x7A, 0x02};
+  p.resize(14, 0x00);
+  p.insert(p.end(), data.begin(), data.end());
+  p.push_back(0xF7);
+  return p;
+}
+
+Bytes FileAck() {
+  return {0xF0, 0x41, 0x7A, 0x7A, 0xF7};
+}
+
+// STAT reply: the file size is the second u32, at offset 18.
+Bytes StatReply(uint32_t size) {
+  Bytes r(23, 0x00);
+  r[0] = 0xF0;
+  r[1] = 0x41;
+  r[2] = 0x7A;
+  r[3] = 0x02;
+  r[8] = 0x08;
+  r[18] = static_cast<uint8_t>(size);
+  r[19] = static_cast<uint8_t>(size >> 8);
+  r[20] = static_cast<uint8_t>(size >> 16);
+  r[21] = static_cast<uint8_t>(size >> 24);
+  r[22] = 0xF7;
+  return r;
+}
+
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveOpensTheWavesOwnPath) {
+  port.QueueReply(FileAck());  // open
+  port.QueueReply(StatReply(4));
+  port.QueueReply(FileAck());  // seek
+  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+
+  dev.ReadRemoteWave(1554, {}, 0.01);
+
+  const Bytes open_req = port.payloads()[0];
+  const std::string path = RemoteWavePath(1554);
+  EXPECT_NE(
+      std::search(open_req.begin(), open_req.end(), path.begin(), path.end()),
+      open_req.end())
+      << "the OPEN does not carry " << path;
+}
+
+// The device caps each reply, so a file arrives across frames. Each carries
+// a 14-byte header and a trailing f7, and BOTH ends have to come off: an f7
+// left in shifts every later frame's sample alignment, which is audible as
+// alternating audio and noise.
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveReassemblesTheFileAcrossFrames) {
+  port.QueueReply(FileAck());
+  port.QueueReply(StatReply(8));
+  port.QueueReply(FileAck());
+  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+  port.QueueReply(FileDataFrame({5, 6, 7, 8}));
+
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01),
+            Bytes({1, 2, 3, 4, 5, 6, 7, 8}));
+}
+
+// A batch may overshoot the size the STAT gave; the file is what STAT said.
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveTrimsABatchThatOvershoots) {
+  port.QueueReply(FileAck());
+  port.QueueReply(StatReply(6));
+  port.QueueReply(FileAck());
+  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+  port.QueueReply(FileDataFrame({5, 6, 7, 8}));
+
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), Bytes({1, 2, 3, 4, 5, 6}));
+}
+
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveReportsProgressAgainstTheStatSize) {
+  port.QueueReply(FileAck());
+  port.QueueReply(StatReply(8));
+  port.QueueReply(FileAck());
+  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+  port.QueueReply(FileDataFrame({5, 6, 7, 8}));
+
+  std::vector<std::pair<size_t, size_t>> progress;
+  dev.ReadRemoteWave(
+      1554,
+      [&](size_t done, size_t total) { progress.emplace_back(done, total); },
+      0.01);
+
+  EXPECT_EQ(progress,
+            (std::vector<std::pair<size_t, size_t>> {{4, 8}, {8, 8}}));
+}
+
+// Preload waves aren't exportable, so the OPEN is where that shows up.
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveThrowsWhenTheDeviceWillNotOpenIt) {
+  port.QueueReply({0xF0, 0x41, 0x7A, 0x02, 0xF7});  // not an ack
+
+  try {
+    (void)dev.ReadRemoteWave(1554, {}, 0.01);
+    FAIL() << "expected it to throw";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(std::string(e.what()).find("preload"), std::string::npos)
+        << e.what();
+  }
+}
+
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveThrowsOnAStatItCannotRead) {
+  port.QueueReply(FileAck());
+  port.QueueReply({0xF0, 0x41, 0x7A, 0x02, 0xF7});  // too short to hold a size
+
+  EXPECT_THROW((void)dev.ReadRemoteWave(1554, {}, 0.01), std::runtime_error);
+}
+
+// The device going quiet part-way has to end the read, not spin on it.
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveStopsWhenTheDeviceStopsSending) {
+  port.QueueReply(FileAck());
+  port.QueueReply(StatReply(1000));  // claims far more than it sends
+  port.QueueReply(FileAck());
+  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), Bytes({1, 2, 3, 4}));
+  EXPECT_EQ(port.payloads().back()[4], 0x03);  // it still closed the file
 }
 
 // ---- FindDevicePort ----
