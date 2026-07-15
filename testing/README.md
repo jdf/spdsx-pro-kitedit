@@ -33,14 +33,56 @@ TEST(Foo, DoesThing) { /* ... */ }
 - [`coverage.sh`](coverage.sh) — runs the suite under LLVM source-based
   coverage and prints a report scoped to `source/`.
 
-## Building and running
+## Running the tests
 
-Tests build with the normal `default` preset (they are `ON` by default):
+Tests build with the normal `default` preset (they are `ON` by default). Build
+then run, either through ctest or the binary itself:
 
 ```
-cmake --preset default && cmake --build --preset default --target spdsx_tests
-ctest --test-dir build            # or run the binary directly
+cmake --build --preset default --target spdsx_tests
+
+ctest --test-dir build                      # all tests
+ctest --test-dir build --output-on-failure  # show output of failures
+ctest --test-dir build -R 'Layers\..*'      # by regex
+ctest --test-dir build -j 8                 # in parallel
 ```
+
+`gtest_discover_tests` registers each `TEST()` as its own ctest entry, so
+`ctest -N` lists them individually and `-R` filters at test granularity.
+
+The binary takes the usual gtest flags directly, which is what you want for
+filtering, repeating, or debugging:
+
+```
+BIN=build/spdsx_tests_artefacts/RelWithDebInfo/spdsx_tests
+$BIN                                  # all tests
+$BIN --gtest_list_tests               # enumerate
+$BIN --gtest_filter='Layers.*'        # filter
+$BIN --gtest_filter='-Slow.*'         # exclude
+$BIN --gtest_repeat=100 --gtest_shuffle
+$BIN --gtest_break_on_failure         # trap into the debugger on failure
+```
+
+## In VS Code
+
+The Testing panel lists every `TEST()` individually, with run/debug buttons in
+the gutter of the `source/*_test.h` that defines it — via the **TestMate C++**
+extension (a workspace recommendation; configured in `.vscode/settings.json`,
+debugging through CodeLLDB). Tasks: **run tests**, **build tests**, **coverage
+report**, **presubmit**. `launch.json` has `spdsx_tests` and `spdsx_tests
+(filtered)` (prompts for a gtest filter) for debugging the binary directly.
+
+## Presubmit
+
+[`../presubmit.sh`](../presubmit.sh) builds everything and runs the suite,
+exiting nonzero on failure. `jj push-main` runs it automatically and aborts the
+push if it fails — jj runs no git hooks, so the gate lives in the alias
+(`~/.config/jj/config.toml`), which checks for an executable `presubmit.sh` at
+the repo root. Because the alias is global and the script is tracked, a fresh
+clone is gated with no setup. `SKIP_PRESUBMIT=1 jj push-main` bypasses it.
+
+Note it tests the *working copy*, not the exact revision being pushed — with a
+clean working copy (the normal case, pushing `@-`) those are the same thing.
 
 ## Coverage
 
