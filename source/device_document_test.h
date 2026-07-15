@@ -140,6 +140,11 @@ TEST_F(DeviceDocumentTest, CreateNewReplacesALegacyFolderAtThePath)
   EXPECT_FALSE(path().isDirectory());
 }
 
+TEST_F(DeviceDocumentTest, CreateNewReportsAPathItCannotUse)
+{
+  EXPECT_TRUE(doc->CreateNew(temp.file("no/such/dir/x.spdsx")).failed());
+}
+
 // ---- Stashing the active kit ----
 
 TEST_F(DeviceDocumentTest, StashActiveKitCopiesTheLiveModelIntoTheDevice)
@@ -321,6 +326,26 @@ TEST_F(DeviceDocumentTest, SaveDocumentToANewPathCarriesTheCachedAudio)
   ASSERT_TRUE(other.OpenDevice(moved).wasOk());
   EXPECT_EQ(other_model.name(), juce::String("MOVED"));
   EXPECT_TRUE(other.HasCachedAudio(3));
+}
+
+TEST_F(DeviceDocumentTest, SaveDocumentReportsAPathItCannotOpen)
+{
+  // Untitled: nothing to carry across, so this is the plain open failure.
+  EXPECT_TRUE(doc->saveDocument(temp.file("no/such/dir/x.spdsx")).failed());
+}
+
+// Save As has to carry the existing database across; if the copy cannot be
+// made, say so rather than reporting a save that did not happen.
+TEST_F(DeviceDocumentTest, SaveDocumentReportsAFailedCopy)
+{
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+
+  const juce::Result result =
+      doc->saveDocument(temp.file("no/such/dir/moved.spdsx"));
+
+  ASSERT_TRUE(result.failed());
+  EXPECT_TRUE(result.getErrorMessage().contains("couldn't copy document"))
+      << result.getErrorMessage();
 }
 
 // ---- Cached wave audio ----
