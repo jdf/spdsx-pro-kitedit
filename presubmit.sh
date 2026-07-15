@@ -22,7 +22,9 @@ echo "==> build"
 cmake --build --preset default
 
 echo "==> test"
-ctest --test-dir build --output-on-failure -j "$(sysctl -n hw.ncpu)"
+# getconf rather than `sysctl -n hw.ncpu`: same answer, without the BSD-ism.
+ctest --test-dir build --output-on-failure \
+    -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 echo
 echo "presubmit OK"

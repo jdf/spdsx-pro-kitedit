@@ -1,3 +1,14 @@
+// Darwin-only, the whole file: the IOSSIOSPEED ioctl the device's
+// non-standard baud needs, and the /dev/cu.usbmodem* node naming that
+// ListUsbModemPorts globs for (its name no more says macOS than
+// FindDevicePort's did). Guarded before the includes so another platform is
+// told what is missing, rather than failing on the IOKit header below.
+// The SerialPort interface in the header is already platform-free: porting
+// means implementing it, not editing this.
+#if !defined(__APPLE__)
+#error "serial_port.cc is Darwin-only: MacOSSerialPort's IOSSIOSPEED baud ioctl and /dev/cu.usbmodem* enumeration. Implement SerialPort for the platform instead."
+#endif
+
 #include "device/serial_port.h"
 
 #include <cerrno>
