@@ -101,6 +101,7 @@ if(SPDSX_TESTS)
     target_sources(spdsx_tests PRIVATE
         testing/juce_test_environment.cc
         source/actions_test.cc
+        source/device/kit_image_test.cc
         source/device/protocol_test.cc
         source/device_db_test.cc
         source/device_document_test.cc
