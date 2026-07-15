@@ -120,6 +120,20 @@ TEST_F(DeviceDbTest, OpenReportsAPathItCannotUse)
   EXPECT_TRUE(error.isNotEmpty());
 }
 
+// The version records the format the file was written in, so opening a
+// document must never restamp it: that would destroy the only signal that it
+// came from a newer build, leaving this build to misread it as its own.
+TEST_F(DeviceDbTest, OpenNeverRestampsTheSchemaVersion)
+{
+  ExecSql(path(), "UPDATE meta SET value='99' WHERE key='schema_version';");
+  db.reset();  // close
+
+  juce::String error;
+  auto reopened = DeviceDb::Open(path(), error);
+  ASSERT_NE(reopened, nullptr) << error;
+  EXPECT_EQ(reopened->SchemaVersion(), 99);
+}
+
 TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase)
 {
   const juce::File junk = temp.file("junk.spdsx");
