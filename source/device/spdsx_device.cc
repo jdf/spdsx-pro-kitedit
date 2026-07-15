@@ -79,6 +79,17 @@ Bytes Unwrap(const Bytes& frame) {
                frame.begin() + kFrameHeaderSize + take);
 }
 
+// Darwin-only, unlike the rest of this file: it globs /dev/cu.usbmodem* and
+// opens a MacOSSerialPort, so it hardcodes both how nodes are named and which
+// SerialPort implementation exists. The name does not say so the way
+// MacOSSerialPort's does, hence the guard — without it another platform gets
+// a missing-IOKit-header error from two files away instead of being told what
+// is actually wrong. Porting means a way to enumerate candidate nodes and a
+// SerialPort to try them with; everything else here is already portable.
+#if !defined(__APPLE__)
+#error "FindDevicePort is Darwin-only: it enumerates /dev/cu.usbmodem* and opens a MacOSSerialPort. Give the platform a node enumerator and a SerialPort implementation first."
+#endif
+
 std::string FindDevicePort() {
   const auto candidates = ListUsbModemPorts();
   if (candidates.empty()) {
