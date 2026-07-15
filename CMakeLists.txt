@@ -105,6 +105,7 @@ if(SPDSX_TESTS)
         source/device_document_test.cc
         source/device_model_test.cc
         source/kit_model_test.cc
+        source/layers_test.cc
     )
     # The production translation units under test.
     target_sources(spdsx_tests PRIVATE
