@@ -2,6 +2,7 @@
   "recommendations": [
     "llvm-vs-code-extensions.vscode-clangd",
     "ms-vscode.cmake-tools",
-    "vadimcn.vscode-lldb"
+    "vadimcn.vscode-lldb",
+    "matepek.vscode-catch2-test-adapter"
   ]
 }

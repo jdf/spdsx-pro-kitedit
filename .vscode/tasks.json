@@ -13,6 +13,48 @@
         "isDefault": true
       },
       "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build tests",
+      "type": "shell",
+      "command": "cmake --build --preset default --target spdsx_tests",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "run tests",
+      "type": "shell",
+      "command": "cmake --build --preset default --target spdsx_tests && ctest --test-dir build --output-on-failure",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "coverage report",
+      "detail": "Instrumented build in build-coverage/, then the llvm-cov report for source/.",
+      "type": "shell",
+      "command": "cmake --preset coverage && cmake --build --preset coverage --target coverage",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "presubmit",
+      "detail": "What jj push-main runs: build everything, then the tests.",
+      "type": "shell",
+      "command": "./presubmit.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$gcc"]
     }
   ]
 }

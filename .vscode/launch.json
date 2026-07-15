@@ -20,6 +20,32 @@
       ],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "cmake build"
+    },
+    {
+      "name": "spdsx_tests",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/spdsx_tests_artefacts/RelWithDebInfo/spdsx_tests",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build tests"
+    },
+    {
+      "name": "spdsx_tests (filtered)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/spdsx_tests_artefacts/RelWithDebInfo/spdsx_tests",
+      "args": ["--gtest_filter=${input:gtestFilter}"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build tests"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "gtestFilter",
+      "type": "promptString",
+      "description": "gtest filter, e.g. Layers.* or Protocol.NibbleRoundTrip",
+      "default": "*"
     }
   ]
 }
