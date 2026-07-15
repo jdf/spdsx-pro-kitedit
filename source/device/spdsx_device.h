@@ -24,11 +24,14 @@ Bytes Wrap(const Bytes& payload);
 // Extracts the payload from a framed reply; empty if malformed.
 Bytes Unwrap(const Bytes& frame);
 
-// Scans /dev/cu.usbmodem* and pings each node until the device answers
-// (the node number changes on every replug — there is no stable path).
-// Returns the answering port; throws if none does (close the official
-// app first: one program per port).
-std::string FindDevicePort();
+// Pings each of the backend's candidate nodes until the device answers, and
+// returns that one; throws if none does (close the official app first: one
+// program per port). Nodes that won't open are skipped — another program may
+// hold one, or it may have gone since it was listed.
+//
+// The backend is where the platform lives; the trying is not, so this takes
+// one rather than assuming. Defaults to the real one.
+std::string FindDevicePort(PortBackend& ports = PlatformPorts());
 
 class SpdsxDevice {
 public:

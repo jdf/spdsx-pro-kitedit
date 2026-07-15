@@ -73,10 +73,23 @@ add_library(spdsx_device STATIC
     source/device/kit_image.cc
     source/device/sample_image.cc
     source/device/protocol.cc
-    source/device/serial_port.cc
     source/device/spdsx_device.cc
 )
 target_include_directories(spdsx_device PUBLIC source)
+
+# The platform's PortBackend — the only part of the device layer that is not
+# portable. Exactly one implementation links; everything else talks to the
+# interfaces in device/serial_port.h. Failing here says what is missing,
+# rather than leaving a link error to imply it.
+if(APPLE)
+    target_sources(spdsx_device PRIVATE source/device/serial_port_macos.cc)
+else()
+    message(FATAL_ERROR
+        "No PortBackend for this platform. The device layer is portable; "
+        "reaching the hardware is not. Implement SerialPort + PortBackend "
+        "(see source/device/serial_port.h and serial_port_macos.cc) and add "
+        "it here.")
+endif()
 
 # spdutil: CLI for the device — ping/info/dump/kits/samples, the wave
 # read/write ops, and padlink. The protocol itself is verified by the

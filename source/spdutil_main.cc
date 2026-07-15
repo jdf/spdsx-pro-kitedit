@@ -82,7 +82,7 @@ std::string ResolvePort(const std::string& requested) {
     return requested;
   }
   const std::vector<std::string> candidates =
-      spdsx::device::ListUsbModemPorts();
+      spdsx::device::PlatformPorts().ListCandidates();
   if (candidates.empty()) {
     throw std::runtime_error(
         "no /dev/cu.usbmodem* ports found (device plugged in?)");
@@ -91,8 +91,9 @@ std::string ResolvePort(const std::string& requested) {
     std::printf("trying %s... ", path.c_str());
     std::fflush(stdout);
     try {
-      spdsx::device::MacOSSerialPort serial(path);
-      spdsx::device::SpdsxDevice dev(&serial);
+      const std::unique_ptr<spdsx::device::SerialPort> serial =
+          spdsx::device::PlatformPorts().Open(path);
+      spdsx::device::SpdsxDevice dev(serial.get());
       const Bytes reply = dev.Ping();
       if (!reply.empty()) {
         std::printf("ping ok\n");
@@ -174,8 +175,9 @@ int Usage() {
 
 int RunPing(const std::string& port_arg) {
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s\n", port.c_str());
   const Bytes reply = dev.Ping();
   if (reply.empty()) {
@@ -189,8 +191,9 @@ int RunPing(const std::string& port_arg) {
 
 int RunInfo(const std::string& port_arg) {
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("port:     %s\n", port.c_str());
   const Bytes pong = dev.Ping();
   std::printf("status:   %s\n", pong.empty() ? "no reply" : "connected");
@@ -275,8 +278,9 @@ int RunDump(const std::string& port_arg,
   }
 
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s\n", port.c_str());
 
   Bytes image;
@@ -315,8 +319,9 @@ int RunKits(const std::string& port_arg, const std::string& from_path) {
     raw = ReadFile(from_path);
   } else {
     const std::string port = ResolvePort(port_arg);
-    spdsx::device::MacOSSerialPort serial(port);
-    spdsx::device::SpdsxDevice dev(&serial);
+    const std::unique_ptr<spdsx::device::SerialPort> serial =
+        spdsx::device::PlatformPorts().Open(port);
+    spdsx::device::SpdsxDevice dev(serial.get());
     std::printf("opened %s, streaming bank 0x10...\n", port.c_str());
     raw = dev.DumpBank(spdsx::device::kBankKits);
   }
@@ -336,8 +341,9 @@ int RunReadWave(const std::string& port_arg,
                 int index,
                 const std::string& out_path) {
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s, reading wave %d (%s)...\n",
               port.c_str(),
               index,
@@ -406,8 +412,9 @@ int RunSendWave(const std::string& port_arg,
     wavename = wavename.substr(0, 16);
   }
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf(
       "opened %s: uploading %zu bytes to index %d as \"%s\" / "
       "\"%s\"...\n",
@@ -480,8 +487,9 @@ int RunAssign(const std::string& port_arg,
     return 2;
   }
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s: kit %d pad %d %s <- sample %d%s\n",
               port.c_str(),
               kit,
@@ -546,8 +554,9 @@ int RunSetParams(const std::string& port_arg,
     return 2;
   }
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf(
       "opened %s: kit %d pad %d params <- mode=%d fp=%d fe=%d "
       "dyn=%d curve=%d fixvel=%d hh(%d,%d,%d) trig=%d%s\n",
@@ -582,8 +591,9 @@ int RunSetName(const std::string& port_arg,
     return 2;
   }
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s: kit %d name <- \"%s\"%s\n",
               port.c_str(),
               kit,
@@ -599,8 +609,9 @@ int RunSetName(const std::string& port_arg,
 
 int RunDeleteWave(const std::string& port_arg, int index) {
   const std::string port = ResolvePort(port_arg);
-  spdsx::device::MacOSSerialPort serial(port);
-  spdsx::device::SpdsxDevice dev(&serial);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s, deleting sample %d (then flash commit)...\n",
               port.c_str(),
               index);
@@ -615,8 +626,9 @@ int RunSamples(const std::string& port_arg, const std::string& from_path) {
     raw = ReadFile(from_path);
   } else {
     const std::string port = ResolvePort(port_arg);
-    spdsx::device::MacOSSerialPort serial(port);
-    spdsx::device::SpdsxDevice dev(&serial);
+    const std::unique_ptr<spdsx::device::SerialPort> serial =
+        spdsx::device::PlatformPorts().Open(port);
+    spdsx::device::SpdsxDevice dev(serial.get());
     std::printf("opened %s, streaming bank 0x20...\n", port.c_str());
     raw = dev.DumpBank(spdsx::device::kBankSamples);
   }
@@ -666,8 +678,9 @@ int RunKit(const std::string& port_arg, const std::string& from_path, int kit) {
     raw = ReadFile(from_path);
   } else {
     const std::string port = ResolvePort(port_arg);
-    spdsx::device::MacOSSerialPort serial(port);
-    spdsx::device::SpdsxDevice dev(&serial);
+    const std::unique_ptr<spdsx::device::SerialPort> serial =
+        spdsx::device::PlatformPorts().Open(port);
+    spdsx::device::SpdsxDevice dev(serial.get());
     std::printf("opened %s, streaming bank 0x10...\n", port.c_str());
     raw = dev.DumpBank(spdsx::device::kBankKits);
   }
@@ -717,7 +730,7 @@ int RunPadLink(const std::string& port_arg,
   }
 
   // Declared before the device so it outlives it: the device only borrows.
-  std::unique_ptr<spdsx::device::MacOSSerialPort> serial;
+  std::unique_ptr<spdsx::device::SerialPort> serial;
   spdsx::device::SpdsxDevice* dev = nullptr;
   std::unique_ptr<spdsx::device::SpdsxDevice> owned;
   if (!dry_run) {
@@ -746,7 +759,7 @@ int RunPadLink(const std::string& port_arg,
       std::printf("Aborted.\n");
       return 1;
     }
-    serial = std::make_unique<spdsx::device::MacOSSerialPort>(port);
+    serial = spdsx::device::PlatformPorts().Open(port);
     owned = std::make_unique<spdsx::device::SpdsxDevice>(serial.get());
     dev = owned.get();
     const Bytes r = dev->Ping();

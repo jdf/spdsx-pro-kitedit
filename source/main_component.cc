@@ -538,8 +538,9 @@ void MainComponent::StartDeviceStateFetch() {
     std::vector<device::SampleRecord> pool;
     juce::String error;
     try {
-      device::MacOSSerialPort serial(device::FindDevicePort());
-      device::SpdsxDevice dev(&serial);
+      const std::unique_ptr<device::SerialPort> serial =
+          device::PlatformPorts().Open(device::FindDevicePort());
+      device::SpdsxDevice dev(serial.get());
       const auto count = [&blocks](const device::Bytes&) { ++*blocks; };
       kits = device::ParseKits(
           device::CleanBulkImage(dev.DumpBank(device::kBankKits, count)));
@@ -629,8 +630,9 @@ void MainComponent::DownloadKitSamples() {
     juce::String error;
     int done = 0;
     try {
-      device::MacOSSerialPort serial(device::FindDevicePort());
-      device::SpdsxDevice dev(&serial);
+      const std::unique_ptr<device::SerialPort> serial =
+          device::PlatformPorts().Open(device::FindDevicePort());
+      device::SpdsxDevice dev(serial.get());
       for (const int index : want) {
         permille->store(0);
         current->store(index);
