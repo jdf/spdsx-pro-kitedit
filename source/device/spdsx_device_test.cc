@@ -5,12 +5,19 @@
 
 #include <gtest/gtest.h>
 
+#include "fake_port_backend.h"
 #include "fake_serial_port.h"
 
 namespace spdsx::device {
 namespace {
 
+using spdsx_testing::FakePortBackend;
 using spdsx_testing::FakeSerialPort;
+
+// What the device sends back to a ping.
+Bytes PingReply() {
+  return {0xF0, 0x41, 0x6A, 0x02, 0x16, 0x01, 0xF7};
+}
 
 // A commit-poll reply: f0 41 6a 02 .. 22 40 00 00 00 04 <status LE32> f7.
 // Byte 8 is the sub-command echoed back, byte 14 the status word's low byte.
@@ -347,6 +354,83 @@ TEST_F(SpdsxDeviceTest, DeleteWaveBracketsTheDeleteInASessionAndCommits) {
   // The sample index rides in the argument at byte 15, little-endian.
   EXPECT_EQ(sent[1][15], 1590 & 0xFF);
   EXPECT_EQ(sent[1][16], (1590 >> 8) & 0xFF);
+}
+
+// ---- FindDevicePort ----
+//
+// The node number changes on every replug, so finding the device means
+// trying each candidate. None of that is platform-specific — the backend is
+// — which is why this can be driven without a device attached.
+
+TEST(FindDevicePort, ReturnsTheNodeThatAnswers) {
+  FakePortBackend ports;
+  ports.AddNode("/dev/cu.usbmodem001");  // silent: something else entirely
+  ports.AddNode("/dev/cu.usbmodem002").QueueReply(PingReply());
+
+  EXPECT_EQ(FindDevicePort(ports), "/dev/cu.usbmodem002");
+  // It stopped at the one that answered.
+  EXPECT_EQ(
+      ports.opened(),
+      std::vector<std::string>({"/dev/cu.usbmodem001", "/dev/cu.usbmodem002"}));
+}
+
+TEST(FindDevicePort, TakesTheFirstAnswerAndStopsLooking) {
+  FakePortBackend ports;
+  ports.AddNode("/dev/cu.usbmodem001").QueueReply(PingReply());
+  ports.AddNode("/dev/cu.usbmodem002").QueueReply(PingReply());
+
+  EXPECT_EQ(FindDevicePort(ports), "/dev/cu.usbmodem001");
+  EXPECT_EQ(ports.opened().size(), 1u);  // the second was never touched
+}
+
+// Another program holding a node (the official app is the usual one) must
+// not stop the search: that node is skipped, not fatal.
+TEST(FindDevicePort, SkipsANodeItCannotOpen) {
+  FakePortBackend ports;
+  ports.AddUnopenableNode("/dev/cu.usbmodem001");
+  ports.AddNode("/dev/cu.usbmodem002").QueueReply(PingReply());
+
+  EXPECT_EQ(FindDevicePort(ports), "/dev/cu.usbmodem002");
+}
+
+TEST(FindDevicePort, SaysSoWhenThereIsNothingToTry) {
+  FakePortBackend ports;
+  EXPECT_THROW((void)FindDevicePort(ports), std::runtime_error);
+
+  try {
+    (void)FindDevicePort(ports);
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(std::string(e.what()).find("plugged in"), std::string::npos)
+        << e.what();
+  }
+}
+
+// Nodes exist but none is the device — the official app is probably still
+// holding it, which is what the message has to suggest.
+TEST(FindDevicePort, SaysSoWhenNothingAnswers) {
+  FakePortBackend ports;
+  ports.AddNode("/dev/cu.usbmodem001");
+  ports.AddUnopenableNode("/dev/cu.usbmodem002");
+
+  try {
+    (void)FindDevicePort(ports);
+    FAIL() << "expected it to throw";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(std::string(e.what()).find("answered"), std::string::npos)
+        << e.what();
+  }
+  EXPECT_EQ(ports.opened().size(), 2u);  // it tried them all first
+}
+
+TEST(FindDevicePort, PingsEachCandidateItOpens) {
+  FakePortBackend ports;
+  FakeSerialPort& node = ports.AddNode("/dev/cu.usbmodem001");
+  node.QueueReply(PingReply());
+
+  EXPECT_EQ(FindDevicePort(ports), "/dev/cu.usbmodem001");
+
+  ASSERT_EQ(node.payloads().size(), 1u);
+  EXPECT_EQ(node.payloads()[0][4], 0x16);  // the ping's sub-command
 }
 
 }  // namespace
