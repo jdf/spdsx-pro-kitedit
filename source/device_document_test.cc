@@ -430,6 +430,26 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsKitsAndPool)
   EXPECT_EQ(device.sample_pool().front().index, 42);
 }
 
+// The closed-pedal trio lives at kit-record +0x07/08/09 (mapped live
+// 2026-07-13); ParseKits reads it and SetPadLayerParams writes it back, so a
+// device read must carry it too rather than resetting it to the defaults.
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsTheHiHatClosedPedalTrio)
+{
+  device::KitRecord rec = DeviceKit("HIHAT");
+  rec.pads[8].layer_mode = static_cast<uint8_t>(LayerMode::kHiHat);
+  rec.pads[8].hi_hat_volume = 100;
+  rec.pads[8].hi_hat_fade_in = 5;
+  rec.pads[8].hi_hat_decay = 60;
+
+  doc->ReplaceWithDeviceState({rec}, {});
+
+  const PadParams& params = device.kit(0).pads[8].params;
+  EXPECT_EQ(params.mode, LayerMode::kHiHat);
+  EXPECT_EQ(params.hi_hat_volume, 100);
+  EXPECT_EQ(params.hi_hat_fade_in, 5);
+  EXPECT_EQ(params.hi_hat_decay, 60);
+}
+
 // The device gave us fewer kits than the model holds: the rest are blank,
 // not stale leftovers.
 TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateDefaultsTheKitsNotSupplied)
@@ -475,6 +495,7 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateClampsOutOfRangeDeviceValues)
   rec.pads[0].fade_point = 100;
   rec.pads[0].fade_end = 20;  // below the point
   rec.pads[0].fixed_velocity = 0;
+  rec.pads[0].hi_hat_volume = 200;
 
   doc->ReplaceWithDeviceState({rec}, {});
 
@@ -483,6 +504,7 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateClampsOutOfRangeDeviceValues)
   EXPECT_EQ(params.curve, static_cast<DynamicsCurve>(kDynamicsCurveCount - 1));
   EXPECT_EQ(params.fade_end, 100);  // held at the fade point
   EXPECT_EQ(params.fixed_velocity, 1);
+  EXPECT_EQ(params.hi_hat_volume, 127);
 }
 
 // An unnamed record keeps the model's default rather than becoming blank.

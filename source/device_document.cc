@@ -59,9 +59,7 @@ Pad PadFromVar(const juce::var& v)
   return pad;
 }
 
-// Maps a parsed device kit record onto the app model. The hi-hat
-// closed-pedal trio keeps its defaults: those record offsets are still
-// hypothesis, not mapped.
+// Maps a parsed device kit record onto the app model.
 KitData KitDataFromDevice(const device::KitRecord& rec)
 {
   KitData kit;
@@ -83,6 +81,12 @@ KitData KitDataFromDevice(const device::KitRecord& rec)
     p.params.fixed_velocity =
         juce::jlimit(1, 127, static_cast<int>(dp.fixed_velocity));
     p.params.trigger_reserve = dp.trigger_reserve != 0;
+    p.params.hi_hat_volume =
+        juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_volume));
+    p.params.hi_hat_fade_in =
+        juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_fade_in));
+    p.params.hi_hat_decay =
+        juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_decay));
     p.samples.first = dp.wave_top > 0
         ? LayerSample::DeviceWave(dp.wave_top)
         : LayerSample();
