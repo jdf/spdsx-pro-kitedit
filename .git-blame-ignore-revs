@@ -1,0 +1,15 @@
+# Revisions for `git blame` to skip: bulk reformats and renames that touch
+# many lines without changing behaviour, and would otherwise bury the commit
+# that actually wrote each line.
+#
+# GitHub applies this automatically. Locally it needs to be switched on once
+# per clone (it cannot be tracked, being repo config rather than content):
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Entries must be full 40-character SHAs — git rejects abbreviated ones — and
+# each one should say what it was, since a bare hash tells the next reader
+# nothing.
+
+# style: attach opening braces, and reconcile .clang-format with the tree
+27d0ebf2ebd42053d074606b5654258e63a7f16c
