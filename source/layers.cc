@@ -10,15 +10,20 @@ namespace spdsx {
 namespace {
 
 constexpr std::array<std::string_view, kLayerModeCount> kNames = {"MIX",
-    "FADE1", "FADE2", "XFADE", "SWITCH", "SW(MONO)", "ALTERNATE", "HI-HAT"};
+                                                                  "FADE1",
+                                                                  "FADE2",
+                                                                  "XFADE",
+                                                                  "SWITCH",
+                                                                  "SW(MONO)",
+                                                                  "ALTERNATE",
+                                                                  "HI-HAT"};
 
 constexpr std::array<std::string_view, kDynamicsCurveCount> kCurveNames = {
     "LINEAR", "LOUD1", "LOUD2", "LOUD3"};
 
 // 0 at the fade point, 1 at the fade end, clamped; a degenerate range
 // (end <= point) behaves as a threshold at the fade point.
-float FadeAmount(int velocity, int fade_point, int fade_end)
-{
+float FadeAmount(int velocity, int fade_point, int fade_end) {
   if (fade_end <= fade_point) {
     return velocity >= fade_point ? 1.0f : 0.0f;
   }
@@ -29,8 +34,7 @@ float FadeAmount(int velocity, int fade_point, int fade_end)
 
 }  // namespace
 
-float DynamicsGain(DynamicsCurve curve, int velocity)
-{
+float DynamicsGain(DynamicsCurve curve, int velocity) {
   const float v = static_cast<float>(std::clamp(velocity, 0, 127)) / 127.0f;
   // Power curves: gamma < 1 lifts soft strikes toward full volume,
   // progressively flatter from LOUD1 to LOUD3. Approximations (the
@@ -48,9 +52,12 @@ float DynamicsGain(DynamicsCurve curve, int velocity)
   return v;
 }
 
-LayerWeights ComputeLayerWeights(LayerMode mode, int velocity,
-    int fade_point, int fade_end, bool alternate_flip, bool pedal_down)
-{
+LayerWeights ComputeLayerWeights(LayerMode mode,
+                                 int velocity,
+                                 int fade_point,
+                                 int fade_end,
+                                 bool alternate_flip,
+                                 bool pedal_down) {
   switch (mode) {
     case LayerMode::kMix:
       return {1.0f, 1.0f, false};
@@ -79,8 +86,7 @@ LayerWeights ComputeLayerWeights(LayerMode mode, int velocity,
   return {};
 }
 
-bool UsesFadePoint(LayerMode mode)
-{
+bool UsesFadePoint(LayerMode mode) {
   switch (mode) {
     case LayerMode::kFade1:
     case LayerMode::kFade2:
@@ -93,18 +99,15 @@ bool UsesFadePoint(LayerMode mode)
   }
 }
 
-bool UsesFadeEnd(LayerMode mode)
-{
+bool UsesFadeEnd(LayerMode mode) {
   return mode == LayerMode::kFade2 || mode == LayerMode::kXfade;
 }
 
-std::string_view LayerModeName(LayerMode mode)
-{
+std::string_view LayerModeName(LayerMode mode) {
   return kNames.at(static_cast<size_t>(mode));
 }
 
-LayerMode ParseLayerMode(std::string_view name, LayerMode fallback)
-{
+LayerMode ParseLayerMode(std::string_view name, LayerMode fallback) {
   for (size_t i = 0; i < kNames.size(); ++i) {
     if (kNames[i] == name) {
       return static_cast<LayerMode>(i);
@@ -113,14 +116,12 @@ LayerMode ParseLayerMode(std::string_view name, LayerMode fallback)
   return fallback;
 }
 
-std::string_view DynamicsCurveName(DynamicsCurve curve)
-{
+std::string_view DynamicsCurveName(DynamicsCurve curve) {
   return kCurveNames.at(static_cast<size_t>(curve));
 }
 
 DynamicsCurve ParseDynamicsCurve(std::string_view name,
-    DynamicsCurve fallback)
-{
+                                 DynamicsCurve fallback) {
   for (size_t i = 0; i < kCurveNames.size(); ++i) {
     if (kCurveNames[i] == name) {
       return static_cast<DynamicsCurve>(i);

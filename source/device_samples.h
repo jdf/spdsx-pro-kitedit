@@ -16,11 +16,12 @@
 
 namespace spdsx {
 
-class DeviceSamplePanel : public juce::Component,
-                          public juce::ListBoxModel {
+class DeviceSamplePanel
+    : public juce::Component
+    , public juce::ListBoxModel {
 public:
-  DeviceSamplePanel(
-      const DeviceModel& device, juce::ApplicationProperties& settings);
+  DeviceSamplePanel(const DeviceModel& device,
+                    juce::ApplicationProperties& settings);
 
   // A row was selected while View > Autoplay is on (the same setting
   // the file browser honors). No audio exists locally yet; the handler
@@ -39,8 +40,11 @@ public:
 
   // ListBoxModel:
   int getNumRows() override;
-  void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
-      bool selected) override;
+  void paintListBoxItem(int row,
+                        juce::Graphics& g,
+                        int width,
+                        int height,
+                        bool selected) override;
   juce::var getDragSourceDescription(
       const juce::SparseSet<int>& selected_rows) override;
   void selectedRowsChanged(int last_row_selected) override;

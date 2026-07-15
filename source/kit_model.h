@@ -49,20 +49,25 @@ struct PadParams {
 // and become pool indices too.
 struct LayerSample {
   LayerSample() = default;
-  explicit LayerSample(const juce::File& f) : file(f) {}
-  static LayerSample DeviceWave(int index)
-  {
+
+  explicit LayerSample(const juce::File& f)
+      : file(f) {}
+
+  static LayerSample DeviceWave(int index) {
     LayerSample sample;
     sample.device_index = index;
     return sample;
   }
 
   bool empty() const { return device_index == 0 && file == juce::File(); }
+
   bool is_file() const { return device_index == 0 && file != juce::File(); }
+
   bool is_device() const { return device_index > 0; }
+
   bool operator==(const LayerSample&) const = default;
 
-  juce::File file;       // the local file, when device_index == 0
+  juce::File file;  // the local file, when device_index == 0
   int device_index = 0;  // > 0 refers to the device pool
 };
 
@@ -80,16 +85,14 @@ public:
   static constexpr int kSlotCount = kPadCount * kLayersPerPad;
 
   // Pads start in their default modes (pad 9 is the hi-hat).
-  KitModel()
-  {
+  KitModel() {
     for (int i = 0; i < kPadCount; ++i) {
       pads_[static_cast<size_t>(i)].params = DefaultParams(i);
     }
   }
 
   // Pad 9 (bottom-right) defaults to HI-HAT, the rest to MIX.
-  static PadParams DefaultParams(int pad)
-  {
+  static PadParams DefaultParams(int pad) {
     PadParams params;
     if (pad == kPadCount - 1) {
       params.mode = LayerMode::kHiHat;
@@ -100,38 +103,36 @@ public:
   class Listener {
   public:
     virtual ~Listener() = default;
+
     virtual void KitNameChanged() {}
-    virtual void SampleChanged(int pad, int layer)
-    {
+
+    virtual void SampleChanged(int pad, int layer) {
       (void)pad;
       (void)layer;
     }
+
     // Layer mode or fade parameters changed.
     virtual void PadParamsChanged(int pad) { (void)pad; }
   };
 
   const juce::String& name() const { return name_; }
-  void set_name(const juce::String& name)
-  {
+
+  void set_name(const juce::String& name) {
     if (name_ != name) {
       name_ = name;
       listeners_.call([](Listener& l) { l.KitNameChanged(); });
     }
   }
 
-  const Pad& pad(int idx) const
-  {
-    return pads_.at(static_cast<size_t>(idx));
-  }
+  const Pad& pad(int idx) const { return pads_.at(static_cast<size_t>(idx)); }
 
   // layer 0 is the top sample, 1 the bottom.
-  const LayerSample& sample(int pad, int layer) const
-  {
+  const LayerSample& sample(int pad, int layer) const {
     const auto& samples = pads_.at(static_cast<size_t>(pad)).samples;
     return layer == 0 ? samples.first : samples.second;
   }
-  void set_sample(int pad, int layer, const LayerSample& sample)
-  {
+
+  void set_sample(int pad, int layer, const LayerSample& sample) {
     auto& samples = pads_.at(static_cast<size_t>(pad)).samples;
     auto& current = layer == 0 ? samples.first : samples.second;
     if (current != sample) {
@@ -141,12 +142,11 @@ public:
     }
   }
 
-  const PadParams& params(int pad) const
-  {
+  const PadParams& params(int pad) const {
     return pads_.at(static_cast<size_t>(pad)).params;
   }
-  void SetPadParams(int pad, const PadParams& params)
-  {
+
+  void SetPadParams(int pad, const PadParams& params) {
     auto& p = pads_.at(static_cast<size_t>(pad));
     if (p.params != params) {
       p.params = params;
@@ -155,10 +155,8 @@ public:
   }
 
   void AddListener(Listener* listener) { listeners_.add(listener); }
-  void RemoveListener(Listener* listener)
-  {
-    listeners_.remove(listener);
-  }
+
+  void RemoveListener(Listener* listener) { listeners_.remove(listener); }
 
 private:
   juce::String name_ {"Untitled Kit"};

@@ -19,25 +19,40 @@ constexpr size_t kCategoryOffset = 0xa0;
 // the first preload.
 constexpr std::string_view kAnchor = "PRELOAD 00001";
 
-constexpr std::array<std::string_view, kSampleCategoryCount> kCategories =
-    {"OFF", "Kick", "Kick Proc/Elec", "Snare", "Snare Proc/Elec",
-        "Cross Stick", "Clap", "Tom", "Tom Proc/Elec", "HiHat",
-        "HiHat Proc/Elec", "Crash", "Ride", "Splash/China",
-        "Cymbal Proc/Elec", "Percussion", "Percussion Elec", "FX",
-        "Synth Hit", "Sub Element", "Loop", "808"};
+constexpr std::array<std::string_view, kSampleCategoryCount> kCategories = {
+    "OFF",
+    "Kick",
+    "Kick Proc/Elec",
+    "Snare",
+    "Snare Proc/Elec",
+    "Cross Stick",
+    "Clap",
+    "Tom",
+    "Tom Proc/Elec",
+    "HiHat",
+    "HiHat Proc/Elec",
+    "Crash",
+    "Ride",
+    "Splash/China",
+    "Cymbal Proc/Elec",
+    "Percussion",
+    "Percussion Elec",
+    "FX",
+    "Synth Hit",
+    "Sub Element",
+    "Loop",
+    "808"};
 
-std::string Trimmed(const Bytes& image, size_t offset, size_t len)
-{
+std::string Trimmed(const Bytes& image, size_t offset, size_t len) {
   std::string s(image.begin() + static_cast<long>(offset),
-      image.begin() + static_cast<long>(offset + len));
+                image.begin() + static_cast<long>(offset + len));
   while (!s.empty() && (s.back() == ' ' || s.back() == '\0')) {
     s.pop_back();
   }
   return s;
 }
 
-uint32_t ReadLe32(const Bytes& image, size_t offset)
-{
+uint32_t ReadLe32(const Bytes& image, size_t offset) {
   return static_cast<uint32_t>(image[offset])
       | static_cast<uint32_t>(image[offset + 1]) << 8
       | static_cast<uint32_t>(image[offset + 2]) << 16
@@ -46,19 +61,17 @@ uint32_t ReadLe32(const Bytes& image, size_t offset)
 
 }  // namespace
 
-std::string_view SampleCategoryName(int category)
-{
+std::string_view SampleCategoryName(int category) {
   if (category < 0 || category >= kSampleCategoryCount) {
     return "?";
   }
   return kCategories.at(static_cast<size_t>(category));
 }
 
-std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image)
-{
+std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image) {
   std::vector<SampleRecord> records;
-  const auto anchor = std::search(clean_image.begin(), clean_image.end(),
-      kAnchor.begin(), kAnchor.end());
+  const auto anchor = std::search(
+      clean_image.begin(), clean_image.end(), kAnchor.begin(), kAnchor.end());
   if (anchor == clean_image.end()) {
     return records;
   }
@@ -70,23 +83,20 @@ std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image)
   }
   const size_t base = rec1 - kSampleRecordStride;
   for (int i = 1; i < kSampleSlots; ++i) {
-    const size_t off =
-        base + static_cast<size_t>(i) * kSampleRecordStride;
+    const size_t off = base + static_cast<size_t>(i) * kSampleRecordStride;
     if (off + kSampleRecordStride > clean_image.size()) {
       break;
     }
     SampleRecord rec;
-    rec.wavename = Trimmed(clean_image, off + kWavenameOffset,
-        kWavenameLen);
+    rec.wavename = Trimmed(clean_image, off + kWavenameOffset, kWavenameLen);
     if (rec.wavename.empty()) {
       continue;  // unoccupied slot (deleted or never used)
     }
     rec.index = i;
-    rec.filename = Trimmed(clean_image, off + kFilenameOffset,
-        kFilenameLen);
+    rec.filename = Trimmed(clean_image, off + kFilenameOffset, kFilenameLen);
     rec.frames = ReadLe32(clean_image, off + kFramesOffset);
-    rec.category = static_cast<int>(
-        ReadLe32(clean_image, off + kCategoryOffset));
+    rec.category =
+        static_cast<int>(ReadLe32(clean_image, off + kCategoryOffset));
     records.push_back(std::move(rec));
   }
   return records;
@@ -100,10 +110,12 @@ void PushLe32(Bytes& b, uint32_t v) {
   b.push_back(static_cast<uint8_t>(v >> 16));
   b.push_back(static_cast<uint8_t>(v >> 24));
 }
+
 void PushLe16(Bytes& b, uint16_t v) {
   b.push_back(static_cast<uint8_t>(v));
   b.push_back(static_cast<uint8_t>(v >> 8));
 }
+
 void PushStr(Bytes& b, const char* s) {
   for (; *s; ++s) {
     b.push_back(static_cast<uint8_t>(*s));
@@ -114,9 +126,7 @@ void PushStr(Bytes& b, const char* s) {
 // compute the RFWV header checksum without pulling in JUCE. Returns the
 // 16-byte digest of `data`.
 std::array<uint8_t, 16> Md5(const uint8_t* data, size_t len) {
-  auto rotl = [](uint32_t x, int c) {
-    return (x << c) | (x >> (32 - c));
-  };
+  auto rotl = [](uint32_t x, int c) { return (x << c) | (x >> (32 - c)); };
   static const uint32_t K[64] = {
       0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a,
       0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be,
@@ -129,11 +139,11 @@ std::array<uint8_t, 16> Md5(const uint8_t* data, size_t len) {
       0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92,
       0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
       0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
-  static const int S[64] = {
-      7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-      5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-      4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-      6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
+  static const int S[64] = {7,  12, 17, 22, 7,  12, 17, 22, 7,  12, 17, 22, 7,
+                            12, 17, 22, 5,  9,  14, 20, 5,  9,  14, 20, 5,  9,
+                            14, 20, 5,  9,  14, 20, 4,  11, 16, 23, 4,  11, 16,
+                            23, 4,  11, 16, 23, 4,  11, 16, 23, 6,  10, 15, 21,
+                            6,  10, 15, 21, 6,  10, 15, 21, 6,  10, 15, 21};
   uint32_t a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
   // Pad: 0x80, then zeros to 56 mod 64, then the 64-bit bit length.
   std::vector<uint8_t> msg(data, data + len);
@@ -211,8 +221,8 @@ Bytes RfwvToWav(const Bytes& smp) {
   PushLe32(wav, 36 + pcm_bytes);  // file size - 8
   PushStr(wav, "WAVE");
   PushStr(wav, "fmt ");
-  PushLe32(wav, 16);                 // PCM fmt chunk size
-  PushLe16(wav, 1);                  // PCM
+  PushLe32(wav, 16);  // PCM fmt chunk size
+  PushLe16(wav, 1);  // PCM
   PushLe16(wav, h.channels);
   PushLe32(wav, h.sample_rate);
   PushLe32(wav, byte_rate);
@@ -224,8 +234,10 @@ Bytes RfwvToWav(const Bytes& smp) {
   return wav;
 }
 
-Bytes PcmToRfwv(const Bytes& pcm, uint32_t sample_rate, uint16_t channels,
-    uint16_t bits_per_sample) {
+Bytes PcmToRfwv(const Bytes& pcm,
+                uint32_t sample_rate,
+                uint16_t channels,
+                uint16_t bits_per_sample) {
   Bytes smp(kRfwvHeaderSize, 0);  // header zero-filled; overview stays 0
   smp[0] = 'R';
   smp[1] = 'F';
@@ -250,22 +262,21 @@ Bytes PcmToRfwv(const Bytes& pcm, uint32_t sample_rate, uint16_t channels,
   return smp;
 }
 
-std::string RemoteWavePath(int index)
-{
+std::string RemoteWavePath(int index) {
   char buf[80];
-  std::snprintf(buf, sizeof(buf),
-      "/SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D%03d/W%05d.SMP",
-      index / 100, index);
+  std::snprintf(buf,
+                sizeof(buf),
+                "/SPDSXREMOTE//Roland/SPD-SXPRO/WAVE/DATA/D%03d/W%05d.SMP",
+                index / 100,
+                index);
   return buf;
 }
 
-RfwvHeader ParseRfwvHeader(const Bytes& smp)
-{
+RfwvHeader ParseRfwvHeader(const Bytes& smp) {
   RfwvHeader h;
   // RFWV magic, then u32 data length, u32 sample rate, u16 channels.
   if (smp.size() < 14 || smp[0] != 'R' || smp[1] != 'F' || smp[2] != 'W'
-      || smp[3] != 'V')
-  {
+      || smp[3] != 'V') {
     return h;
   }
   h.valid = true;

@@ -24,8 +24,7 @@ struct AudioEngine::Impl {
 };
 
 AudioEngine::AudioEngine(int slot_count)
-    : impl_(std::make_unique<Impl>())
-{
+    : impl_(std::make_unique<Impl>()) {
   impl_->formats.registerBasicFormats();
   auto err = impl_->device_manager.initialiseWithDefaultDevices(0, 2);
   if (err.isNotEmpty()) {
@@ -43,8 +42,7 @@ AudioEngine::AudioEngine(int slot_count)
   impl_->device_manager.addAudioCallback(&impl_->player);
 }
 
-AudioEngine::~AudioEngine()
-{
+AudioEngine::~AudioEngine() {
   impl_->device_manager.removeAudioCallback(&impl_->player);
   impl_->player.setSource(nullptr);
   impl_->mixer.removeAllInputs();
@@ -54,13 +52,13 @@ AudioEngine::~AudioEngine()
   impl_->preview.transport.setSource(nullptr);
 }
 
-std::optional<SampleInfo> AudioEngine::Load(int slot, const juce::File& file)
-{
+std::optional<SampleInfo> AudioEngine::Load(int slot, const juce::File& file) {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   auto* reader = impl_->formats.createReaderFor(file);
   if (reader == nullptr) {
-    std::fprintf(stderr, "audio: cannot load '%s'\n",
-        file.getFullPathName().toRawUTF8());
+    std::fprintf(stderr,
+                 "audio: cannot load '%s'\n",
+                 file.getFullPathName().toRawUTF8());
     return std::nullopt;
   }
   SampleInfo info;
@@ -73,51 +71,43 @@ std::optional<SampleInfo> AudioEngine::Load(int slot, const juce::File& file)
   s.transport.setSource(nullptr);
   s.reader_source =
       std::make_unique<juce::AudioFormatReaderSource>(reader, true);
-  s.transport.setSource(
-      s.reader_source.get(), 0, nullptr, reader->sampleRate);
+  s.transport.setSource(s.reader_source.get(), 0, nullptr, reader->sampleRate);
   return info;
 }
 
-void AudioEngine::Clear(int slot)
-{
+void AudioEngine::Clear(int slot) {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   s.transport.stop();
   s.transport.setSource(nullptr);
   s.reader_source.reset();
 }
 
-void AudioEngine::Play(int slot)
-{
+void AudioEngine::Play(int slot) {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   if (s.reader_source != nullptr) {
     s.transport.start();
   }
 }
 
-void AudioEngine::Pause(int slot)
-{
+void AudioEngine::Pause(int slot) {
   impl_->slots.at(static_cast<size_t>(slot))->transport.stop();
 }
 
-void AudioEngine::Stop(int slot)
-{
+void AudioEngine::Stop(int slot) {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   s.transport.stop();
   s.transport.setPosition(0.0);
 }
 
-void AudioEngine::SetGain(int slot, float gain)
-{
+void AudioEngine::SetGain(int slot, float gain) {
   impl_->slots.at(static_cast<size_t>(slot))->transport.setGain(gain);
 }
 
-bool AudioEngine::IsPlaying(int slot) const
-{
+bool AudioEngine::IsPlaying(int slot) const {
   return impl_->slots.at(static_cast<size_t>(slot))->transport.isPlaying();
 }
 
-void AudioEngine::PreviewFile(const juce::File& file)
-{
+void AudioEngine::PreviewFile(const juce::File& file) {
   auto* reader = impl_->formats.createReaderFor(file);
   if (reader == nullptr) {
     return;
@@ -127,19 +117,16 @@ void AudioEngine::PreviewFile(const juce::File& file)
   s.transport.setSource(nullptr);
   s.reader_source =
       std::make_unique<juce::AudioFormatReaderSource>(reader, true);
-  s.transport.setSource(
-      s.reader_source.get(), 0, nullptr, reader->sampleRate);
+  s.transport.setSource(s.reader_source.get(), 0, nullptr, reader->sampleRate);
   s.transport.setPosition(0.0);
   s.transport.start();
 }
 
-void AudioEngine::StopPreview()
-{
+void AudioEngine::StopPreview() {
   impl_->preview.transport.stop();
 }
 
-double AudioEngine::PositionFraction(int slot) const
-{
+double AudioEngine::PositionFraction(int slot) const {
   auto& s = *impl_->slots.at(static_cast<size_t>(slot));
   const double length = s.transport.getLengthInSeconds();
   if (length <= 0.0) {

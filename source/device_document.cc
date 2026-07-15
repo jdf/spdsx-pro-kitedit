@@ -11,17 +11,14 @@ constexpr int kMaxKitVersion = 4;
 
 // Tolerates short arrays, non-string entries, and absent fields
 // throughout, so old and hand-edited files degrade gracefully.
-Pad PadFromVar(const juce::var& v)
-{
+Pad PadFromVar(const juce::var& v) {
   Pad pad;
-  auto to_sample = [](const juce::var& entry)
-  {
+  auto to_sample = [](const juce::var& entry) {
     if (entry.isString()) {
       return LayerSample(juce::File(entry.toString()));
     }
     if (entry.isInt() || entry.isInt64()) {
-      return LayerSample::DeviceWave(
-          juce::jmax(0, static_cast<int>(entry)));
+      return LayerSample::DeviceWave(juce::jmax(0, static_cast<int>(entry)));
     }
     return LayerSample();
   };
@@ -35,33 +32,38 @@ Pad PadFromVar(const juce::var& v)
   }
   pad.params.mode = ParseLayerMode(
       v.getProperty("mode", "").toString().toStdString(), LayerMode::kMix);
-  pad.params.fade_point = juce::jlimit(1, 127,
-      static_cast<int>(v.getProperty("fadePoint", kDefaultFadePoint)));
-  pad.params.fade_end = juce::jlimit(1, 127,
-      static_cast<int>(v.getProperty("fadeEnd", kDefaultFadeEnd)));
+  pad.params.fade_point = juce::jlimit(
+      1, 127, static_cast<int>(v.getProperty("fadePoint", kDefaultFadePoint)));
+  pad.params.fade_end = juce::jlimit(
+      1, 127, static_cast<int>(v.getProperty("fadeEnd", kDefaultFadeEnd)));
   pad.params.dynamics = v.getProperty("dynamics", true);
   pad.params.curve = ParseDynamicsCurve(
       v.getProperty("dynamicsCurve", "").toString().toStdString(),
       DynamicsCurve::kLinear);
   // The blended modes read fade end as "at least fade point".
-  pad.params.fade_end =
-      juce::jmax(pad.params.fade_end, pad.params.fade_point);
-  pad.params.fixed_velocity = juce::jlimit(1, 127,
-      static_cast<int>(
-          v.getProperty("fixedVelocity", kDefaultFixedVelocity)));
+  pad.params.fade_end = juce::jmax(pad.params.fade_end, pad.params.fade_point);
+  pad.params.fixed_velocity = juce::jlimit(
+      1,
+      127,
+      static_cast<int>(v.getProperty("fixedVelocity", kDefaultFixedVelocity)));
   pad.params.trigger_reserve = v.getProperty("triggerReserve", false);
-  pad.params.hi_hat_volume = juce::jlimit(0, 127,
+  pad.params.hi_hat_volume = juce::jlimit(
+      0,
+      127,
       static_cast<int>(v.getProperty("hiHatVolume", kDefaultHiHatVolume)));
-  pad.params.hi_hat_fade_in = juce::jlimit(0, 127,
+  pad.params.hi_hat_fade_in = juce::jlimit(
+      0,
+      127,
       static_cast<int>(v.getProperty("hiHatFadeIn", kDefaultHiHatFadeIn)));
-  pad.params.hi_hat_decay = juce::jlimit(0, 127,
+  pad.params.hi_hat_decay = juce::jlimit(
+      0,
+      127,
       static_cast<int>(v.getProperty("hiHatDecay", kDefaultHiHatDecay)));
   return pad;
 }
 
 // Maps a parsed device kit record onto the app model.
-KitData KitDataFromDevice(const device::KitRecord& rec)
-{
+KitData KitDataFromDevice(const device::KitRecord& rec) {
   KitData kit;
   if (!rec.name.empty()) {
     kit.name = juce::String(rec.name);
@@ -69,12 +71,12 @@ KitData KitDataFromDevice(const device::KitRecord& rec)
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     const auto& dp = rec.pads[static_cast<size_t>(pad)];
     auto& p = kit.pads[static_cast<size_t>(pad)];
-    p.params.mode = static_cast<LayerMode>(juce::jlimit(
-        0, kLayerModeCount - 1, static_cast<int>(dp.layer_mode)));
-    p.params.fade_point =
-        juce::jlimit(1, 127, static_cast<int>(dp.fade_point));
-    p.params.fade_end = juce::jmax(p.params.fade_point,
-        juce::jlimit(1, 127, static_cast<int>(dp.fade_end)));
+    p.params.mode = static_cast<LayerMode>(
+        juce::jlimit(0, kLayerModeCount - 1, static_cast<int>(dp.layer_mode)));
+    p.params.fade_point = juce::jlimit(1, 127, static_cast<int>(dp.fade_point));
+    p.params.fade_end =
+        juce::jmax(p.params.fade_point,
+                   juce::jlimit(1, 127, static_cast<int>(dp.fade_end)));
     p.params.dynamics = dp.dynamics != 0;
     p.params.curve = static_cast<DynamicsCurve>(juce::jlimit(
         0, kDynamicsCurveCount - 1, static_cast<int>(dp.dynamics_curve)));
@@ -87,9 +89,8 @@ KitData KitDataFromDevice(const device::KitRecord& rec)
         juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_fade_in));
     p.params.hi_hat_decay =
         juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_decay));
-    p.samples.first = dp.wave_top > 0
-        ? LayerSample::DeviceWave(dp.wave_top)
-        : LayerSample();
+    p.samples.first =
+        dp.wave_top > 0 ? LayerSample::DeviceWave(dp.wave_top) : LayerSample();
     p.samples.second = dp.wave_bottom > 0
         ? LayerSample::DeviceWave(dp.wave_bottom)
         : LayerSample();
@@ -100,31 +101,26 @@ KitData KitDataFromDevice(const device::KitRecord& rec)
 }  // namespace
 
 DeviceDocument::DeviceDocument(DeviceModel& device,
-    KitModel& model,
-    juce::ApplicationProperties& settings)
-    : juce::FileBasedDocument(".spdsx", "*.spdsx",
-          "Open a device", "Save this device")
+                               KitModel& model,
+                               juce::ApplicationProperties& settings)
+    : juce::FileBasedDocument(
+          ".spdsx", "*.spdsx", "Open a device", "Save this device")
     , device_(device)
     , model_(model)
-    , settings_(settings)
-{
-}
+    , settings_(settings) {}
 
-juce::String DeviceDocument::getDocumentTitle()
-{
+juce::String DeviceDocument::getDocumentTitle() {
   return getFile() != juce::File() ? getFile().getFileNameWithoutExtension()
                                    : "Untitled Device";
 }
 
-void DeviceDocument::ResetHistory()
-{
+void DeviceDocument::ResetHistory() {
   if (on_history_reset) {
     on_history_reset();
   }
 }
 
-void DeviceDocument::ResetToUntitled()
-{
+void DeviceDocument::ResetToUntitled() {
   device_.Reset();
   LoadActiveKitIntoModel();
   ResetHistory();
@@ -132,13 +128,11 @@ void DeviceDocument::ResetToUntitled()
   setChangedFlag(false);
 }
 
-bool DeviceDocument::HasCachedAudio(int sample_index) const
-{
+bool DeviceDocument::HasCachedAudio(int sample_index) const {
   return db_ != nullptr && sample_index > 0 && db_->HasAudio(sample_index);
 }
 
-juce::File DeviceDocument::CachedWaveFile(int sample_index)
-{
+juce::File DeviceDocument::CachedWaveFile(int sample_index) {
   if (!HasCachedAudio(sample_index)) {
     return {};
   }
@@ -157,8 +151,7 @@ juce::File DeviceDocument::CachedWaveFile(int sample_index)
 }
 
 void DeviceDocument::StoreWaveAudio(int sample_index,
-    const juce::MemoryBlock& wav)
-{
+                                    const juce::MemoryBlock& wav) {
   if (db_ == nullptr || sample_index <= 0) {
     return;
   }
@@ -170,8 +163,7 @@ void DeviceDocument::StoreWaveAudio(int sample_index,
       .deleteFile();
 }
 
-void DeviceDocument::StashActiveKit()
-{
+void DeviceDocument::StashActiveKit() {
   auto& kit = device_.kit(device_.current_kit());
   kit.name = model_.name();
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -181,8 +173,7 @@ void DeviceDocument::StashActiveKit()
   }
 }
 
-void DeviceDocument::LoadActiveKitIntoModel()
-{
+void DeviceDocument::LoadActiveKitIntoModel() {
   if (on_model_reload) {
     on_model_reload(true);
   }
@@ -199,11 +190,9 @@ void DeviceDocument::LoadActiveKitIntoModel()
   }
 }
 
-void DeviceDocument::SwitchKit(int index)
-{
+void DeviceDocument::SwitchKit(int index) {
   if (index == device_.current_kit() || index < 0
-      || index >= DeviceModel::kKitCount)
-  {
+      || index >= DeviceModel::kKitCount) {
     return;
   }
   // Loading the model fires change listeners that mark the document
@@ -216,15 +205,15 @@ void DeviceDocument::SwitchKit(int index)
   setChangedFlag(was_changed);
 }
 
-juce::Result DeviceDocument::OpenDb(const juce::File& file)
-{
+juce::Result DeviceDocument::OpenDb(const juce::File& file) {
   juce::String error;
   auto db = DeviceDb::Open(file, error);
   if (db == nullptr) {
     return juce::Result::fail(error);
   }
   if (db->SchemaVersion() > DeviceDb::kCurrentSchemaVersion) {
-    return juce::Result::fail(file.getFileName()
+    return juce::Result::fail(
+        file.getFileName()
         + " was written by a newer version of spdsx-patchedit (document v"
         + juce::String(db->SchemaVersion()) + "; this build reads up to v"
         + juce::String(DeviceDb::kCurrentSchemaVersion) + ")");
@@ -233,8 +222,7 @@ juce::Result DeviceDocument::OpenDb(const juce::File& file)
   return juce::Result::ok();
 }
 
-juce::Result DeviceDocument::loadDocument(const juce::File& chosen)
-{
+juce::Result DeviceDocument::loadDocument(const juce::File& chosen) {
   if (const auto r = OpenDb(chosen); r.failed()) {
     return r;
   }
@@ -245,8 +233,7 @@ juce::Result DeviceDocument::loadDocument(const juce::File& chosen)
   return juce::Result::ok();
 }
 
-juce::Result DeviceDocument::saveDocument(const juce::File& chosen)
-{
+juce::Result DeviceDocument::saveDocument(const juce::File& chosen) {
   StashActiveKit();
   // Save As / move: carry the existing database (with its audio blobs) to
   // the new path, then continue writing there. Closing first is what makes
@@ -258,12 +245,13 @@ juce::Result DeviceDocument::saveDocument(const juce::File& chosen)
       // Reopen the one we just closed: left without a database the document
       // would go on taking edits while Autosave silently dropped every one.
       if (const auto r = OpenDb(previous); r.failed()) {
-        return juce::Result::fail("couldn't copy document to "
-            + chosen.getFullPathName() + ", and couldn't reopen "
-            + previous.getFileName() + ": " + r.getErrorMessage());
+        return juce::Result::fail(
+            "couldn't copy document to " + chosen.getFullPathName()
+            + ", and couldn't reopen " + previous.getFileName() + ": "
+            + r.getErrorMessage());
       }
       return juce::Result::fail("couldn't copy document to "
-          + chosen.getFullPathName());
+                                + chosen.getFullPathName());
     }
   }
   if (db_ == nullptr) {
@@ -276,8 +264,7 @@ juce::Result DeviceDocument::saveDocument(const juce::File& chosen)
   return juce::Result::ok();
 }
 
-juce::Result DeviceDocument::OpenDevice(const juce::File& chosen)
-{
+juce::Result DeviceDocument::OpenDevice(const juce::File& chosen) {
   const auto result = loadDocument(chosen);
   if (result.failed()) {
     return result;
@@ -288,8 +275,7 @@ juce::Result DeviceDocument::OpenDevice(const juce::File& chosen)
   return result;
 }
 
-juce::Result DeviceDocument::CreateNew(const juce::File& file)
-{
+juce::Result DeviceDocument::CreateNew(const juce::File& file) {
   // Start a brand-new database, blowing away anything already there —
   // including a legacy folder-package document at the same path.
   if (file.isDirectory()) {
@@ -311,8 +297,7 @@ juce::Result DeviceDocument::CreateNew(const juce::File& file)
   return juce::Result::ok();
 }
 
-void DeviceDocument::Autosave()
-{
+void DeviceDocument::Autosave() {
   if (db_ == nullptr || getFile() == juce::File()) {
     return;
   }
@@ -323,8 +308,7 @@ void DeviceDocument::Autosave()
 
 void DeviceDocument::ReplaceWithDeviceState(
     const std::vector<device::KitRecord>& kits,
-    std::vector<device::SampleRecord> pool)
-{
+    std::vector<device::SampleRecord> pool) {
   for (int i = 0; i < DeviceModel::kKitCount; ++i) {
     device_.kit(i) = i < static_cast<int>(kits.size())
         ? KitDataFromDevice(kits[static_cast<size_t>(i)])
@@ -344,18 +328,16 @@ void DeviceDocument::ReplaceWithDeviceState(
   changed();
 }
 
-juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
-{
+juce::Result DeviceDocument::ImportKitFile(const juce::File& file) {
   auto parsed = juce::JSON::parse(file.loadFileAsString());
   if (!parsed.isObject()) {
-    return juce::Result::fail(
-        file.getFileName() + " is not a valid .kit file");
+    return juce::Result::fail(file.getFileName() + " is not a valid .kit file");
   }
   const int version = parsed.getProperty("version", 0);
   if (version > kMaxKitVersion) {
-    return juce::Result::fail(file.getFileName() + " is kit format v"
-        + juce::String(version) + "; this build reads up to v"
-        + juce::String(kMaxKitVersion));
+    return juce::Result::fail(
+        file.getFileName() + " is kit format v" + juce::String(version)
+        + "; this build reads up to v" + juce::String(kMaxKitVersion));
   }
   KitData kit;
   const auto name = parsed.getProperty("name", "").toString();
@@ -364,8 +346,7 @@ juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
     for (int i = 0; i < KitModel::kPadCount && i < pads->size(); ++i) {
       kit.pads[static_cast<size_t>(i)] = PadFromVar((*pads)[i]);
     }
-  } else if (const auto* slots = parsed.getProperty("slots", {}).getArray())
-  {
+  } else if (const auto* slots = parsed.getProperty("slots", {}).getArray()) {
     // The pre-pad flat era: 18 entries in (pad * 2 + layer) order.
     for (int i = 0; i < KitModel::kSlotCount && i < slots->size(); ++i) {
       const auto& entry = (*slots)[i];
@@ -382,19 +363,16 @@ juce::Result DeviceDocument::ImportKitFile(const juce::File& file)
   return juce::Result::ok();
 }
 
-
 // FileBasedDocument starts its open/save dialogs here; persisting it
 // keeps device dialogs anchored to device territory across sessions,
 // independent of where samples were last browsed.
-juce::File DeviceDocument::getLastDocumentOpened()
-{
+juce::File DeviceDocument::getLastDocumentOpened() {
   return {settings_.getUserSettings()->getValue("lastDeviceFile")};
 }
 
-void DeviceDocument::setLastDocumentOpened(const juce::File& file)
-{
-  settings_.getUserSettings()->setValue(
-      "lastDeviceFile", file.getFullPathName());
+void DeviceDocument::setLastDocumentOpened(const juce::File& file) {
+  settings_.getUserSettings()->setValue("lastDeviceFile",
+                                        file.getFullPathName());
 }
 
 }  // namespace spdsx

@@ -10,8 +10,7 @@
 
 namespace spdsx {
 
-std::string render_spectrogram(const std::string& wav_path, int slot)
-{
+std::string render_spectrogram(const std::string& wav_path, int slot) {
   std::vector<float> mono;
   specgram::AudioMeta meta;
   if (!specgram::read_audio_mono(wav_path.c_str(), mono, meta)) {
@@ -39,12 +38,11 @@ std::string render_spectrogram(const std::string& wav_path, int slot)
   // collides with Slint's by-path image cache.
   static std::atomic<int> generation {0};
   auto out = dir
-      / ("slot-" + std::to_string(slot) + "-"
-          + std::to_string(generation++) + ".png");
+      / ("slot-" + std::to_string(slot) + "-" + std::to_string(generation++)
+         + ".png");
 
   if (!specgram::render_png(
-          db, num_frames, num_bins, meta, opts, out.string().c_str()))
-  {
+          db, num_frames, num_bins, meta, opts, out.string().c_str())) {
     return "";
   }
   return out.string();

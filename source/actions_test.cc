@@ -12,8 +12,7 @@ protected:
 
 // ---- SetSampleAction: assign, replace, clear ----
 
-TEST_F(ActionsTest, SetSampleActionAssignsAndReverts)
-{
+TEST_F(ActionsTest, SetSampleActionAssignsAndReverts) {
   const LayerSample sample = LayerSample::DeviceWave(7);
   SetSampleAction action(model, 3, 1, sample);
 
@@ -24,8 +23,7 @@ TEST_F(ActionsTest, SetSampleActionAssignsAndReverts)
   EXPECT_TRUE(model.sample(3, 1).empty());
 }
 
-TEST_F(ActionsTest, SetSampleActionRestoresTheReplacedSample)
-{
+TEST_F(ActionsTest, SetSampleActionRestoresTheReplacedSample) {
   const LayerSample first {juce::File("/tmp/a.wav")};
   const LayerSample second = LayerSample::DeviceWave(2);
   model.set_sample(0, 0, first);
@@ -39,8 +37,7 @@ TEST_F(ActionsTest, SetSampleActionRestoresTheReplacedSample)
 }
 
 // Clearing is an assignment of an empty sample, so it undoes like any other.
-TEST_F(ActionsTest, SetSampleActionClearsALayer)
-{
+TEST_F(ActionsTest, SetSampleActionClearsALayer) {
   const LayerSample sample = LayerSample::DeviceWave(5);
   model.set_sample(0, 0, sample);
 
@@ -55,8 +52,7 @@ TEST_F(ActionsTest, SetSampleActionClearsALayer)
 // The action snapshots the old value when it is CONSTRUCTED, not when it
 // performs: undo returns to the state at construction time, whatever
 // happened in between.
-TEST_F(ActionsTest, SetSampleActionSnapshotsTheOldValueAtConstruction)
-{
+TEST_F(ActionsTest, SetSampleActionSnapshotsTheOldValueAtConstruction) {
   const LayerSample at_construction {juce::File("/tmp/a.wav")};
   model.set_sample(0, 0, at_construction);
 
@@ -70,8 +66,7 @@ TEST_F(ActionsTest, SetSampleActionSnapshotsTheOldValueAtConstruction)
 
 // ---- SetKitNameAction ----
 
-TEST_F(ActionsTest, SetKitNameActionAppliesAndReverts)
-{
+TEST_F(ActionsTest, SetKitNameActionAppliesAndReverts) {
   const juce::String original = model.name();
   SetKitNameAction action(model, "ZZZ");
 
@@ -84,8 +79,7 @@ TEST_F(ActionsTest, SetKitNameActionAppliesAndReverts)
 
 // ---- SetPadParamsAction ----
 
-TEST_F(ActionsTest, SetPadParamsActionAppliesAndRevertsAsAUnit)
-{
+TEST_F(ActionsTest, SetPadParamsActionAppliesAndRevertsAsAUnit) {
   const PadParams before = model.params(0);
   PadParams params = before;
   params.mode = LayerMode::kXfade;
@@ -102,8 +96,7 @@ TEST_F(ActionsTest, SetPadParamsActionAppliesAndRevertsAsAUnit)
   EXPECT_EQ(model.params(0), before);
 }
 
-TEST_F(ActionsTest, SetPadParamsActionLeavesOtherPadsAlone)
-{
+TEST_F(ActionsTest, SetPadParamsActionLeavesOtherPadsAlone) {
   PadParams params = model.params(0);
   params.mode = LayerMode::kAlternate;
 
@@ -115,8 +108,7 @@ TEST_F(ActionsTest, SetPadParamsActionLeavesOtherPadsAlone)
 
 // ---- Through a real UndoManager, the way main_component drives them ----
 
-TEST_F(ActionsTest, ActionsUndoAndRedoThroughTheUndoManager)
-{
+TEST_F(ActionsTest, ActionsUndoAndRedoThroughTheUndoManager) {
   juce::UndoManager undo;
   undo.beginNewTransaction();
   undo.perform(new SetKitNameAction(model, "ZZZ"));
@@ -133,8 +125,7 @@ TEST_F(ActionsTest, ActionsUndoAndRedoThroughTheUndoManager)
 }
 
 // A gesture is wrapped in one transaction, so its actions undo as one step.
-TEST_F(ActionsTest, ActionsInOneTransactionUndoTogether)
-{
+TEST_F(ActionsTest, ActionsInOneTransactionUndoTogether) {
   juce::UndoManager undo;
   undo.beginNewTransaction();
   undo.perform(new SetSampleAction(model, 0, 0, LayerSample::DeviceWave(1)));
@@ -147,8 +138,7 @@ TEST_F(ActionsTest, ActionsInOneTransactionUndoTogether)
   EXPECT_FALSE(undo.canUndo());
 }
 
-TEST_F(ActionsTest, SeparateTransactionsUndoSeparately)
-{
+TEST_F(ActionsTest, SeparateTransactionsUndoSeparately) {
   juce::UndoManager undo;
   undo.beginNewTransaction();
   undo.perform(new SetKitNameAction(model, "FIRST"));

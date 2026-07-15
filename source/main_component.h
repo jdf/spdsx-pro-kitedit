@@ -14,8 +14,8 @@
 #include "audio.h"
 #include "device_document.h"
 #include "device_model.h"
-#include "kit_chooser.h"
 #include "device_samples.h"
+#include "kit_chooser.h"
 #include "kit_model.h"
 #include "pad_settings.h"
 #include "sample_browser.h"
@@ -25,20 +25,21 @@ namespace spdsx {
 
 // A small header status light: green when the device is connected, gray
 // when not. Set from the connection poller.
-class ConnectionDot : public juce::Component,
-                      public juce::SettableTooltipClient {
+class ConnectionDot
+    : public juce::Component
+    , public juce::SettableTooltipClient {
 public:
   ConnectionDot() { setTooltip("No device connected"); }
-  void SetConnected(bool connected)
-  {
+
+  void SetConnected(bool connected) {
     if (connected != connected_) {
       connected_ = connected;
       setTooltip(connected ? "SPD-SX PRO connected" : "No device connected");
       repaint();
     }
   }
-  void paint(juce::Graphics& g) override
-  {
+
+  void paint(juce::Graphics& g) override {
     const auto dot = getLocalBounds().toFloat().withSizeKeepingCentre(10, 10);
     g.setColour(connected_ ? juce::Colour(0xff35c65a)
                            : juce::Colour(0xff6b6b6b));
@@ -51,12 +52,13 @@ private:
   bool connected_ = false;
 };
 
-class MainComponent : public juce::Component,
-                      public juce::ApplicationCommandTarget,
-                      public juce::DragAndDropContainer,
-                      private juce::Timer,
-                      private juce::MidiInputCallback,
-                      private KitModel::Listener {
+class MainComponent
+    : public juce::Component
+    , public juce::ApplicationCommandTarget
+    , public juce::DragAndDropContainer
+    , private juce::Timer
+    , private juce::MidiInputCallback
+    , private KitModel::Listener {
 public:
   static constexpr int kSlotCount = KitModel::kSlotCount;
 
@@ -84,7 +86,7 @@ public:
   ApplicationCommandTarget* getNextCommandTarget() override;
   void getAllCommands(juce::Array<juce::CommandID>& ids) override;
   void getCommandInfo(juce::CommandID id,
-      juce::ApplicationCommandInfo& info) override;
+                      juce::ApplicationCommandInfo& info) override;
   bool perform(const InvocationInfo& info) override;
 
 private:
@@ -100,8 +102,8 @@ private:
   // grid pad. The SPD-SX PRO sends note-on on channel 10, pads 1-9 on
   // notes 60-68.
   void OpenMidiInputs();
-  void handleIncomingMidiMessage(
-      juce::MidiInput* source, const juce::MidiMessage& message) override;
+  void handleIncomingMidiMessage(juce::MidiInput* source,
+                                 const juce::MidiMessage& message) override;
 
   void ApplyTransportAction(int idx, TransportAction action);
   // A velocity-aware hit on a whole pad (MIDI note-on, mouse/space at
@@ -146,7 +148,8 @@ private:
   void LoadDeviceState();
   void StartDeviceStateFetch();
   void FinishDeviceFetch(std::vector<device::KitRecord> kits,
-      std::vector<device::SampleRecord> pool, const juce::String& error);
+                         std::vector<device::SampleRecord> pool,
+                         const juce::String& error);
   // Repopulates the device tab and re-resolves device-wave slots after
   // the pool changes (device fetch, open, new).
   void RefreshDeviceSamples();
@@ -156,8 +159,9 @@ private:
   // Loads an audio file into a slot's engine channel + spectrogram
   // under a display name (shared by local files and cached device
   // waves).
-  void LoadAudioIntoSlot(
-      int idx, const juce::File& file, const juce::String& display_name);
+  void LoadAudioIntoSlot(int idx,
+                         const juce::File& file,
+                         const juce::String& display_name);
   // File > Download Kit Samples: fetches the active kit's uncached
   // device waves into the bundle cache on a worker, refreshing slots as
   // each lands.
@@ -166,8 +170,7 @@ private:
   // document, then refreshes the slots that use it.
   void OnWaveDownloaded(int sample_index, const device::Bytes& wav);
   void OnWaveCached(int sample_index);
-  void FinishKitSampleDownload(
-      const juce::String& error, int done, int total);
+  void FinishKitSampleDownload(const juce::String& error, int done, int total);
   // Pushes the current download progress into each affected slot's
   // indicator; called from the 30Hz timer while a fetch runs.
   void UpdateDownloadIndicators();
@@ -188,10 +191,12 @@ private:
   // Pushes the active kit's edits to the device. (Not yet implemented —
   // currently clears the dirty flag as a placeholder.)
   void SaveChangesToDevice();
+
   // True only while the device answered the most recent probe. Actions
   // that need the hardware (Load Device State, Download Kit Samples) are
   // disabled otherwise.
   bool DeviceConnected() const { return device_connected_.load(); }
+
   // Every model mutation lands here: stamps the edit time so the timer
   // can autosave once the edits go quiet.
   void MarkEdited();
@@ -209,15 +214,13 @@ private:
   juce::ApplicationCommandManager& commands_;
   KitModel model_;
   DeviceModel device_;
-  std::array<std::unique_ptr<juce::UndoManager>, DeviceModel::kKitCount>
-      undos_;
+  std::array<std::unique_ptr<juce::UndoManager>, DeviceModel::kKitCount> undos_;
   juce::ApplicationProperties settings_;
   DeviceDocument document_ {device_, model_, settings_};
   AudioEngine engine_ {kSlotCount};
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   // Per-pad layer controls, living in each pad's header row.
-  std::array<std::unique_ptr<juce::ComboBox>, KitModel::kPadCount>
-      mode_boxes_;
+  std::array<std::unique_ptr<juce::ComboBox>, KitModel::kPadCount> mode_boxes_;
   std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>
       fade_point_sliders_;
   std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>

@@ -9,23 +9,25 @@ namespace spdsx_testing {
 // contents on destruction. Handy for DeviceDb / DeviceDocument tests that need
 // a real *.spdsx file on disk.
 class TempDir {
- public:
+public:
   TempDir() {
     dir_ = juce::File::getSpecialLocation(juce::File::tempDirectory)
                .getChildFile("spdsx-test-" + juce::Uuid().toString());
     dir_.createDirectory();
   }
+
   ~TempDir() { dir_.deleteRecursively(); }
 
   TempDir(const TempDir&) = delete;
   TempDir& operator=(const TempDir&) = delete;
 
   const juce::File& dir() const { return dir_; }
+
   juce::File file(const juce::String& name) const {
     return dir_.getChildFile(name);
   }
 
- private:
+private:
   juce::File dir_;
 };
 

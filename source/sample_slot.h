@@ -8,16 +8,25 @@
 
 namespace spdsx {
 
-enum class PlayState { kStopped, kPlaying, kPaused };
-enum class TransportAction { kPlay, kPause, kStop };
+enum class PlayState {
+  kStopped,
+  kPlaying,
+  kPaused
+};
+enum class TransportAction {
+  kPlay,
+  kPause,
+  kStop
+};
 
 // Soft-to-hard velocity colour ramp (cool blue -> amber -> hot red),
 // shared by the pad flash and the per-layer play highlights.
 juce::Colour VelocityColour(int velocity);
 
-class SampleSlot : public juce::Component,
-                   public juce::FileDragAndDropTarget,
-                   public juce::DragAndDropTarget {
+class SampleSlot
+    : public juce::Component
+    , public juce::FileDragAndDropTarget
+    , public juce::DragAndDropTarget {
 public:
   explicit SampleSlot(int index);
 
@@ -35,8 +44,7 @@ public:
   std::function<void(int, TransportAction)> on_transport;
   // A sample was dragged from slot `from` onto this slot. copy duplicates
   // (option); whole_pad moves/copies both layers of the pad (command).
-  std::function<void(int from, int to, bool copy, bool whole_pad)>
-      on_slot_move;
+  std::function<void(int from, int to, bool copy, bool whole_pad)> on_slot_move;
   // The drag target under the cursor changed: idx is the hovered slot
   // (-1 = none), whole_pad true when the drop would affect both layers.
   // The parent highlights the right slot(s).
@@ -47,9 +55,9 @@ public:
   void set_drag_hover(bool on);
 
   void SetSample(const juce::String& name,
-      double duration_seconds,
-      double sample_rate,
-      const juce::Image& image);
+                 double duration_seconds,
+                 double sample_rate,
+                 const juce::Image& image);
   // The slot is assigned a file that can't be read (e.g. a .kit whose
   // sample moved): shows the name flagged as missing, no transport.
   void SetSampleMissing(const juce::String& name);
@@ -63,20 +71,29 @@ public:
   // indeterminate throbber (queued), kActive a determinate ring at
   // `progress` (0..1) while that wave transfers, kNone the plain "on
   // device" body. Only shown on device-wave slots.
-  enum class DownloadState { kNone, kPending, kActive };
+  enum class DownloadState {
+    kNone,
+    kPending,
+    kActive
+  };
   void SetDownloadState(DownloadState state, float progress = 0.0f);
 
   // A file is assigned, readable or not.
   bool has_sample() const { return sample_name_.isNotEmpty(); }
+
   // A readable sample is loaded and can be played.
   bool is_playable() const { return has_sample() && playable_; }
 
   void set_play_state(PlayState state);
+
   PlayState play_state() const { return play_state_; }
+
   // The adjusted velocity (1..127) this layer was last triggered at;
   // tints the slot while it plays. Cleared when playback stops.
   void set_velocity_highlight(int velocity);
+
   int velocity_highlight() const { return velocity_highlight_; }
+
   // Playhead position, 0..1; drawn while playing or paused.
   void set_position(double fraction);
 

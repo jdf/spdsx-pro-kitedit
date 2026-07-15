@@ -20,8 +20,8 @@ namespace spdsx {
 class DeviceDocument : public juce::FileBasedDocument {
 public:
   DeviceDocument(DeviceModel& device,
-      KitModel& model,
-      juce::ApplicationProperties& settings);
+                 KitModel& model,
+                 juce::ApplicationProperties& settings);
 
   // Fired when every undo history must go (open/new/import replaced the
   // content wholesale). Kit switches deliberately do NOT fire it: undo
@@ -65,7 +65,7 @@ public:
   // fetched device state. Deliberately not undoable: histories are
   // cleared. The caller confirms with the user first.
   void ReplaceWithDeviceState(const std::vector<device::KitRecord>& kits,
-      std::vector<device::SampleRecord> pool);
+                              std::vector<device::SampleRecord> pool);
 
   // Opens a device folder (or its device.json directly). All device
   // opening goes through here: FileBasedDocument::loadFrom insists the

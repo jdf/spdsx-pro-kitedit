@@ -15,8 +15,7 @@ namespace spdsx {
 namespace {
 
 // A model with something distinctive in every field the store persists.
-DeviceModel EditedModel()
-{
+DeviceModel EditedModel() {
   DeviceModel model;
   model.kit(0).name = "FIRST";
   model.kit(DeviceModel::kKitCount - 1).name = "LAST";
@@ -45,8 +44,7 @@ DeviceModel EditedModel()
 // Reaches around the API to plant what a corrupt, foreign, or future-schema
 // document could hold, and to break the store under a write. DeviceDb offers
 // no SQL surface of its own, and these defensive paths have no other trigger.
-void ExecSql(const juce::File& path, const char* sql)
-{
+void ExecSql(const juce::File& path, const char* sql) {
   sqlite3* raw = nullptr;
   ASSERT_EQ(sqlite3_open(path.getFullPathName().toRawUTF8(), &raw), SQLITE_OK);
   char* err = nullptr;
@@ -57,8 +55,7 @@ void ExecSql(const juce::File& path, const char* sql)
   ASSERT_EQ(rc, SQLITE_OK) << message;
 }
 
-void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected)
-{
+void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected) {
   for (int k = 0; k < DeviceModel::kKitCount; ++k) {
     EXPECT_EQ(actual.kit(k).name, expected.kit(k).name) << "kit " << k;
     for (int p = 0; p < KitModel::kPadCount; ++p) {
@@ -75,8 +72,7 @@ void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected)
 
 class DeviceDbTest : public ::testing::Test {
 protected:
-  void SetUp() override
-  {
+  void SetUp() override {
     juce::String error;
     db = DeviceDb::Open(path(), error);
     ASSERT_NE(db, nullptr) << error;
@@ -90,14 +86,12 @@ protected:
 
 // ---- Open ----
 
-TEST_F(DeviceDbTest, OpenCreatesTheFileAndStampsTheSchemaVersion)
-{
+TEST_F(DeviceDbTest, OpenCreatesTheFileAndStampsTheSchemaVersion) {
   EXPECT_TRUE(path().existsAsFile());
   EXPECT_EQ(db->SchemaVersion(), DeviceDb::kCurrentSchemaVersion);
 }
 
-TEST_F(DeviceDbTest, OpenReusesAnExistingDatabase)
-{
+TEST_F(DeviceDbTest, OpenReusesAnExistingDatabase) {
   db->WriteKits(EditedModel());
   db.reset();  // close
 
@@ -110,8 +104,7 @@ TEST_F(DeviceDbTest, OpenReusesAnExistingDatabase)
   EXPECT_EQ(model.kit(7).name, juce::String("EDITED"));
 }
 
-TEST_F(DeviceDbTest, OpenReportsAPathItCannotUse)
-{
+TEST_F(DeviceDbTest, OpenReportsAPathItCannotUse) {
   juce::String error;
   auto failed = DeviceDb::Open(temp.file("no/such/dir/x.spdsx"), error);
   EXPECT_EQ(failed, nullptr);
@@ -121,8 +114,7 @@ TEST_F(DeviceDbTest, OpenReportsAPathItCannotUse)
 // The version records the format the file was written in, so opening a
 // document must never restamp it: that would destroy the only signal that it
 // came from a newer build, leaving this build to misread it as its own.
-TEST_F(DeviceDbTest, OpenNeverRestampsTheSchemaVersion)
-{
+TEST_F(DeviceDbTest, OpenNeverRestampsTheSchemaVersion) {
   ExecSql(path(), "UPDATE meta SET value='99' WHERE key='schema_version';");
   db.reset();  // close
 
@@ -132,8 +124,7 @@ TEST_F(DeviceDbTest, OpenNeverRestampsTheSchemaVersion)
   EXPECT_EQ(reopened->SchemaVersion(), 99);
 }
 
-TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase)
-{
+TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase) {
   const juce::File junk = temp.file("junk.spdsx");
   junk.replaceWithText("this is not a database");
 
@@ -145,8 +136,7 @@ TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase)
 
 // ---- Kits round trip ----
 
-TEST_F(DeviceDbTest, KitsRoundTrip)
-{
+TEST_F(DeviceDbTest, KitsRoundTrip) {
   const DeviceModel written = EditedModel();
   db->WriteKits(written);
 
@@ -157,8 +147,7 @@ TEST_F(DeviceDbTest, KitsRoundTrip)
   EXPECT_EQ(read.current_kit(), 7);
 }
 
-TEST_F(DeviceDbTest, WriteKitsReplacesRatherThanAccumulates)
-{
+TEST_F(DeviceDbTest, WriteKitsReplacesRatherThanAccumulates) {
   db->WriteKits(EditedModel());
 
   DeviceModel second;
@@ -174,8 +163,7 @@ TEST_F(DeviceDbTest, WriteKitsReplacesRatherThanAccumulates)
 
 // Anything the database does not hold reads back as a clean USER KIT, so a
 // partial or empty document can't leave stale state in the model.
-TEST_F(DeviceDbTest, ReadKitsStartsFromDefaults)
-{
+TEST_F(DeviceDbTest, ReadKitsStartsFromDefaults) {
   DeviceModel model = EditedModel();
   db->ReadKits(model);  // nothing written yet
 
@@ -186,13 +174,12 @@ TEST_F(DeviceDbTest, ReadKitsStartsFromDefaults)
 
 // A row naming a kit or pad outside the model's range -- a corrupt file, or
 // one from a build with a bigger model -- is skipped, not trusted.
-TEST_F(DeviceDbTest, ReadKitsIgnoresRowsOutsideTheModel)
-{
+TEST_F(DeviceDbTest, ReadKitsIgnoresRowsOutsideTheModel) {
   db->WriteKits(DeviceModel());
   ExecSql(path(),
-      "INSERT INTO kits(snapshot,idx,name) VALUES('current',9999,'GHOST');"
-      "INSERT INTO pads(snapshot,kit_idx,pad_idx,mode) VALUES"
-      "('current',9999,0,3),('current',0,99,3);");
+          "INSERT INTO kits(snapshot,idx,name) VALUES('current',9999,'GHOST');"
+          "INSERT INTO pads(snapshot,kit_idx,pad_idx,mode) VALUES"
+          "('current',9999,0,3),('current',0,99,3);");
 
   DeviceModel read;
   db->ReadKits(read);
@@ -202,14 +189,12 @@ TEST_F(DeviceDbTest, ReadKitsIgnoresRowsOutsideTheModel)
 
 // Each write is one transaction: a failure part-way rolls back and surfaces
 // the error rather than leaving a half-written document behind.
-TEST_F(DeviceDbTest, WriteKitsSurfacesStoreErrors)
-{
+TEST_F(DeviceDbTest, WriteKitsSurfacesStoreErrors) {
   ExecSql(path(), "DROP TABLE pads;");
   EXPECT_THROW(db->WriteKits(DeviceModel()), std::runtime_error);
 }
 
-TEST_F(DeviceDbTest, WritePoolSurfacesStoreErrors)
-{
+TEST_F(DeviceDbTest, WritePoolSurfacesStoreErrors) {
   ExecSql(path(), "DROP TABLE samples;");
 
   DeviceModel model;
@@ -219,16 +204,14 @@ TEST_F(DeviceDbTest, WritePoolSurfacesStoreErrors)
   EXPECT_THROW(db->WritePool(model), std::runtime_error);
 }
 
-TEST_F(DeviceDbTest, CaptureBaseSurfacesStoreErrors)
-{
+TEST_F(DeviceDbTest, CaptureBaseSurfacesStoreErrors) {
   ExecSql(path(), "DROP TABLE pads;");
   EXPECT_THROW(db->CaptureBase(), std::runtime_error);
 }
 
 // ---- Defensive reads: the store clamps what it loads ----
 
-TEST_F(DeviceDbTest, ReadKitsClampsOutOfRangeParams)
-{
+TEST_F(DeviceDbTest, ReadKitsClampsOutOfRangeParams) {
   DeviceModel model;
   PadParams& params = model.kit(0).pads[0].params;
   params.mode = static_cast<LayerMode>(99);
@@ -257,8 +240,7 @@ TEST_F(DeviceDbTest, ReadKitsClampsOutOfRangeParams)
 
 // The device constrains fade end >= fade point; the read enforces it rather
 // than trusting the file.
-TEST_F(DeviceDbTest, ReadKitsHoldsFadeEndAtOrAboveFadePoint)
-{
+TEST_F(DeviceDbTest, ReadKitsHoldsFadeEndAtOrAboveFadePoint) {
   DeviceModel model;
   model.kit(0).pads[0].params.fade_point = 100;
   model.kit(0).pads[0].params.fade_end = 20;
@@ -269,8 +251,7 @@ TEST_F(DeviceDbTest, ReadKitsHoldsFadeEndAtOrAboveFadePoint)
   EXPECT_EQ(read.kit(0).pads[0].params.fade_end, 100);
 }
 
-TEST_F(DeviceDbTest, ReadKitsClampsTheCurrentKit)
-{
+TEST_F(DeviceDbTest, ReadKitsClampsTheCurrentKit) {
   DeviceModel model;
   model.set_current_kit(9999);
   db->WriteKits(model);
@@ -282,8 +263,7 @@ TEST_F(DeviceDbTest, ReadKitsClampsTheCurrentKit)
 
 // ---- Snapshots ----
 
-TEST_F(DeviceDbTest, CurrentAndBaseSnapshotsAreIndependent)
-{
+TEST_F(DeviceDbTest, CurrentAndBaseSnapshotsAreIndependent) {
   DeviceModel current;
   current.kit(3).name = "CURRENT";
   db->WriteKits(current, Snapshot::kCurrent);
@@ -303,19 +283,17 @@ TEST_F(DeviceDbTest, CurrentAndBaseSnapshotsAreIndependent)
 
 // current_kit and the pool are properties of the working document, not of a
 // sync baseline, so the base snapshot leaves them alone.
-TEST_F(DeviceDbTest, TheBaseSnapshotCarriesNeitherCurrentKitNorPool)
-{
+TEST_F(DeviceDbTest, TheBaseSnapshotCarriesNeitherCurrentKitNorPool) {
   db->WriteKits(EditedModel(), Snapshot::kBase);
 
   DeviceModel read;
   read.set_current_kit(42);
-  read.set_sample_pool({[]
-                        {
-                          device::SampleRecord rec;
-                          rec.index = 1;
-                          rec.wavename = "Kick";
-                          return rec;
-                        }()});
+  read.set_sample_pool({[] {
+    device::SampleRecord rec;
+    rec.index = 1;
+    rec.wavename = "Kick";
+    return rec;
+  }()});
   db->ReadKits(read, Snapshot::kBase);
 
   EXPECT_EQ(read.kit(7).name, juce::String("EDITED"));
@@ -323,8 +301,7 @@ TEST_F(DeviceDbTest, TheBaseSnapshotCarriesNeitherCurrentKitNorPool)
   EXPECT_EQ(read.sample_pool().size(), 1u);
 }
 
-TEST_F(DeviceDbTest, CaptureBaseCopiesCurrentOntoBase)
-{
+TEST_F(DeviceDbTest, CaptureBaseCopiesCurrentOntoBase) {
   const DeviceModel written = EditedModel();
   db->WriteKits(written);
   db->CaptureBase();
@@ -334,8 +311,7 @@ TEST_F(DeviceDbTest, CaptureBaseCopiesCurrentOntoBase)
   ExpectKitsEqual(base, written);
 }
 
-TEST_F(DeviceDbTest, CaptureBaseReplacesAnEarlierBase)
-{
+TEST_F(DeviceDbTest, CaptureBaseReplacesAnEarlierBase) {
   DeviceModel first;
   first.kit(0).name = "FIRST";
   db->WriteKits(first);
@@ -354,8 +330,7 @@ TEST_F(DeviceDbTest, CaptureBaseReplacesAnEarlierBase)
 
 // ---- The sample pool ----
 
-TEST_F(DeviceDbTest, ThePoolRoundTrips)
-{
+TEST_F(DeviceDbTest, ThePoolRoundTrips) {
   DeviceModel model;
   device::SampleRecord kick;
   kick.index = 1;
@@ -378,8 +353,7 @@ TEST_F(DeviceDbTest, ThePoolRoundTrips)
   EXPECT_EQ(got.category, 3);
 }
 
-TEST_F(DeviceDbTest, ThePoolReadsBackInIndexOrder)
-{
+TEST_F(DeviceDbTest, ThePoolReadsBackInIndexOrder) {
   DeviceModel model;
   std::vector<device::SampleRecord> pool;
   for (const int index : {1590, 7, 1}) {
@@ -400,8 +374,7 @@ TEST_F(DeviceDbTest, ThePoolReadsBackInIndexOrder)
 }
 
 // Index 0 is the device's "no sample" sentinel, not a wave.
-TEST_F(DeviceDbTest, ThePoolSkipsTheZeroIndexSentinel)
-{
+TEST_F(DeviceDbTest, ThePoolSkipsTheZeroIndexSentinel) {
   DeviceModel model;
   device::SampleRecord sentinel;
   sentinel.index = 0;
@@ -419,8 +392,7 @@ TEST_F(DeviceDbTest, ThePoolSkipsTheZeroIndexSentinel)
 
 // ---- Cached audio blobs ----
 
-TEST_F(DeviceDbTest, AudioBlobsRoundTrip)
-{
+TEST_F(DeviceDbTest, AudioBlobsRoundTrip) {
   const std::string audio = "RIFF....WAVEfmt ";
   EXPECT_FALSE(db->HasAudio(5));
 
@@ -432,8 +404,7 @@ TEST_F(DeviceDbTest, AudioBlobsRoundTrip)
   EXPECT_EQ(std::memcmp(got.getData(), audio.data(), audio.size()), 0);
 }
 
-TEST_F(DeviceDbTest, PutAudioReplacesAnEarlierBlob)
-{
+TEST_F(DeviceDbTest, PutAudioReplacesAnEarlierBlob) {
   const std::string first = "first";
   const std::string second = "second-and-longer";
   db->PutAudio(5, first.data(), first.size());
@@ -444,16 +415,14 @@ TEST_F(DeviceDbTest, PutAudioReplacesAnEarlierBlob)
   EXPECT_EQ(std::memcmp(got.getData(), second.data(), second.size()), 0);
 }
 
-TEST_F(DeviceDbTest, AudioIsAbsentForAnUncachedSample)
-{
+TEST_F(DeviceDbTest, AudioIsAbsentForAnUncachedSample) {
   EXPECT_FALSE(db->HasAudio(404));
   EXPECT_TRUE(db->GetAudio(404).isEmpty());
 }
 
 // A pool refresh (from a device read) must not throw away audio already
 // downloaded for those indices.
-TEST_F(DeviceDbTest, WritePoolKeepsCachedAudio)
-{
+TEST_F(DeviceDbTest, WritePoolKeepsCachedAudio) {
   const std::string audio = "cached-bytes";
   db->PutAudio(1, audio.data(), audio.size());
 
@@ -475,8 +444,7 @@ TEST_F(DeviceDbTest, WritePoolKeepsCachedAudio)
   EXPECT_EQ(read.sample_pool().front().wavename, "Renamed");
 }
 
-TEST_F(DeviceDbTest, WritePoolUpdatesMetadataInPlace)
-{
+TEST_F(DeviceDbTest, WritePoolUpdatesMetadataInPlace) {
   DeviceModel model;
   device::SampleRecord rec;
   rec.index = 1;

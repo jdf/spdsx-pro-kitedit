@@ -38,7 +38,8 @@ Bytes EncodeKit(int kit) {
     throw std::out_of_range("kit must be 1-200");
   }
   const int v = kit - 1;
-  return {static_cast<uint8_t>((v >> 4) & 0x7F), static_cast<uint8_t>(v & 0x0F)};
+  return {static_cast<uint8_t>((v >> 4) & 0x7F),
+          static_cast<uint8_t>(v & 0x0F)};
 }
 
 uint8_t SelectValue(ObjectKind kind, int index) {
@@ -60,7 +61,7 @@ Bytes PadLinkPrefix(int kit) {
   }
   const int flat = 512 + 2 * (kit - 1);
   return {static_cast<uint8_t>((flat >> 7) & 0x7F),
-      static_cast<uint8_t>(flat & 0x7F)};
+          static_cast<uint8_t>(flat & 0x7F)};
 }
 
 Bytes PadLinkAddr(ObjectKind kind, int index, int kit) {
@@ -86,9 +87,9 @@ Bytes NibbleEncode(int value) {
     throw std::out_of_range("nibble-encoded value must be 0-65535");
   }
   return {static_cast<uint8_t>((value >> 12) & 0x0F),
-      static_cast<uint8_t>((value >> 8) & 0x0F),
-      static_cast<uint8_t>((value >> 4) & 0x0F),
-      static_cast<uint8_t>(value & 0x0F)};
+          static_cast<uint8_t>((value >> 8) & 0x0F),
+          static_cast<uint8_t>((value >> 4) & 0x0F),
+          static_cast<uint8_t>(value & 0x0F)};
 }
 
 Bytes KitNameAddr(int kit, int i) {
@@ -108,7 +109,7 @@ namespace {
 // The pad+layer-encoded slot byte: 0x40 + 2*(pad-1) + layer.
 uint8_t PadSlotByte(int pad, PadSlot slot) {
   return static_cast<uint8_t>(0x40 + 2 * (pad - 1)
-      + (slot == PadSlot::kBottom ? 1 : 0));
+                              + (slot == PadSlot::kBottom ? 1 : 0));
 }
 }  // namespace
 
@@ -134,11 +135,23 @@ Bytes PadParamAddr(int kit, int pad, int param) {
 }
 
 Bytes BulkRequest(uint8_t sub, uint8_t bank, uint32_t arg) {
-  return {0xF0, 0x41, 0x6C, 0x03, sub, 0x00, 0x00, 0x00, 0x00, bank, 0x00,
-      0x00, static_cast<uint8_t>(arg & 0xFF),
-      static_cast<uint8_t>((arg >> 8) & 0xFF),
-      static_cast<uint8_t>((arg >> 16) & 0xFF),
-      static_cast<uint8_t>((arg >> 24) & 0xFF), 0xF7};
+  return {0xF0,
+          0x41,
+          0x6C,
+          0x03,
+          sub,
+          0x00,
+          0x00,
+          0x00,
+          0x00,
+          bank,
+          0x00,
+          0x00,
+          static_cast<uint8_t>(arg & 0xFF),
+          static_cast<uint8_t>((arg >> 8) & 0xFF),
+          static_cast<uint8_t>((arg >> 16) & 0xFF),
+          static_cast<uint8_t>((arg >> 24) & 0xFF),
+          0xF7};
 }
 
 Bytes BulkReadRequest(uint8_t bank) {
@@ -158,9 +171,9 @@ std::vector<BulkBlock> SplitBulkImage(const Bytes& image) {
     const uint8_t bank = i + 8 < image.size() ? image[i + 8] : 0;
     // The block runs to the next marker, or the end of the image.
     size_t next = i + kMarker.size();
-    while (next + kMarker.size() <= image.size()
-        && !std::equal(kMarker.begin(), kMarker.end(), image.begin() + next))
-    {
+    while (
+        next + kMarker.size() <= image.size()
+        && !std::equal(kMarker.begin(), kMarker.end(), image.begin() + next)) {
       ++next;
     }
     if (next + kMarker.size() > image.size()) {
@@ -173,13 +186,12 @@ std::vector<BulkBlock> SplitBulkImage(const Bytes& image) {
 }
 
 Bytes SampleRecordAddr(int index, int offset) {
-  const uint32_t v = 0x2000000u
-      + static_cast<uint32_t>(index) * 256u
+  const uint32_t v = 0x2000000u + static_cast<uint32_t>(index) * 256u
       + static_cast<uint32_t>(offset);
   return {static_cast<uint8_t>((v >> 21) & 0x7F),
-      static_cast<uint8_t>((v >> 14) & 0x7F),
-      static_cast<uint8_t>((v >> 7) & 0x7F),
-      static_cast<uint8_t>(v & 0x7F)};
+          static_cast<uint8_t>((v >> 14) & 0x7F),
+          static_cast<uint8_t>((v >> 7) & 0x7F),
+          static_cast<uint8_t>(v & 0x7F)};
 }
 
 namespace {
@@ -215,12 +227,23 @@ Bytes SampleBaseRecord(int frames) {
 }
 
 Bytes SampleNameRecord(const std::string& wavename,
-    const std::string& filename, uint32_t content_hash) {
+                       const std::string& filename,
+                       uint32_t content_hash) {
   Bytes b(140, 0x00);
   PutField(b, 0x04, 16, wavename);
   PutField(b, 0x14, 100, filename);
-  const uint8_t kConst[12] = {0x00, 0x04, 0x0b, 0x00, 0x5a, 0x34, 0x54, 0x32,
-      0x33, 0x39, 0x33, 0x20};  // "\0\4\v\0Z4T2393 "
+  const uint8_t kConst[12] = {0x00,
+                              0x04,
+                              0x0b,
+                              0x00,
+                              0x5a,
+                              0x34,
+                              0x54,
+                              0x32,
+                              0x33,
+                              0x39,
+                              0x33,
+                              0x20};  // "\0\4\v\0Z4T2393 "
   std::copy(kConst, kConst + 12, b.begin() + 0x78);
   for (int i = 0; i < 8; ++i) {
     b[0x84 + i] = static_cast<uint8_t>((content_hash >> (28 - 4 * i)) & 0x0F);

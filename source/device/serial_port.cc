@@ -1,5 +1,12 @@
 #include "device/serial_port.h"
 
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <stdexcept>
+
+#include <IOKit/serial/ioss.h>  // IOSSIOSPEED
 #include <fcntl.h>
 #include <glob.h>
 #include <sys/ioctl.h>
@@ -7,20 +14,12 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include <IOKit/serial/ioss.h>  // IOSSIOSPEED
-
-#include <cerrno>
-#include <cstdio>
-#include <cstring>
-#include <ctime>
-#include <stdexcept>
-
 namespace spdsx::device {
 
 namespace {
 
 double NowSeconds() {
-  timespec ts{};
+  timespec ts {};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) / 1e9;
 }
@@ -29,7 +28,7 @@ double NowSeconds() {
 
 std::vector<std::string> ListUsbModemPorts() {
   std::vector<std::string> ports;
-  glob_t g{};
+  glob_t g {};
   if (::glob("/dev/cu.usbmodem*", 0, nullptr, &g) == 0) {
     for (size_t i = 0; i < g.gl_pathc; ++i) {
       ports.emplace_back(g.gl_pathv[i]);
@@ -42,15 +41,15 @@ std::vector<std::string> ListUsbModemPorts() {
 SerialPort::SerialPort(const std::string& path, int baud) {
   fd_ = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd_ < 0) {
-    throw std::runtime_error("cannot open " + path + ": " +
-        std::strerror(errno));
+    throw std::runtime_error("cannot open " + path + ": "
+                             + std::strerror(errno));
   }
   // Opened non-blocking to avoid hanging on modem control lines; switch to
   // blocking now for straightforward read/write.
   const int flags = ::fcntl(fd_, F_GETFL);
   ::fcntl(fd_, F_SETFL, flags & ~O_NONBLOCK);
 
-  termios a{};
+  termios a {};
   if (::tcgetattr(fd_, &a) != 0) {
     ::close(fd_);
     fd_ = -1;
@@ -67,8 +66,8 @@ SerialPort::SerialPort(const std::string& path, int baud) {
   speed_t speed = static_cast<speed_t>(baud);
   if (::ioctl(fd_, IOSSIOSPEED, &speed) != 0) {
     // Non-fatal, mirroring the Python: some adapters still work.
-    std::fprintf(stderr, "warning: could not set baud: %s\n",
-        std::strerror(errno));
+    std::fprintf(
+        stderr, "warning: could not set baud: %s\n", std::strerror(errno));
   }
   ::tcflush(fd_, TCIOFLUSH);
 }
@@ -87,8 +86,8 @@ void SerialPort::Write(const Bytes& data) {
       if (errno == EINTR) {
         continue;
       }
-      throw std::runtime_error(std::string("serial write failed: ") +
-          std::strerror(errno));
+      throw std::runtime_error(std::string("serial write failed: ")
+                               + std::strerror(errno));
     }
     offset += static_cast<size_t>(n);
   }

@@ -20,13 +20,19 @@ inline constexpr uint8_t kDt1 = 0x12;  // write data to address
 inline constexpr uint8_t kRq1 = 0x11;  // request data from address
 
 // The two kinds of triggerable object on the instrument.
-enum class ObjectKind { kPad, kTrig };
+enum class ObjectKind {
+  kPad,
+  kTrig
+};
 
 // Kit names are a fixed 16-character space-padded ASCII field.
 inline constexpr int kKitNameLength = 16;
 
 // A pad slot: the top or bottom layer.
-enum class PadSlot { kTop, kBottom };
+enum class PadSlot {
+  kTop,
+  kBottom
+};
 
 // Roland checksum over the address+data bytes: (128 - sum % 128) & 0x7F.
 uint8_t Checksum(const Bytes& body);
@@ -101,7 +107,8 @@ Bytes SampleBaseRecord(int frames);
 // first). The hash's algorithm is unknown; pass 0 to test whether the
 // device recomputes it on flash-commit.
 Bytes SampleNameRecord(const std::string& wavename,
-    const std::string& filename, uint32_t content_hash);
+                       const std::string& filename,
+                       uint32_t content_hash);
 
 // ---- Bulk block transfer (device-state read) ----
 //
@@ -139,9 +146,9 @@ Bytes BulkReadRequest(uint8_t bank);
 // the block frames' payloads, headers included — same layout the RE
 // parse_capture.py produces and the re-cache image stores).
 struct BulkBlock {
-  uint8_t bank;    // payload byte 8
-  size_t offset;   // start of the `f0 41 6c 02` marker in the image
-  size_t length;   // full payload length through its terminating f7
+  uint8_t bank;  // payload byte 8
+  size_t offset;  // start of the `f0 41 6c 02` marker in the image
+  size_t length;  // full payload length through its terminating f7
 };
 
 // Splits a reassembled image into its blocks by scanning for the

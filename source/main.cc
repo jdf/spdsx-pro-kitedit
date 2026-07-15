@@ -12,17 +12,13 @@ namespace spdsx {
 class MainMenu : public juce::MenuBarModel {
 public:
   explicit MainMenu(juce::ApplicationCommandManager& commands)
-      : commands_(commands)
-  {
-  }
+      : commands_(commands) {}
 
-  juce::StringArray getMenuBarNames() override
-  {
+  juce::StringArray getMenuBarNames() override {
     return {"File", "Edit", "View"};
   }
 
-  juce::PopupMenu getMenuForIndex(int, const juce::String& name) override
-  {
+  juce::PopupMenu getMenuForIndex(int, const juce::String& name) override {
     juce::PopupMenu menu;
     if (name == "File") {
       menu.addCommandItem(&commands_, commands::kFileNew);
@@ -54,9 +50,8 @@ public:
   // Takes ownership of content.
   explicit MainWindow(MainComponent* content)
       : juce::DocumentWindow("SPD-SX Patch Edit",
-            juce::Colour(0xff12161b),
-            juce::DocumentWindow::allButtons)
-  {
+                             juce::Colour(0xff12161b),
+                             juce::DocumentWindow::allButtons) {
     setUsingNativeTitleBar(true);
     setContentOwned(content, true);
     setResizable(true, true);
@@ -64,15 +59,13 @@ public:
     setVisible(true);
   }
 
-  void closeButtonPressed() override
-  {
+  void closeButtonPressed() override {
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
   }
 
   // The grid handles the spacebar; hand it the keyboard whenever the
   // window becomes active.
-  void activeWindowStatusChanged() override
-  {
+  void activeWindowStatusChanged() override {
     if (isActiveWindow() && getContentComponent() != nullptr) {
       getContentComponent()->grabKeyboardFocus();
     }
@@ -81,14 +74,11 @@ public:
 
 class App : public juce::JUCEApplication {
 public:
-  const juce::String getApplicationName() override
-  {
-    return "spdsx-patchedit";
-  }
+  const juce::String getApplicationName() override { return "spdsx-patchedit"; }
+
   const juce::String getApplicationVersion() override { return "0.1.0"; }
 
-  void initialise(const juce::String&) override
-  {
+  void initialise(const juce::String&) override {
     content = new MainComponent(command_manager);
     command_manager.registerAllCommandsForTarget(content);
     command_manager.setFirstCommandTarget(content);
@@ -99,14 +89,15 @@ public:
     auto args = getCommandLineParameterArray();
     for (int i = 0; i < args.size(); ++i) {
       if (args[i] == "--load" && i + 2 < args.size()) {
-        content->LoadSample(args[i + 1].getIntValue(),
-            juce::File::getCurrentWorkingDirectory().getChildFile(
-                args[i + 2]));
+        content->LoadSample(
+            args[i + 1].getIntValue(),
+            juce::File::getCurrentWorkingDirectory().getChildFile(args[i + 2]));
         i += 2;
       } else {
-        std::fprintf(stderr, "unrecognized argument '%s'\n"
-                             "usage: spdsx-patchedit [--load <slot> <file.wav>]...\n",
-            args[i].toRawUTF8());
+        std::fprintf(stderr,
+                     "unrecognized argument '%s'\n"
+                     "usage: spdsx-patchedit [--load <slot> <file.wav>]...\n",
+                     args[i].toRawUTF8());
       }
     }
 
@@ -134,16 +125,14 @@ public:
 
   // Everything autosaves; flush whatever the debounce hasn't written
   // yet and go.
-  void systemRequestedQuit() override
-  {
+  void systemRequestedQuit() override {
     if (content != nullptr) {
       content->document().Autosave();
     }
     quit();
   }
 
-  void shutdown() override
-  {
+  void shutdown() override {
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu(nullptr);
 #else

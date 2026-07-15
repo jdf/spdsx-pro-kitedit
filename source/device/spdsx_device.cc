@@ -1,9 +1,9 @@
 #include "device/spdsx_device.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <chrono>
 #include <stdexcept>
 #include <thread>
 
@@ -46,10 +46,9 @@ uint8_t ChannelFor(const Bytes& payload) {
 }
 
 uint32_t ReadLen(const Bytes& buf) {
-  return static_cast<uint32_t>(buf[16]) |
-      (static_cast<uint32_t>(buf[17]) << 8) |
-      (static_cast<uint32_t>(buf[18]) << 16) |
-      (static_cast<uint32_t>(buf[19]) << 24);
+  return static_cast<uint32_t>(buf[16]) | (static_cast<uint32_t>(buf[17]) << 8)
+      | (static_cast<uint32_t>(buf[18]) << 16)
+      | (static_cast<uint32_t>(buf[19]) << 24);
 }
 
 }  // namespace
@@ -77,11 +76,10 @@ Bytes Unwrap(const Bytes& frame) {
   const size_t avail = frame.size() - kFrameHeaderSize;
   const size_t take = len < avail ? len : avail;
   return Bytes(frame.begin() + kFrameHeaderSize,
-      frame.begin() + kFrameHeaderSize + take);
+               frame.begin() + kFrameHeaderSize + take);
 }
 
-std::string FindDevicePort()
-{
+std::string FindDevicePort() {
   const auto candidates = ListUsbModemPorts();
   if (candidates.empty()) {
     throw std::runtime_error(
@@ -101,7 +99,8 @@ std::string FindDevicePort()
       "no SPD-SX PRO answered (is the official app still open?)");
 }
 
-SpdsxDevice::SpdsxDevice(const std::string& port) : port_(port) {}
+SpdsxDevice::SpdsxDevice(const std::string& port)
+    : port_(port) {}
 
 Bytes SpdsxDevice::ReadFrame(double timeout_seconds) {
   const Bytes hdr = port_.ReadExact(kFrameHeaderSize, timeout_seconds);
@@ -120,7 +119,9 @@ Bytes SpdsxDevice::Command(const Bytes& payload, double timeout_seconds) {
   return ReadFrame(timeout_seconds);
 }
 
-void SpdsxDevice::Send(const Bytes& payload) { port_.Write(Wrap(payload)); }
+void SpdsxDevice::Send(const Bytes& payload) {
+  port_.Write(Wrap(payload));
+}
 
 Bytes SpdsxDevice::Ping() {
   Bytes p = {0xF0, 0x41, 0x6A, 0x03, 0x16};
@@ -132,9 +133,9 @@ Bytes SpdsxDevice::Ping() {
 std::string SpdsxDevice::FirmwareField(uint8_t field) {
   // Exact 32-byte cat-0x17 request from the capture; byte 15 selects the
   // field. Reply: f0 41 6a 02 00 00 00 00 17 40 00 00 00 <len> <ascii> f7.
-  Bytes p = {0xF0, 0x41, 0x6A, 0x03, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x40, 0x00, 0x00, 0x00, 0x00, field, 0x00, 0x00, 0x00, 0x01, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7};
+  Bytes p = {0xF0, 0x41, 0x6A, 0x03, 0x17,  0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+             0x00, 0x00, 0x00, 0x00, field, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+             0x00, 0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00, 0xF7};
   const Bytes r = Command(p);
   if (r.size() < 15 || r[8] != 0x17) {
     return {};
@@ -214,16 +215,17 @@ Bytes SpdsxDevice::SelectObject(ObjectKind kind, int index) {
   return Command(Dt1(kObjectSelectAddr, {SelectValue(kind, index)}));
 }
 
-void SpdsxDevice::SetPadLink(int kit, ObjectKind kind, int index, int group,
-    double pace_seconds) {
+void SpdsxDevice::SetPadLink(
+    int kit, ObjectKind kind, int index, int group, double pace_seconds) {
   SelectObject(kind, index);  // replies; drains
-  Send(Dt1(PadLinkAddr(kind, index, kit),
-      {static_cast<uint8_t>(group & 0x7F)}));
+  Send(
+      Dt1(PadLinkAddr(kind, index, kit), {static_cast<uint8_t>(group & 0x7F)}));
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
-void SpdsxDevice::SetKitName(int kit, const std::string& name,
-    double pace_seconds) {
+void SpdsxDevice::SetKitName(int kit,
+                             const std::string& name,
+                             double pace_seconds) {
   // The kit is encoded in the write address (KitNameAddr), so no kit
   // select is needed to target it.
   for (int i = 0; i < kKitNameLength; ++i) {
@@ -235,8 +237,8 @@ void SpdsxDevice::SetKitName(int kit, const std::string& name,
   }
 }
 
-void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
-    double pace_seconds) {
+void SpdsxDevice::SetPadWave(
+    int kit, int pad, PadSlot slot, int sample, double pace_seconds) {
   // Kit and pad+layer are both encoded in the address, so no kit select
   // or pad focus is needed (the app assigns waves without either). Write
   // the wave number, then the companion "slot in use" flag.
@@ -246,8 +248,10 @@ void SpdsxDevice::SetPadWave(int kit, int pad, PadSlot slot, int sample,
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
 }
 
-void SpdsxDevice::SetPadLayerParams(int kit, int pad,
-    const PadDeviceParams& params, double pace_seconds) {
+void SpdsxDevice::SetPadLayerParams(int kit,
+                                    int pad,
+                                    const PadDeviceParams& params,
+                                    double pace_seconds) {
   // Kit and pad are both encoded in the write address, so no kit select
   // is needed; focus the pad object (the app does before param edits).
   SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
@@ -352,7 +356,8 @@ Bytes WriteBody(const Bytes& data) {
 }  // namespace
 
 Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
-    const ProgressCallback& on_progress, double idle_timeout) {
+                                  const ProgressCallback& on_progress,
+                                  double idle_timeout) {
   const std::string path = RemoteWavePath(sample_index);
   // OPEN: 9 zero bytes, then the path length INCLUDING its null, then
   // the path and that null.
@@ -363,7 +368,7 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
   const Bytes ack = Command(FileRequest(0x00, open_body));
   if (ack.size() < 4 || ack[3] != 0x7A) {
     throw std::runtime_error("device rejected OPEN of " + path
-        + " (preload wave, or not present?)");
+                             + " (preload wave, or not present?)");
   }
 
   // STAT: reply is f0 41 7a 02 .. 08 <u32 attr> <u32 size> f7; the file
@@ -373,8 +378,7 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
     throw std::runtime_error("short STAT reply for " + path);
   }
   const uint32_t size = static_cast<uint32_t>(sr[18])
-      | static_cast<uint32_t>(sr[19]) << 8
-      | static_cast<uint32_t>(sr[20]) << 16
+      | static_cast<uint32_t>(sr[19]) << 8 | static_cast<uint32_t>(sr[20]) << 16
       | static_cast<uint32_t>(sr[21]) << 24;
 
   // SEEK to 0 (all-zero body), then loop READ. Each READ asks for a big
@@ -397,8 +401,7 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
       if (frame.size() <= kFileFrameHeader + 1 || frame[3] != 0x02) {
         break;  // batch drained (idle) or a non-data frame
       }
-      smp.insert(
-          smp.end(), frame.begin() + kFileFrameHeader, frame.end() - 1);
+      smp.insert(smp.end(), frame.begin() + kFileFrameHeader, frame.end() - 1);
       got_any = true;
       if (on_progress) {
         on_progress(smp.size(), size);
@@ -424,8 +427,7 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
     throw std::runtime_error("smp too small to have header + PCM");
   }
   const std::string smp_path = RemoteWavePath(sample_index);
-  const std::string tmp_path =
-      smp_path.substr(0, smp_path.size() - 4) + ".TMP";
+  const std::string tmp_path = smp_path.substr(0, smp_path.size() - 4) + ".TMP";
   const std::string dir = smp_path.substr(0, smp_path.rfind('/'));
   const Bytes header(smp.begin(), smp.begin() + kRfwvHeaderSize);
   const Bytes pcm(smp.begin() + kRfwvHeaderSize, smp.end());
@@ -466,8 +468,10 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   step("close", FileRequest(0x03, Bytes(11, 0x00)));
 }
 
-void SpdsxDevice::RegisterWave(int sample_index, int frames,
-    const std::string& wavename, const std::string& filename) {
+void SpdsxDevice::RegisterWave(int sample_index,
+                               int frames,
+                               const std::string& wavename,
+                               const std::string& filename) {
   // Replays the official app's post-write register sequence (decoded from
   // synthupload-1.log, 2026-07-13): finalize the temp file, open a register
   // slot for N, then write two DT1 directory records into the block at
@@ -475,11 +479,12 @@ void SpdsxDevice::RegisterWave(int sample_index, int frames,
   // field is written as 0; the device ignores it (live-verified — a
   // zero-hash sample registers, measures, and plays normally).
   const std::string smp_path = RemoteWavePath(sample_index);
-  const std::string tmp_path =
-      smp_path.substr(0, smp_path.size() - 4) + ".TMP";
+  const std::string tmp_path = smp_path.substr(0, smp_path.size() - 4) + ".TMP";
 
   auto trace = [&](const char* label, const Bytes& ack) {
-    if (std::getenv("SPDSX_TRACE") == nullptr) return;
+    if (std::getenv("SPDSX_TRACE") == nullptr) {
+      return;
+    }
     std::string hex;
     char buf[4];
     for (size_t i = 0; i < ack.size() && i < 16; ++i) {
@@ -489,21 +494,24 @@ void SpdsxDevice::RegisterWave(int sample_index, int frames,
     std::fprintf(stderr, "  %-14s -> %s\n", label, hex.c_str());
   };
 
-  trace("finalize tmp",
-      Command(FileRequest(0x0A, PathBody(tmp_path)), 3.0));
+  trace("finalize tmp", Command(FileRequest(0x0A, PathBody(tmp_path)), 3.0));
   trace("register 0b", Command(ControlFrame(0x0B, sample_index), 3.0));
   trace("register 0c", Command(ControlFrame(0x0C, sample_index), 3.0));
   trace("base record",
-      Command(Dt1(SampleRecordAddr(sample_index, 0x00),
-          SampleBaseRecord(frames)), 3.0));
+        Command(
+            Dt1(SampleRecordAddr(sample_index, 0x00), SampleBaseRecord(frames)),
+            3.0));
   trace("name record",
-      Command(Dt1(SampleRecordAddr(sample_index, 0x1B),
-          SampleNameRecord(wavename, filename, /*content_hash=*/0)), 3.0));
+        Command(Dt1(SampleRecordAddr(sample_index, 0x1B),
+                    SampleNameRecord(wavename, filename, /*content_hash=*/0)),
+                3.0));
   Commit();
 }
 
-void SpdsxDevice::UploadWave(int sample_index, const Bytes& smp,
-    const std::string& wavename, const std::string& filename) {
+void SpdsxDevice::UploadWave(int sample_index,
+                             const Bytes& smp,
+                             const std::string& wavename,
+                             const std::string& filename) {
   // The full upload: write the wave file to flash, then register it in the
   // pool directory (writing without registering leaves an orphan file no
   // UI can see, so the two are never done separately). `frames` = 16-bit
@@ -516,8 +524,10 @@ void SpdsxDevice::UploadWave(int sample_index, const Bytes& smp,
   RegisterWave(sample_index, frames, wavename, filename);
 }
 
-Bytes SpdsxDevice::DumpBank(uint8_t bank, const BlockCallback& on_block,
-    double idle_timeout, double block_timeout) {
+Bytes SpdsxDevice::DumpBank(uint8_t bank,
+                            const BlockCallback& on_block,
+                            double idle_timeout,
+                            double block_timeout) {
   // The official app's load handshake (decoded 2026-07-12): PREPARE every
   // bank, then BEGIN -> repeated READ (each yields a batch of 6c 02 data
   // blocks, the device advancing its own cursor) -> END. We loop READ

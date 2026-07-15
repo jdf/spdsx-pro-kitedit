@@ -43,11 +43,11 @@ std::string_view SampleCategoryName(int category);
 
 // One named wave in the device pool.
 struct SampleRecord {
-  int index = 0;         // pool index; what pad wave assignment references
+  int index = 0;  // pool index; what pad wave assignment references
   std::string wavename;  // display name
   std::string filename;  // original file name
-  uint32_t frames = 0;   // length in sample frames
-  int category = 0;      // 0..21
+  uint32_t frames = 0;  // length in sample frames
+  int category = 0;  // 0..21
 
   // Factory preload waves can never be exported off the device, so
   // they will never have local audio; user imports eventually will.
@@ -72,6 +72,7 @@ std::string RemoteWavePath(int index);
 // then signed-LE PCM at kRfwvHeaderSize. Reading PCM from offset 32
 // instead plays that block as a ~5-10ms burst of noise at the start.
 inline constexpr size_t kRfwvHeaderSize = 512;
+
 struct RfwvHeader {
   bool valid = false;
   uint32_t data_bytes = 0;
@@ -79,6 +80,7 @@ struct RfwvHeader {
   uint16_t channels = 0;
   uint16_t bits_per_sample = 0;
 };
+
 // Parses an RFWV header from the start of a `.SMP` payload.
 RfwvHeader ParseRfwvHeader(const Bytes& smp);
 
@@ -98,8 +100,10 @@ Bytes RfwvToWav(const Bytes& smp);
 // The device only plays 48 kHz / 16-bit material, so callers must resample
 // first; channels are preserved (mono and stereo both play). See
 // WAVE-EXPORT-PROTOCOL.md.
-Bytes PcmToRfwv(const Bytes& pcm, uint32_t sample_rate, uint16_t channels,
-    uint16_t bits_per_sample);
+Bytes PcmToRfwv(const Bytes& pcm,
+                uint32_t sample_rate,
+                uint16_t channels,
+                uint16_t bits_per_sample);
 
 }  // namespace spdsx::device
 

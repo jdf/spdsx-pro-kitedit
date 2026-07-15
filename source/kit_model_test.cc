@@ -15,8 +15,7 @@ class RecordingListener : public KitModel::Listener {
 public:
   void KitNameChanged() override { ++name_changes; }
 
-  void SampleChanged(int pad, int layer) override
-  {
+  void SampleChanged(int pad, int layer) override {
     samples.emplace_back(pad, layer);
   }
 
@@ -41,8 +40,7 @@ protected:
 
 // The literals are the device's factory values (see the kit-record layout in
 // CLAUDE.md), so this pins them rather than restating the constants.
-TEST(PadParams, DefaultsAreTheDeviceFactoryValues)
-{
+TEST(PadParams, DefaultsAreTheDeviceFactoryValues) {
   const PadParams params;
   EXPECT_EQ(params.mode, LayerMode::kMix);
   EXPECT_EQ(params.fade_point, 80);
@@ -56,8 +54,7 @@ TEST(PadParams, DefaultsAreTheDeviceFactoryValues)
   EXPECT_EQ(params.hi_hat_decay, 25);
 }
 
-TEST(PadParams, ComparesEveryField)
-{
+TEST(PadParams, ComparesEveryField) {
   const PadParams params;
   EXPECT_EQ(params, PadParams());
 
@@ -68,16 +65,14 @@ TEST(PadParams, ComparesEveryField)
 
 // ---- LayerSample: the dual identity (nothing / local file / pool wave) ----
 
-TEST(LayerSample, DefaultHoldsNothing)
-{
+TEST(LayerSample, DefaultHoldsNothing) {
   const LayerSample sample;
   EXPECT_TRUE(sample.empty());
   EXPECT_FALSE(sample.is_file());
   EXPECT_FALSE(sample.is_device());
 }
 
-TEST(LayerSample, HoldsALocalFile)
-{
+TEST(LayerSample, HoldsALocalFile) {
   const LayerSample sample {juce::File("/tmp/kick.wav")};
   EXPECT_FALSE(sample.empty());
   EXPECT_TRUE(sample.is_file());
@@ -85,8 +80,7 @@ TEST(LayerSample, HoldsALocalFile)
   EXPECT_EQ(sample.file, juce::File("/tmp/kick.wav"));
 }
 
-TEST(LayerSample, HoldsADevicePoolWave)
-{
+TEST(LayerSample, HoldsADevicePoolWave) {
   const LayerSample sample = LayerSample::DeviceWave(1590);
   EXPECT_FALSE(sample.empty());
   EXPECT_FALSE(sample.is_file());
@@ -96,8 +90,7 @@ TEST(LayerSample, HoldsADevicePoolWave)
 
 // Pool index 0 means "no wave" on the device, so it degrades to empty rather
 // than to a device reference.
-TEST(LayerSample, DeviceWaveZeroIsEmpty)
-{
+TEST(LayerSample, DeviceWaveZeroIsEmpty) {
   const LayerSample sample = LayerSample::DeviceWave(0);
   EXPECT_TRUE(sample.empty());
   EXPECT_FALSE(sample.is_device());
@@ -105,13 +98,11 @@ TEST(LayerSample, DeviceWaveZeroIsEmpty)
 
 // ---- KitModel defaults ----
 
-TEST(KitModel, StartsUntitled)
-{
+TEST(KitModel, StartsUntitled) {
   EXPECT_EQ(KitModel().name(), juce::String("Untitled Kit"));
 }
 
-TEST(KitModel, LastPadDefaultsToHiHatTheRestToMix)
-{
+TEST(KitModel, LastPadDefaultsToHiHatTheRestToMix) {
   const KitModel model;
   for (int pad = 0; pad < KitModel::kPadCount - 1; ++pad) {
     EXPECT_EQ(model.params(pad).mode, LayerMode::kMix) << "pad " << pad;
@@ -123,8 +114,7 @@ TEST(KitModel, LastPadDefaultsToHiHatTheRestToMix)
             LayerMode::kHiHat);
 }
 
-TEST(KitModel, StartsWithEveryLayerEmpty)
-{
+TEST(KitModel, StartsWithEveryLayerEmpty) {
   const KitModel model;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
@@ -134,8 +124,7 @@ TEST(KitModel, StartsWithEveryLayerEmpty)
   }
 }
 
-TEST(KitModel, PadIndexIsBoundsChecked)
-{
+TEST(KitModel, PadIndexIsBoundsChecked) {
   const KitModel model;
   EXPECT_THROW((void)model.pad(KitModel::kPadCount), std::out_of_range);
   EXPECT_THROW((void)model.pad(-1), std::out_of_range);
@@ -143,8 +132,7 @@ TEST(KitModel, PadIndexIsBoundsChecked)
 
 // ---- Mutation and notification ----
 
-TEST_F(KitModelTest, SetNameStoresAndNotifies)
-{
+TEST_F(KitModelTest, SetNameStoresAndNotifies) {
   model.set_name("ZZZ");
   EXPECT_EQ(model.name(), juce::String("ZZZ"));
   EXPECT_EQ(listener.name_changes, 1);
@@ -152,15 +140,13 @@ TEST_F(KitModelTest, SetNameStoresAndNotifies)
 
 // The no-op guards are what keep undo transactions and the document's dirty
 // flag from firing on writes that change nothing.
-TEST_F(KitModelTest, SettingTheSameNameDoesNotNotify)
-{
+TEST_F(KitModelTest, SettingTheSameNameDoesNotNotify) {
   model.set_name("ZZZ");
   model.set_name("ZZZ");
   EXPECT_EQ(listener.name_changes, 1);
 }
 
-TEST_F(KitModelTest, SetSampleStoresAndNotifiesWithPadAndLayer)
-{
+TEST_F(KitModelTest, SetSampleStoresAndNotifiesWithPadAndLayer) {
   const LayerSample sample = LayerSample::DeviceWave(7);
   model.set_sample(3, 1, sample);
 
@@ -169,16 +155,14 @@ TEST_F(KitModelTest, SetSampleStoresAndNotifiesWithPadAndLayer)
   EXPECT_EQ(listener.samples.front(), std::make_pair(3, 1));
 }
 
-TEST_F(KitModelTest, SettingAnIdenticalSampleDoesNotNotify)
-{
+TEST_F(KitModelTest, SettingAnIdenticalSampleDoesNotNotify) {
   const LayerSample sample {juce::File("/tmp/snare.wav")};
   model.set_sample(0, 0, sample);
   model.set_sample(0, 0, sample);
   EXPECT_EQ(listener.samples.size(), 1u);
 }
 
-TEST_F(KitModelTest, LayerZeroIsTopAndLayerOneIsBottom)
-{
+TEST_F(KitModelTest, LayerZeroIsTopAndLayerOneIsBottom) {
   const LayerSample top = LayerSample::DeviceWave(1);
   const LayerSample bottom = LayerSample::DeviceWave(2);
   model.set_sample(4, 0, top);
@@ -190,8 +174,7 @@ TEST_F(KitModelTest, LayerZeroIsTopAndLayerOneIsBottom)
   EXPECT_EQ(model.pad(4).samples.second, bottom);
 }
 
-TEST_F(KitModelTest, SetPadParamsStoresAndNotifies)
-{
+TEST_F(KitModelTest, SetPadParamsStoresAndNotifies) {
   PadParams params = model.params(2);
   params.mode = LayerMode::kXfade;
   params.fade_point = 40;
@@ -204,8 +187,7 @@ TEST_F(KitModelTest, SetPadParamsStoresAndNotifies)
 }
 
 // A gesture that changes several fields is still one undo step, one event.
-TEST_F(KitModelTest, SetPadParamsNotifiesOncePerCall)
-{
+TEST_F(KitModelTest, SetPadParamsNotifiesOncePerCall) {
   PadParams params = model.params(0);
   params.dynamics = false;
   params.curve = DynamicsCurve::kLoud3;
@@ -215,14 +197,12 @@ TEST_F(KitModelTest, SetPadParamsNotifiesOncePerCall)
   EXPECT_EQ(listener.params.size(), 1u);
 }
 
-TEST_F(KitModelTest, SettingIdenticalParamsDoesNotNotify)
-{
+TEST_F(KitModelTest, SettingIdenticalParamsDoesNotNotify) {
   model.SetPadParams(1, model.params(1));
   EXPECT_TRUE(listener.params.empty());
 }
 
-TEST_F(KitModelTest, PadsAreIndependent)
-{
+TEST_F(KitModelTest, PadsAreIndependent) {
   PadParams params = model.params(0);
   params.mode = LayerMode::kAlternate;
   model.SetPadParams(0, params);
@@ -234,8 +214,7 @@ TEST_F(KitModelTest, PadsAreIndependent)
 // Listener's methods default to no-ops, so a subclass overrides only the
 // events it cares about -- a listener that overrides nothing still has to
 // survive every event the model emits.
-TEST(KitModel, ListenersMayOverrideNothing)
-{
+TEST(KitModel, ListenersMayOverrideNothing) {
   KitModel model;
   KitModel::Listener bare;
   model.AddListener(&bare);
@@ -250,8 +229,7 @@ TEST(KitModel, ListenersMayOverrideNothing)
   EXPECT_EQ(model.name(), juce::String("ZZZ"));
 }
 
-TEST_F(KitModelTest, RemovedListenersStopHearingChanges)
-{
+TEST_F(KitModelTest, RemovedListenersStopHearingChanges) {
   model.RemoveListener(&listener);
   model.set_name("silent");
   model.set_sample(0, 0, LayerSample::DeviceWave(3));

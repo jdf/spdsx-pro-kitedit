@@ -20,7 +20,7 @@ namespace spdsx::device {
 std::vector<std::string> ListUsbModemPorts();
 
 class SerialPort {
- public:
+public:
   // Opens the port and configures raw mode + baud. Throws std::runtime_error
   // if the node can't be opened.
   explicit SerialPort(const std::string& path, int baud = 230400);
@@ -32,7 +32,7 @@ class SerialPort {
   // Reads up to n bytes, returning early if timeout_seconds elapses first.
   Bytes ReadExact(size_t n, double timeout_seconds);
 
- private:
+private:
   int fd_ = -1;
 };
 

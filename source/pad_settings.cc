@@ -21,17 +21,14 @@ constexpr int kAlignInset = 4;
 // the slider bounds.
 constexpr int kV4RotaryMargin = 10;
 
-constexpr int kBaseHeight = kPadding * 2 + kRowHeight * 3 + kRowGap * 3
-    + kKnobHeight;
-constexpr int kPedalHeight =
-    kRowGap + kRowHeight + (kRowGap + kKnobHeight) * 3;
+constexpr int kBaseHeight =
+    kPadding * 2 + kRowHeight * 3 + kRowGap * 3 + kKnobHeight;
+constexpr int kPedalHeight = kRowGap + kRowHeight + (kRowGap + kKnobHeight) * 3;
 
 }  // namespace
 
-PadSettingsPanel::PadSettingsPanel()
-{
-  dynamics_.onClick = [this]
-  {
+PadSettingsPanel::PadSettingsPanel() {
+  dynamics_.onClick = [this] {
     RefreshEnablement();
     Push();
   };
@@ -50,8 +47,7 @@ PadSettingsPanel::PadSettingsPanel()
 
   // A knob with a value box doubling as direct entry: click the
   // number and type.
-  auto init_knob = [this](juce::Slider& knob, juce::Label& label, int min)
-  {
+  auto init_knob = [this](juce::Slider& knob, juce::Label& label, int min) {
     knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     knob.setRange(min, 127, 1);
     knob.setTextBoxStyle(
@@ -76,14 +72,13 @@ PadSettingsPanel::PadSettingsPanel()
   setSize(kPanelWidth, kBaseHeight);
 }
 
-void PadSettingsPanel::SetParams(const PadParams& params)
-{
+void PadSettingsPanel::SetParams(const PadParams& params) {
   dynamics_.setToggleState(params.dynamics, juce::dontSendNotification);
-  curve_.setSelectedId(
-      static_cast<int>(params.curve) + 1, juce::dontSendNotification);
+  curve_.setSelectedId(static_cast<int>(params.curve) + 1,
+                       juce::dontSendNotification);
   velocity_.setValue(params.fixed_velocity, juce::dontSendNotification);
-  trigger_reserve_.setToggleState(
-      params.trigger_reserve, juce::dontSendNotification);
+  trigger_reserve_.setToggleState(params.trigger_reserve,
+                                  juce::dontSendNotification);
   volume_.setValue(params.hi_hat_volume, juce::dontSendNotification);
   fade_in_.setValue(params.hi_hat_fade_in, juce::dontSendNotification);
   decay_.setValue(params.hi_hat_decay, juce::dontSendNotification);
@@ -91,13 +86,12 @@ void PadSettingsPanel::SetParams(const PadParams& params)
 
   show_pedal_ = params.mode == LayerMode::kHiHat;
   for (juce::Component* c : {static_cast<juce::Component*>(&pedal_heading_),
-           static_cast<juce::Component*>(&volume_label_),
-           static_cast<juce::Component*>(&volume_),
-           static_cast<juce::Component*>(&fade_in_label_),
-           static_cast<juce::Component*>(&fade_in_),
-           static_cast<juce::Component*>(&decay_label_),
-           static_cast<juce::Component*>(&decay_)})
-  {
+                             static_cast<juce::Component*>(&volume_label_),
+                             static_cast<juce::Component*>(&volume_),
+                             static_cast<juce::Component*>(&fade_in_label_),
+                             static_cast<juce::Component*>(&fade_in_),
+                             static_cast<juce::Component*>(&decay_label_),
+                             static_cast<juce::Component*>(&decay_)}) {
     c->setVisible(show_pedal_);
   }
   // The CallOutBox tracks content size, so growing for the pedal
@@ -105,23 +99,22 @@ void PadSettingsPanel::SetParams(const PadParams& params)
   setSize(kPanelWidth, kBaseHeight + (show_pedal_ ? kPedalHeight : 0));
 }
 
-void PadSettingsPanel::resized()
-{
+void PadSettingsPanel::resized() {
   // Knobs go on the left, aligned with the other controls; the label
   // follows on the right, vertically centred on the knob. The slider
   // gets exactly the dial's width — any extra and the dial drifts
   // toward the centre of its bounds — and is shifted left by the
   // margin LookAndFeel_V4 leaves around the dial, so the visible
   // circle (not the widget bounds) is what left-aligns.
-  auto knob_row = [](juce::Rectangle<int>& area, juce::Slider& knob,
-                      juce::Label& label)
-  {
+  auto knob_row = [](juce::Rectangle<int>& area,
+                     juce::Slider& knob,
+                     juce::Label& label) {
     auto row = area.removeFromTop(kKnobHeight);
     row.removeFromLeft(kAlignInset);
     knob.setBounds(
         row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
     label.setBounds(row.withHeight(kRowHeight)
-            .withY(row.getY() + (kKnobHeight - kRowHeight) / 2));
+                        .withY(row.getY() + (kKnobHeight - kRowHeight) / 2));
     area.removeFromTop(kRowGap);
   };
 
@@ -145,8 +138,7 @@ void PadSettingsPanel::resized()
   knob_row(area, decay_, decay_label_);
 }
 
-void PadSettingsPanel::Push()
-{
+void PadSettingsPanel::Push() {
   if (on_change == nullptr) {
     return;
   }
@@ -161,8 +153,7 @@ void PadSettingsPanel::Push()
   on_change(params);
 }
 
-void PadSettingsPanel::RefreshEnablement()
-{
+void PadSettingsPanel::RefreshEnablement() {
   const bool dynamics = dynamics_.getToggleState();
   curve_.setEnabled(dynamics);
   curve_label_.setEnabled(dynamics);

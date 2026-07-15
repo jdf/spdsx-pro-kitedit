@@ -31,22 +31,18 @@ CREATE TABLE IF NOT EXISTS samples(
   category INTEGER, content_hash INTEGER, audio BLOB);
 )SQL";
 
-const char* SnapshotName(Snapshot s)
-{
+const char* SnapshotName(Snapshot s) {
   return s == Snapshot::kBase ? "base" : "current";
 }
 
 // Throws on a real SQLite error (ROW/DONE/OK are all fine).
-void Check(sqlite3* db, int rc, const char* what)
-{
+void Check(sqlite3* db, int rc, const char* what) {
   if (rc != SQLITE_OK && rc != SQLITE_ROW && rc != SQLITE_DONE) {
-    throw std::runtime_error(
-        std::string(what) + ": " + sqlite3_errmsg(db));
+    throw std::runtime_error(std::string(what) + ": " + sqlite3_errmsg(db));
   }
 }
 
-void Exec(sqlite3* db, const char* sql)
-{
+void Exec(sqlite3* db, const char* sql) {
   char* err = nullptr;
   if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string msg = err ? err : "exec failed";
@@ -58,51 +54,53 @@ void Exec(sqlite3* db, const char* sql)
 // A prepared statement with reset-and-reuse; finalizes on destruction.
 class Stmt {
 public:
-  Stmt(sqlite3* db, const char* sql) : db_(db)
-  {
+  Stmt(sqlite3* db, const char* sql)
+      : db_(db) {
     Check(db, sqlite3_prepare_v2(db, sql, -1, &stmt_, nullptr), "prepare");
   }
+
   ~Stmt() { sqlite3_finalize(stmt_); }
+
   Stmt(const Stmt&) = delete;
   Stmt& operator=(const Stmt&) = delete;
 
   void Int(int col, int v) { sqlite3_bind_int(stmt_, col, v); }
+
   void Int64(int col, sqlite3_int64 v) { sqlite3_bind_int64(stmt_, col, v); }
-  void Text(int col, const juce::String& v)
-  {
+
+  void Text(int col, const juce::String& v) {
     const auto utf8 = v.toStdString();
     // SQLITE_TRANSIENT: sqlite copies the bytes, so utf8 can die.
     sqlite3_bind_text(stmt_, col, utf8.c_str(), -1, SQLITE_TRANSIENT);
   }
-  void Blob(int col, const void* data, size_t bytes)
-  {
-    sqlite3_bind_blob(stmt_, col, data, static_cast<int>(bytes),
-        SQLITE_TRANSIENT);
+
+  void Blob(int col, const void* data, size_t bytes) {
+    sqlite3_bind_blob(
+        stmt_, col, data, static_cast<int>(bytes), SQLITE_TRANSIENT);
   }
 
   // Steps; returns true while a row is available.
-  bool Step()
-  {
+  bool Step() {
     const int rc = sqlite3_step(stmt_);
     Check(db_, rc, "step");
     return rc == SQLITE_ROW;
   }
-  void RunOnce()
-  {
+
+  void RunOnce() {
     Step();
     Reset();
   }
-  void Reset()
-  {
+
+  void Reset() {
     sqlite3_reset(stmt_);
     sqlite3_clear_bindings(stmt_);
   }
 
   int ColInt(int col) { return sqlite3_column_int(stmt_, col); }
-  juce::String ColText(int col)
-  {
-    const auto* p = reinterpret_cast<const char*>(
-        sqlite3_column_text(stmt_, col));
+
+  juce::String ColText(int col) {
+    const auto* p =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt_, col));
     return p != nullptr ? juce::String::fromUTF8(p) : juce::String();
   }
 
@@ -114,13 +112,15 @@ private:
 };
 
 // A pad's dual-identity layer -> (device index, local path).
-int LayerDevice(const LayerSample& s) { return s.is_device() ? s.device_index : 0; }
-juce::String LayerLocal(const LayerSample& s)
-{
+int LayerDevice(const LayerSample& s) {
+  return s.is_device() ? s.device_index : 0;
+}
+
+juce::String LayerLocal(const LayerSample& s) {
   return s.is_file() ? s.file.getFullPathName() : juce::String();
 }
-LayerSample LayerFrom(int device_idx, const juce::String& local)
-{
+
+LayerSample LayerFrom(int device_idx, const juce::String& local) {
   if (device_idx > 0) {
     return LayerSample::DeviceWave(device_idx);
   }
@@ -132,11 +132,12 @@ LayerSample LayerFrom(int device_idx, const juce::String& local)
 
 }  // namespace
 
-DeviceDb::~DeviceDb() { sqlite3_close(db_); }
+DeviceDb::~DeviceDb() {
+  sqlite3_close(db_);
+}
 
 std::unique_ptr<DeviceDb> DeviceDb::Open(const juce::File& path,
-    juce::String& error)
-{
+                                         juce::String& error) {
   // The one moment the version may be stamped (see below).
   const bool creating = !path.existsAsFile();
   sqlite3* db = nullptr;
@@ -159,13 +160,16 @@ std::unique_ptr<DeviceDb> DeviceDb::Open(const juce::File& path,
     // updates this in place. app/created_utc are one-time provenance too.
     if (creating) {
       Exec(db,
-          ("PRAGMA user_version=" + std::to_string(kSchemaVersion)).c_str());
+           ("PRAGMA user_version=" + std::to_string(kSchemaVersion)).c_str());
     }
-    Exec(db, ("INSERT OR IGNORE INTO meta(key,value) VALUES"
-              "('schema_version','" + std::to_string(kSchemaVersion) + "'),"
-              "('app','spdsx-patchedit'),"
-              "('created_utc', strftime('%Y-%m-%dT%H:%M:%SZ','now'));")
-                 .c_str());
+    Exec(db,
+         ("INSERT OR IGNORE INTO meta(key,value) VALUES"
+          "('schema_version','"
+          + std::to_string(kSchemaVersion)
+          + "'),"
+            "('app','spdsx-patchedit'),"
+            "('created_utc', strftime('%Y-%m-%dT%H:%M:%SZ','now'));")
+             .c_str());
   } catch (const std::exception& e) {
     error = juce::String("schema init failed: ") + e.what();
     sqlite3_close(db);
@@ -174,8 +178,7 @@ std::unique_ptr<DeviceDb> DeviceDb::Open(const juce::File& path,
   return std::unique_ptr<DeviceDb>(new DeviceDb(db));
 }
 
-void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot)
-{
+void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
   const char* snap = SnapshotName(snapshot);
   Exec(db_, "BEGIN;");
   try {
@@ -188,7 +191,8 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot)
       delp.RunOnce();
     }
     Stmt kit(db_, "INSERT INTO kits(snapshot, idx, name) VALUES(?1,?2,?3);");
-    Stmt pad(db_,
+    Stmt pad(
+        db_,
         "INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, "
         "fade_end, dynamics, curve, fixed_velocity, hihat_vol, hihat_fadein, "
         "hihat_decay, trigger_reserve, top_device, top_local, bottom_device, "
@@ -225,8 +229,8 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot)
     }
     if (snapshot == Snapshot::kCurrent) {
       Stmt meta(db_,
-          "INSERT INTO meta(key, value) VALUES('current_kit', ?1) "
-          "ON CONFLICT(key) DO UPDATE SET value=excluded.value;");
+                "INSERT INTO meta(key, value) VALUES('current_kit', ?1) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value;");
       meta.Text(1, juce::String(model.current_kit()));
       meta.RunOnce();
     }
@@ -237,8 +241,7 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot)
   Exec(db_, "COMMIT;");
 }
 
-void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot)
-{
+void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
   const char* snap = SnapshotName(snapshot);
   // Start from defaults so any kit missing from the DB is a clean USER KIT.
   for (int k = 0; k < DeviceModel::kKitCount; ++k) {
@@ -255,7 +258,8 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot)
     }
   }
   {
-    Stmt pad(db_,
+    Stmt pad(
+        db_,
         "SELECT kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
         "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
         "trigger_reserve, top_device, top_local, bottom_device, bottom_local "
@@ -273,7 +277,8 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot)
       pp.mode = static_cast<LayerMode>(
           juce::jlimit(0, kLayerModeCount - 1, pad.ColInt(2)));
       pp.fade_point = juce::jlimit(1, 127, pad.ColInt(3));
-      pp.fade_end = juce::jmax(pp.fade_point, juce::jlimit(1, 127, pad.ColInt(4)));
+      pp.fade_end =
+          juce::jmax(pp.fade_point, juce::jlimit(1, 127, pad.ColInt(4)));
       pp.dynamics = pad.ColInt(5) != 0;
       pp.curve = static_cast<DynamicsCurve>(
           juce::jlimit(0, kDynamicsCurveCount - 1, pad.ColInt(6)));
@@ -289,12 +294,13 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot)
   if (snapshot == Snapshot::kCurrent) {
     Stmt meta(db_, "SELECT value FROM meta WHERE key='current_kit';");
     if (meta.Step()) {
-      model.set_current_kit(juce::jlimit(0, DeviceModel::kKitCount - 1,
-          meta.ColText(0).getIntValue()));
+      model.set_current_kit(juce::jlimit(
+          0, DeviceModel::kKitCount - 1, meta.ColText(0).getIntValue()));
     }
     std::vector<device::SampleRecord> pool;
-    Stmt s(db_, "SELECT idx, wavename, filename, frames, category "
-                "FROM samples ORDER BY idx;");
+    Stmt s(db_,
+           "SELECT idx, wavename, filename, frames, category "
+           "FROM samples ORDER BY idx;");
     while (s.Step()) {
       device::SampleRecord rec;
       rec.index = s.ColInt(0);
@@ -310,16 +316,15 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot)
   }
 }
 
-void DeviceDb::WritePool(const DeviceModel& model)
-{
+void DeviceDb::WritePool(const DeviceModel& model) {
   Exec(db_, "BEGIN;");
   try {
     // Upsert metadata, leaving any cached audio blob untouched.
     Stmt s(db_,
-        "INSERT INTO samples(idx, wavename, filename, frames, category) "
-        "VALUES(?1,?2,?3,?4,?5) ON CONFLICT(idx) DO UPDATE SET "
-        "wavename=excluded.wavename, filename=excluded.filename, "
-        "frames=excluded.frames, category=excluded.category;");
+           "INSERT INTO samples(idx, wavename, filename, frames, category) "
+           "VALUES(?1,?2,?3,?4,?5) ON CONFLICT(idx) DO UPDATE SET "
+           "wavename=excluded.wavename, filename=excluded.filename, "
+           "frames=excluded.frames, category=excluded.category;");
     for (const auto& rec : model.sample_pool()) {
       s.Int(1, rec.index);
       s.Text(2, juce::String(rec.wavename));
@@ -335,15 +340,13 @@ void DeviceDb::WritePool(const DeviceModel& model)
   Exec(db_, "COMMIT;");
 }
 
-bool DeviceDb::HasAudio(int sample_index)
-{
+bool DeviceDb::HasAudio(int sample_index) {
   Stmt s(db_, "SELECT audio IS NOT NULL FROM samples WHERE idx=?1;");
   s.Int(1, sample_index);
   return s.Step() && s.ColInt(0) != 0;
 }
 
-juce::MemoryBlock DeviceDb::GetAudio(int sample_index)
-{
+juce::MemoryBlock DeviceDb::GetAudio(int sample_index) {
   Stmt s(db_, "SELECT audio FROM samples WHERE idx=?1;");
   s.Int(1, sample_index);
   juce::MemoryBlock out;
@@ -357,35 +360,34 @@ juce::MemoryBlock DeviceDb::GetAudio(int sample_index)
   return out;
 }
 
-void DeviceDb::PutAudio(int sample_index, const void* data, size_t bytes)
-{
+void DeviceDb::PutAudio(int sample_index, const void* data, size_t bytes) {
   Stmt s(db_,
-      "INSERT INTO samples(idx, audio) VALUES(?1,?2) "
-      "ON CONFLICT(idx) DO UPDATE SET audio=excluded.audio;");
+         "INSERT INTO samples(idx, audio) VALUES(?1,?2) "
+         "ON CONFLICT(idx) DO UPDATE SET audio=excluded.audio;");
   s.Int(1, sample_index);
   s.Blob(2, data, bytes);
   s.RunOnce();
 }
 
-int DeviceDb::SchemaVersion()
-{
+int DeviceDb::SchemaVersion() {
   Stmt s(db_, "SELECT value FROM meta WHERE key='schema_version';");
   return s.Step() ? s.ColText(0).getIntValue() : 0;
 }
 
-void DeviceDb::CaptureBase()
-{
+void DeviceDb::CaptureBase() {
   Exec(db_, "BEGIN;");
   try {
     Exec(db_, "DELETE FROM kits WHERE snapshot='base';");
     Exec(db_, "DELETE FROM pads WHERE snapshot='base';");
-    Exec(db_, "INSERT INTO kits(snapshot, idx, name) "
-              "SELECT 'base', idx, name FROM kits WHERE snapshot='current';");
-    Exec(db_, "INSERT INTO pads SELECT 'base', kit_idx, pad_idx, mode, "
-              "fade_point, fade_end, dynamics, curve, fixed_velocity, "
-              "hihat_vol, hihat_fadein, hihat_decay, trigger_reserve, "
-              "top_device, top_local, bottom_device, bottom_local "
-              "FROM pads WHERE snapshot='current';");
+    Exec(db_,
+         "INSERT INTO kits(snapshot, idx, name) "
+         "SELECT 'base', idx, name FROM kits WHERE snapshot='current';");
+    Exec(db_,
+         "INSERT INTO pads SELECT 'base', kit_idx, pad_idx, mode, "
+         "fade_point, fade_end, dynamics, curve, fixed_velocity, "
+         "hihat_vol, hihat_fadein, hihat_decay, trigger_reserve, "
+         "top_device, top_local, bottom_device, bottom_local "
+         "FROM pads WHERE snapshot='current';");
   } catch (...) {
     Exec(db_, "ROLLBACK;");
     throw;

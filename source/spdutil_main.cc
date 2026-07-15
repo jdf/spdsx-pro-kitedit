@@ -44,8 +44,8 @@
 
 namespace {
 
-using spdsx::device::Bytes;
 using spdsx::device::BulkBlock;
+using spdsx::device::Bytes;
 using spdsx::device::ObjectKind;
 using spdsx::device::PadSlot;
 
@@ -73,9 +73,15 @@ std::string ToPrintable(const Bytes& b) {
 }
 
 int HexVal(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= '0' && c <= '9') {
+    return c - '0';
+  }
+  if (c >= 'a' && c <= 'f') {
+    return c - 'a' + 10;
+  }
+  if (c >= 'A' && c <= 'F') {
+    return c - 'A' + 10;
+  }
   return -1;
 }
 
@@ -109,6 +115,7 @@ int RunSelfTest() {
     int kit;
     const char* hex;
   };
+
   const KitCase kit_cases[] = {
       {3, "f0 41 10 00 00 00 00 16 12 00 00 00 00 00 00 00 02 7e f7"},
       {128, "f0 41 10 00 00 00 00 16 12 00 00 00 00 00 00 07 0f 6a f7"},
@@ -118,16 +125,18 @@ int RunSelfTest() {
       {200, "f0 41 10 00 00 00 00 16 12 00 00 00 00 00 00 0c 07 6d f7"},
   };
   for (const auto& c : kit_cases) {
-    const Bytes built =
-        spdsx::device::Dt1(spdsx::device::kKitSelectAddr,
-            spdsx::device::EncodeKit(c.kit));
+    const Bytes built = spdsx::device::Dt1(spdsx::device::kKitSelectAddr,
+                                           spdsx::device::EncodeKit(c.kit));
     const bool ok = built == FromHex(c.hex);
     all_ok = all_ok && ok;
-    std::printf("kit %3d: %-8s %s\n", c.kit, ok ? "MATCH" : "MISMATCH",
-        ToHex(built).c_str());
+    std::printf("kit %3d: %-8s %s\n",
+                c.kit,
+                ok ? "MATCH" : "MISMATCH",
+                ToHex(built).c_str());
   }
 
   std::printf("\n--- pad-link captures (kit-encoded address) ---\n");
+
   struct LinkCase {
     int kit;
     ObjectKind kind;
@@ -135,79 +144,118 @@ int RunSelfTest() {
     int group;
     const char* hex;
   };
+
   const LinkCase link_cases[] = {
-      {5, ObjectKind::kTrig, 7, 3,
-          "f0 41 10 00 00 00 00 16 12 04 08 2f 0c 03 36 f7"},
-      {10, ObjectKind::kTrig, 7, 5,
-          "f0 41 10 00 00 00 00 16 12 04 12 2f 0c 05 2a f7"},
-      {20, ObjectKind::kTrig, 7, 5,
-          "f0 41 10 00 00 00 00 16 12 04 26 2f 0c 05 16 f7"},
-      {200, ObjectKind::kTrig, 7, 1,
-          "f0 41 10 00 00 00 00 16 12 07 0e 2f 0c 01 2f f7"},
-      {200, ObjectKind::kPad, 7, 11,
-          "f0 41 10 00 00 00 00 16 12 07 0e 26 0d 0b 2d f7"},
+      {5,
+       ObjectKind::kTrig,
+       7,
+       3,
+       "f0 41 10 00 00 00 00 16 12 04 08 2f 0c 03 36 f7"},
+      {10,
+       ObjectKind::kTrig,
+       7,
+       5,
+       "f0 41 10 00 00 00 00 16 12 04 12 2f 0c 05 2a f7"},
+      {20,
+       ObjectKind::kTrig,
+       7,
+       5,
+       "f0 41 10 00 00 00 00 16 12 04 26 2f 0c 05 16 f7"},
+      {200,
+       ObjectKind::kTrig,
+       7,
+       1,
+       "f0 41 10 00 00 00 00 16 12 07 0e 2f 0c 01 2f f7"},
+      {200,
+       ObjectKind::kPad,
+       7,
+       11,
+       "f0 41 10 00 00 00 00 16 12 07 0e 26 0d 0b 2d f7"},
   };
   for (const auto& c : link_cases) {
-    const Bytes built = spdsx::device::Dt1(
-        spdsx::device::PadLinkAddr(c.kind, c.index, c.kit),
-        {static_cast<uint8_t>(c.group)});
+    const Bytes built =
+        spdsx::device::Dt1(spdsx::device::PadLinkAddr(c.kind, c.index, c.kit),
+                           {static_cast<uint8_t>(c.group)});
     const bool ok = built == FromHex(c.hex);
     all_ok = all_ok && ok;
-    std::printf("kit %3d %s%d grp%2d: %-8s %s\n", c.kit, KindName(c.kind),
-        c.index, c.group, ok ? "MATCH" : "MISMATCH", ToHex(built).c_str());
+    std::printf("kit %3d %s%d grp%2d: %-8s %s\n",
+                c.kit,
+                KindName(c.kind),
+                c.index,
+                c.group,
+                ok ? "MATCH" : "MISMATCH",
+                ToHex(built).c_str());
   }
 
   std::printf("\n--- parameter writes (kit name, pad wave) ---\n");
   auto check = [&](bool ok, const char* what, const Bytes& built) {
     all_ok = all_ok && ok;
-    std::printf("%-8s %-22s %s\n", ok ? "MATCH" : "MISMATCH", what,
-        ToHex(built).c_str());
+    std::printf("%-8s %-22s %s\n",
+                ok ? "MATCH" : "MISMATCH",
+                what,
+                ToHex(built).c_str());
   };
   // Bulk-read request (captured: stream-a-bank on the 41 6c family).
   check(spdsx::device::BulkReadRequest(0x10)
-          == FromHex("f0 41 6c 03 05 00 00 00 00 10 00 00 00 00 00 00 f7"),
-      "bulk read bank 0x10", spdsx::device::BulkReadRequest(0x10));
+            == FromHex("f0 41 6c 03 05 00 00 00 00 10 00 00 00 00 00 00 f7"),
+        "bulk read bank 0x10",
+        spdsx::device::BulkReadRequest(0x10));
   check(spdsx::device::BulkReadRequest(0x20)
-          == FromHex("f0 41 6c 03 05 00 00 00 00 20 00 00 00 00 00 00 f7"),
-      "bulk read bank 0x20", spdsx::device::BulkReadRequest(0x20));
+            == FromHex("f0 41 6c 03 05 00 00 00 00 20 00 00 00 00 00 00 f7"),
+        "bulk read bank 0x20",
+        spdsx::device::BulkReadRequest(0x20));
   // Nibble encoding (captured: sample 127 -> 00 00 07 0f, 203 -> 00 00 0c 0b).
   check(spdsx::device::NibbleEncode(127) == FromHex("00 00 07 0f"),
-      "nibble(127)", spdsx::device::NibbleEncode(127));
+        "nibble(127)",
+        spdsx::device::NibbleEncode(127));
   check(spdsx::device::NibbleEncode(203) == FromHex("00 00 0c 0b"),
-      "nibble(203)", spdsx::device::NibbleEncode(203));
+        "nibble(203)",
+        spdsx::device::NibbleEncode(203));
   // Kit-name char writes (kit 129 -> 'Z' at index 0 and 15).
   auto name_msg = [](int i) {
     return spdsx::device::Dt1(spdsx::device::KitNameAddr(129, i), {0x5a});
   };
-  check(name_msg(0) == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 00 5a 20 f7"),
-      "name[0]='Z'", name_msg(0));
-  check(name_msg(15) == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 0f 5a 11 f7"),
-      "name[15]='Z'", name_msg(15));
+  check(
+      name_msg(0) == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 00 5a 20 f7"),
+      "name[0]='Z'",
+      name_msg(0));
+  check(name_msg(15)
+            == FromHex("f0 41 10 00 00 00 00 16 12 06 00 00 0f 5a 11 f7"),
+        "name[15]='Z'",
+        name_msg(15));
   // Pad-7 focus and top/bottom wave assignment (127 / 203).
-  const Bytes focus = spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
-      {spdsx::device::SelectValue(ObjectKind::kPad, 7)});
+  const Bytes focus =
+      spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
+                         {spdsx::device::SelectValue(ObjectKind::kPad, 7)});
   check(focus == FromHex("f0 41 10 00 00 00 00 16 12 28 00 00 00 06 52 f7"),
-      "focus pad7", focus);
+        "focus pad7",
+        focus);
   const Bytes top = spdsx::device::Dt1(
       spdsx::device::PadWaveAddr(129, 7, spdsx::device::PadSlot::kTop),
       spdsx::device::NibbleEncode(127));
-  check(top == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"),
-      "pad7 top wave 127", top);
+  check(top
+            == FromHex(
+                "f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"),
+        "pad7 top wave 127",
+        top);
   const Bytes bot = spdsx::device::Dt1(
       spdsx::device::PadWaveAddr(129, 7, spdsx::device::PadSlot::kBottom),
       spdsx::device::NibbleEncode(203));
-  check(bot == FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"),
-      "pad7 bottom wave 203", bot);
+  check(bot
+            == FromHex(
+                "f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"),
+        "pad7 bottom wave 203",
+        bot);
   // Pad+layer-encoded slot addresses, verified live across all 18 slots:
   // pad 9 bottom = 0x51, and the companion enable-flag write.
   check(spdsx::device::PadWaveAddr(129, 9, spdsx::device::PadSlot::kBottom)
-          == FromHex("06 00 51 01"),
-      "pad9 bottom slot addr 0x51",
-      spdsx::device::PadWaveAddr(129, 9, spdsx::device::PadSlot::kBottom));
+            == FromHex("06 00 51 01"),
+        "pad9 bottom slot addr 0x51",
+        spdsx::device::PadWaveAddr(129, 9, spdsx::device::PadSlot::kBottom));
   check(spdsx::device::PadWaveEnableAddr(129, 1, spdsx::device::PadSlot::kTop)
-          == FromHex("06 00 40 00"),
-      "pad1 top enable-flag addr 0x40",
-      spdsx::device::PadWaveEnableAddr(129, 1, spdsx::device::PadSlot::kTop));
+            == FromHex("06 00 40 00"),
+        "pad1 top enable-flag addr 0x40",
+        spdsx::device::PadWaveEnableAddr(129, 1, spdsx::device::PadSlot::kTop));
 
   std::printf("\n--- bulk image split ---\n");
   // A synthetic two-block image: bank 0x10 then 0x20, so the splitter's
@@ -222,9 +270,10 @@ int RunSelfTest() {
       && blocks[1].length == 12;
   all_ok = all_ok && split_ok;
   std::printf("%-8s split: %zu blocks, banks 0x%02x/0x%02x\n",
-      split_ok ? "OK" : "FAIL", blocks.size(),
-      blocks.empty() ? 0 : blocks[0].bank,
-      blocks.size() < 2 ? 0 : blocks[1].bank);
+              split_ok ? "OK" : "FAIL",
+              blocks.size(),
+              blocks.empty() ? 0 : blocks[0].bank,
+              blocks.size() < 2 ? 0 : blocks[1].bank);
 
   std::printf("\n--- clean image + kit parse ---\n");
   {
@@ -244,18 +293,19 @@ int RunSelfTest() {
         && clean[99] == 0xaa && clean[100] == 0xbb && clean[149] == 0xbb;
     all_ok = all_ok && clean_ok;
     std::printf("%-8s clean strips framing (%zu bytes)\n",
-        clean_ok ? "OK" : "FAIL", clean.size());
+                clean_ok ? "OK" : "FAIL",
+                clean.size());
 
     // A clean image with names planted at record 0 and record 128.
-    Bytes img(spdsx::device::kKitArrayBase
-        + 129 * spdsx::device::kKitRecordStride,
+    Bytes img(
+        spdsx::device::kKitArrayBase + 129 * spdsx::device::kKitRecordStride,
         0x00);
     auto put = [&](int kit, const char* name) {
       const size_t rec = spdsx::device::kKitArrayBase
           + static_cast<size_t>(kit) * spdsx::device::kKitRecordStride;
       const std::string padded = std::string(name)
           + std::string(spdsx::device::kKitNameLen - std::string(name).size(),
-              ' ');
+                        ' ');
       for (size_t i = 0; i < spdsx::device::kKitNameLen; ++i) {
         img[rec + i] = static_cast<uint8_t>(padded[i]);
       }
@@ -264,19 +314,19 @@ int RunSelfTest() {
     put(128, "ZZZZZZZZZZZZZZZZ");
     // Plant kit 129 pad 1 params (XFADE 100/120 dyn LOUD3 fv50 trig ON)
     // and pad 3 layer mode (SWITCH), at the mapped offsets.
-    const size_t rec129 = spdsx::device::kKitArrayBase
-        + 128 * spdsx::device::kKitRecordStride;
+    const size_t rec129 =
+        spdsx::device::kKitArrayBase + 128 * spdsx::device::kKitRecordStride;
     const size_t p1 = rec129 + spdsx::device::kPadTableBase;
-    img[p1 + spdsx::device::kPadLayerMode] = 3;    // XFADE
+    img[p1 + spdsx::device::kPadLayerMode] = 3;  // XFADE
     img[p1 + spdsx::device::kPadFadePoint] = 100;
     img[p1 + spdsx::device::kPadFadeEnd] = 120;
     img[p1 + spdsx::device::kPadDynamics] = 1;
-    img[p1 + spdsx::device::kPadDynCurve] = 3;      // LOUD3
+    img[p1 + spdsx::device::kPadDynCurve] = 3;  // LOUD3
     img[p1 + spdsx::device::kPadFixedVel] = 50;
     img[p1 + spdsx::device::kPadTrigReserve] = 1;
     const size_t p3 = rec129 + spdsx::device::kPadTableBase
         + 2 * spdsx::device::kPadBlockStride;
-    img[p3 + spdsx::device::kPadLayerMode] = 4;     // SWITCH
+    img[p3 + spdsx::device::kPadLayerMode] = 4;  // SWITCH
     // Pad 1's waves in the layer table (u16 LE; bottom one block on).
     const size_t l1 = rec129 + spdsx::device::kLayerTableBase;
     img[l1] = 127;
@@ -285,20 +335,23 @@ int RunSelfTest() {
     const bool parse_ok = kits.size() >= 129 && kits[0].name == "Dance"
         && kits[128].name == "ZZZZZZZZZZZZZZZZ";
     all_ok = all_ok && parse_ok;
-    std::printf("%-8s parse: kit1=%s kit129=%s\n", parse_ok ? "OK" : "FAIL",
-        kits.empty() ? "?" : kits[0].name.c_str(),
-        kits.size() < 129 ? "?" : kits[128].name.c_str());
+    std::printf("%-8s parse: kit1=%s kit129=%s\n",
+                parse_ok ? "OK" : "FAIL",
+                kits.empty() ? "?" : kits[0].name.c_str(),
+                kits.size() < 129 ? "?" : kits[128].name.c_str());
     if (kits.size() >= 129) {
       const auto& pp = kits[128].pads[0];
       const bool pad_ok = pp.layer_mode == 3 && pp.fade_point == 100
-          && pp.fade_end == 120 && pp.dynamics == 1
-          && pp.dynamics_curve == 3 && pp.fixed_velocity == 50
-          && pp.trigger_reserve == 1 && kits[128].pads[2].layer_mode == 4
-          && pp.wave_top == 127 && pp.wave_bottom == 203;
+          && pp.fade_end == 120 && pp.dynamics == 1 && pp.dynamics_curve == 3
+          && pp.fixed_velocity == 50 && pp.trigger_reserve == 1
+          && kits[128].pads[2].layer_mode == 4 && pp.wave_top == 127
+          && pp.wave_bottom == 203;
       all_ok = all_ok && pad_ok;
       std::printf("%-8s pad params: pad1 mode=%d fp=%d ... pad3 mode=%d\n",
-          pad_ok ? "OK" : "FAIL", pp.layer_mode, pp.fade_point,
-          kits[128].pads[2].layer_mode);
+                  pad_ok ? "OK" : "FAIL",
+                  pp.layer_mode,
+                  pp.fade_point,
+                  kits[128].pads[2].layer_mode);
     }
   }
 
@@ -309,8 +362,11 @@ int RunSelfTest() {
     const size_t stride = spdsx::device::kSampleRecordStride;
     Bytes img(64 + stride * 6, 0x20);
     const size_t base = 64;
-    auto put = [&](int idx, const char* wavename, const char* filename,
-                   uint32_t frames, uint32_t category) {
+    auto put = [&](int idx,
+                   const char* wavename,
+                   const char* filename,
+                   uint32_t frames,
+                   uint32_t category) {
       const size_t rec = base + static_cast<size_t>(idx) * stride;
       std::memcpy(&img[rec], wavename, std::strlen(wavename));
       std::memcpy(&img[rec + 0x10], filename, std::strlen(filename));
@@ -329,13 +385,13 @@ int RunSelfTest() {
         && dir[0].wavename == "Solid K" && dir[0].frames == 56773
         && dir[1].index == 2 && dir[2].index == 4
         && dir[2].filename == "Bongo_Hi_CR78.wav" && dir[2].category == 15
-        && spdsx::device::SampleCategoryName(dir[2].category)
-            == "Percussion";
+        && spdsx::device::SampleCategoryName(dir[2].category) == "Percussion";
     all_ok = all_ok && dir_ok;
     std::printf("%-8s sample dir: %zu records, [0]=%s [2]=%s\n",
-        dir_ok ? "OK" : "FAIL", dir.size(),
-        dir.empty() ? "?" : dir[0].wavename.c_str(),
-        dir.size() < 3 ? "?" : dir[2].wavename.c_str());
+                dir_ok ? "OK" : "FAIL",
+                dir.size(),
+                dir.empty() ? "?" : dir[0].wavename.c_str(),
+                dir.size() < 3 ? "?" : dir[2].wavename.c_str());
 
     // Remote path derivation + RFWV header (wave-export protocol).
     const bool path_ok = spdsx::device::RemoteWavePath(1554)
@@ -350,8 +406,11 @@ int RunSelfTest() {
     all_ok = all_ok && path_ok && rfwv_ok;
     std::printf("%-8s remote path\n", path_ok ? "OK" : "FAIL");
     std::printf("%-8s RFWV header: %u Hz, %u ch, %u-bit, %u data bytes\n",
-        rfwv_ok ? "OK" : "FAIL", hdr.sample_rate, hdr.channels,
-        hdr.bits_per_sample, hdr.data_bytes);
+                rfwv_ok ? "OK" : "FAIL",
+                hdr.sample_rate,
+                hdr.channels,
+                hdr.bits_per_sample,
+                hdr.data_bytes);
 
     // RfwvToWav: 512-byte header + 8 PCM bytes -> a 52-byte WAV with a
     // RIFF/WAVE/fmt/data structure and the 8 PCM bytes preserved.
@@ -361,18 +420,17 @@ int RunSelfTest() {
     smp.insert(smp.end(), tail.begin(), tail.end());
     const Bytes wav = spdsx::device::RfwvToWav(smp);
     const bool wav_ok = wav.size() == 44 + 8
-        && std::equal(wav.begin(), wav.begin() + 4, "RIFF")
-        && wav[8] == 'W' && wav[9] == 'A' && wav[22] == 1  // channels
+        && std::equal(wav.begin(), wav.begin() + 4, "RIFF") && wav[8] == 'W'
+        && wav[9] == 'A' && wav[22] == 1  // channels
         && std::equal(wav.end() - 8, wav.end(), tail.begin());
     all_ok = all_ok && wav_ok;
-    std::printf("%-8s RfwvToWav: %zu-byte WAV\n", wav_ok ? "OK" : "FAIL",
-        wav.size());
+    std::printf(
+        "%-8s RfwvToWav: %zu-byte WAV\n", wav_ok ? "OK" : "FAIL", wav.size());
 
     // Sample-registration directory records (upload protocol). Byte-exact
     // vs synthupload-1.log sample 1587 (B_noise_4096, 4096 frames, record
     // tail 0xee8ab53f) — address, base record, and name record.
-    const bool addr_ok =
-        spdsx::device::SampleRecordAddr(1587, 0x00)
+    const bool addr_ok = spdsx::device::SampleRecordAddr(1587, 0x00)
             == Bytes({0x10, 0x18, 0x66, 0x00})
         && spdsx::device::SampleRecordAddr(1587, 0x1b)
             == Bytes({0x10, 0x18, 0x66, 0x1b});
@@ -400,7 +458,7 @@ int RunSelfTest() {
     const bool name_ok = name1587 == name_expect;
     all_ok = all_ok && addr_ok && base_ok && name_ok;
     std::printf("%-8s sample record addr/base/name (register)\n",
-        (addr_ok && base_ok && name_ok) ? "OK" : "FAIL");
+                (addr_ok && base_ok && name_ok) ? "OK" : "FAIL");
 
     // PcmToRfwv header (upload build path). For 4096 mono frames the
     // playback-critical header prefix (0x00..0x2f, including the MD5
@@ -416,7 +474,7 @@ int RunSelfTest() {
         && std::equal(hdr_expect.begin(), hdr_expect.end(), built_smp.begin());
     all_ok = all_ok && pcm_rfwv_ok;
     std::printf("%-8s PcmToRfwv header + MD5 checksum (upload)\n",
-        pcm_rfwv_ok ? "OK" : "FAIL");
+                pcm_rfwv_ok ? "OK" : "FAIL");
 
     // Pad-layer-param write (sync push). Byte-exact vs paramlog-padparams
     // capture: pad 1 layer mode = 3 (XFADE) -> 06 00 20 00 03, and pad 1
@@ -435,7 +493,7 @@ int RunSelfTest() {
             == FromHex("f0 41 10 00 00 00 00 16 12 06 00 28 09 4d 7c f7");
     all_ok = all_ok && padparam_ok;
     std::printf("%-8s pad layer-param write bytes (sync)\n",
-        padparam_ok ? "OK" : "FAIL");
+                padparam_ok ? "OK" : "FAIL");
   }
 
   std::printf("\n%s\n", all_ok ? "ALL MATCH" : "SOME MISMATCH");
@@ -496,7 +554,8 @@ KitRange ParseRange(const std::string& s) {
 }
 
 int Usage() {
-  std::fprintf(stderr,
+  std::fprintf(
+      stderr,
       "usage: spdutil [--port <dev>] <command> [options]\n"
       "\n"
       "  ping        open the port and ping the device (read-only)\n"
@@ -547,8 +606,8 @@ int RunPing(const std::string& port_arg) {
     std::printf("ping: NO REPLY (device connected? official app closed?)\n");
     return 1;
   }
-  std::printf("ping reply (%zu bytes): %s\n", reply.size(),
-      ToHex(reply).c_str());
+  std::printf(
+      "ping reply (%zu bytes): %s\n", reply.size(), ToHex(reply).c_str());
   return 0;
 }
 
@@ -561,7 +620,7 @@ int RunInfo(const std::string& port_arg) {
   if (pong.empty()) {
     return 1;
   }
-  const std::string ver = dev.FirmwareField(0);   // "2.00"
+  const std::string ver = dev.FirmwareField(0);  // "2.00"
   const std::string build = dev.FirmwareField(3);  // "0094"
   if (ver.empty()) {
     std::printf("version:  (no reply)\n");
@@ -601,15 +660,18 @@ void ReportBlocks(const Bytes& image) {
     e.second += b.length;
   }
   for (const auto& [bank, stats] : by_bank) {
-    std::printf("  bank 0x%02x (%-13s): %3d block(s), %8zu bytes\n", bank,
-        BankName(bank), stats.first, stats.second);
+    std::printf("  bank 0x%02x (%-13s): %3d block(s), %8zu bytes\n",
+                bank,
+                BankName(bank),
+                stats.first,
+                stats.second);
   }
 }
 
 bool WriteFile(const std::string& path, const Bytes& data) {
   std::ofstream out(path, std::ios::binary);
   out.write(reinterpret_cast<const char*>(data.data()),
-      static_cast<std::streamsize>(data.size()));
+            static_cast<std::streamsize>(data.size()));
   return out.good();
 }
 
@@ -625,8 +687,10 @@ Bytes ReadFile(const std::string& path) {
   return data;
 }
 
-int RunDump(const std::string& port_arg, const std::vector<uint8_t>& banks,
-    const std::string& out_path, const std::string& verify_path) {
+int RunDump(const std::string& port_arg,
+            const std::vector<uint8_t>& banks,
+            const std::string& out_path,
+            const std::string& verify_path) {
   // Offline: just report an existing image's structure.
   if (!verify_path.empty()) {
     ReportBlocks(ReadFile(verify_path));
@@ -643,12 +707,10 @@ int RunDump(const std::string& port_arg, const std::vector<uint8_t>& banks,
     std::fflush(stdout);
     int blocks = 0;
     size_t bytes = 0;
-    const Bytes bank_image = dev.DumpBank(bank,
-        [&](const Bytes& block)
-        {
-          ++blocks;
-          bytes += block.size();
-        });
+    const Bytes bank_image = dev.DumpBank(bank, [&](const Bytes& block) {
+      ++blocks;
+      bytes += block.size();
+    });
     std::printf("%d block(s), %zu bytes\n", blocks, bytes);
     if (bank_image.empty()) {
       std::printf(
@@ -681,34 +743,43 @@ int RunKits(const std::string& port_arg, const std::string& from_path) {
   }
   const Bytes clean = spdsx::device::CleanBulkImage(raw);
   const auto kits = spdsx::device::ParseKits(clean);
-  std::printf("%zu raw bytes -> %zu clean bytes -> %zu kits\n", raw.size(),
-      clean.size(), kits.size());
+  std::printf("%zu raw bytes -> %zu clean bytes -> %zu kits\n",
+              raw.size(),
+              clean.size(),
+              kits.size());
   for (size_t i = 0; i < kits.size(); ++i) {
     std::printf("  %3zu  %s\n", i + 1, kits[i].name.c_str());
   }
   return kits.empty() ? 1 : 0;
 }
 
-int RunReadWave(const std::string& port_arg, int index,
-    const std::string& out_path) {
+int RunReadWave(const std::string& port_arg,
+                int index,
+                const std::string& out_path) {
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
-  std::printf("opened %s, reading wave %d (%s)...\n", port.c_str(), index,
-      spdsx::device::RemoteWavePath(index).c_str());
-  const Bytes smp = dev.ReadRemoteWave(index,
-      [](size_t done, size_t total) {
-        std::printf("\r  %zu / %zu bytes", done, total);
-        std::fflush(stdout);
-      });
+  std::printf("opened %s, reading wave %d (%s)...\n",
+              port.c_str(),
+              index,
+              spdsx::device::RemoteWavePath(index).c_str());
+  const Bytes smp = dev.ReadRemoteWave(index, [](size_t done, size_t total) {
+    std::printf("\r  %zu / %zu bytes", done, total);
+    std::fflush(stdout);
+  });
   std::printf("\n%zu bytes read\n", smp.size());
   const auto hdr = spdsx::device::ParseRfwvHeader(smp);
   const size_t pcm = smp.size() > spdsx::device::kRfwvHeaderSize
       ? smp.size() - spdsx::device::kRfwvHeaderSize
       : 0;
-  std::printf("RFWV: valid=%d  %u Hz  %u ch  %u-bit  %zu PCM bytes"
-      "  (%.2f s)\n", hdr.valid, hdr.sample_rate, hdr.channels,
+  std::printf(
+      "RFWV: valid=%d  %u Hz  %u ch  %u-bit  %zu PCM bytes"
+      "  (%.2f s)\n",
+      hdr.valid,
+      hdr.sample_rate,
+      hdr.channels,
       hdr.bits_per_sample,
-      pcm, hdr.channels ? pcm / 2.0 / hdr.channels / 48000.0 : 0.0);
+      pcm,
+      hdr.channels ? pcm / 2.0 / hdr.channels / 48000.0 : 0.0);
   if (!out_path.empty()) {
     // A .wav path gets the converted WAV; anything else the raw .SMP.
     const bool as_wav = out_path.size() > 4
@@ -718,14 +789,16 @@ int RunReadWave(const std::string& port_arg, int index,
       std::fprintf(stderr, "couldn't write %s\n", out_path.c_str());
       return 1;
     }
-    std::printf("wrote %s (%s)\n", out_path.c_str(),
-        as_wav ? "wav" : "raw smp");
+    std::printf(
+        "wrote %s (%s)\n", out_path.c_str(), as_wav ? "wav" : "raw smp");
   }
   return smp.empty() ? 1 : 0;
 }
 
-int RunSendWave(const std::string& port_arg, int index,
-    const std::string& from_path, const std::string& name_arg) {
+int RunSendWave(const std::string& port_arg,
+                int index,
+                const std::string& from_path,
+                const std::string& name_arg) {
   if (from_path.empty()) {
     std::fprintf(stderr, "sendwave needs --from <file.smp>\n");
     return 2;
@@ -741,8 +814,8 @@ int RunSendWave(const std::string& port_arg, int index,
   std::string filename = name_arg;
   if (filename.empty()) {
     const size_t slash = from_path.find_last_of('/');
-    filename = slash == std::string::npos ? from_path
-                                          : from_path.substr(slash + 1);
+    filename =
+        slash == std::string::npos ? from_path : from_path.substr(slash + 1);
   }
   std::string wavename = filename;
   const size_t dot = wavename.find_last_of('.');
@@ -754,24 +827,37 @@ int RunSendWave(const std::string& port_arg, int index,
   }
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
-  std::printf("opened %s: uploading %zu bytes to index %d as \"%s\" / "
-      "\"%s\"...\n", port.c_str(), smp.size(), index,
-      wavename.c_str(), filename.c_str());
+  std::printf(
+      "opened %s: uploading %zu bytes to index %d as \"%s\" / "
+      "\"%s\"...\n",
+      port.c_str(),
+      smp.size(),
+      index,
+      wavename.c_str(),
+      filename.c_str());
   dev.UploadWave(index, smp, wavename, filename);
   std::printf("uploaded; reading back to compare the file...\n");
   const Bytes back = dev.ReadRemoteWave(index);
   const bool match = back == smp;
   if (match) {
-    std::printf("file MATCH — check the pool with `spdutil samples` and "
-        "`spdutil readwave %d`\n", index);
+    std::printf(
+        "file MATCH — check the pool with `spdutil samples` and "
+        "`spdutil readwave %d`\n",
+        index);
     return 0;
   }
   size_t first = 0;
-  while (first < back.size() && first < smp.size() && back[first] == smp[first]) {
+  while (first < back.size() && first < smp.size()
+         && back[first] == smp[first]) {
     ++first;
   }
-  std::printf("read back %zu bytes (sent %zu); file MISMATCH — first "
-      "differing byte at %zu (%#zx)\n", back.size(), smp.size(), first, first);
+  std::printf(
+      "read back %zu bytes (sent %zu); file MISMATCH — first "
+      "differing byte at %zu (%#zx)\n",
+      back.size(),
+      smp.size(),
+      first,
+      first);
   return 1;
 }
 
@@ -792,25 +878,35 @@ bool ParsePadSpec(const std::string& spec, int* pad, PadSlot* slot) {
   return true;
 }
 
-int RunAssign(const std::string& port_arg, int kit, int sample,
-    const std::string& pad_spec, bool commit) {
+int RunAssign(const std::string& port_arg,
+              int kit,
+              int sample,
+              const std::string& pad_spec,
+              bool commit) {
   if (sample < 0 || pad_spec.empty()) {
-    std::fprintf(stderr, "assign needs --sample <index> and --pad <P.S> "
-        "(e.g. --pad 2.1 = pad 2 bottom slot)\n");
+    std::fprintf(stderr,
+                 "assign needs --sample <index> and --pad <P.S> "
+                 "(e.g. --pad 2.1 = pad 2 bottom slot)\n");
     return 2;
   }
   int pad = 0;
   PadSlot slot = PadSlot::kTop;
   if (!ParsePadSpec(pad_spec, &pad, &slot)) {
-    std::fprintf(stderr, "bad --pad \"%s\"; want P.S with P 1-9, S 0(top)"
-        "/1(bottom)\n", pad_spec.c_str());
+    std::fprintf(stderr,
+                 "bad --pad \"%s\"; want P.S with P 1-9, S 0(top)"
+                 "/1(bottom)\n",
+                 pad_spec.c_str());
     return 2;
   }
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
   std::printf("opened %s: kit %d pad %d %s <- sample %d%s\n",
-      port.c_str(), kit, pad, slot == PadSlot::kTop ? "top" : "bottom",
-      sample, commit ? " (committing)" : " (working state)");
+              port.c_str(),
+              kit,
+              pad,
+              slot == PadSlot::kTop ? "top" : "bottom",
+              sample,
+              commit ? " (committing)" : " (working state)");
   dev.SetPadWave(kit, pad, slot, sample);
   if (commit) {
     dev.Commit();
@@ -822,13 +918,13 @@ int RunAssign(const std::string& port_arg, int kit, int sample,
 // Parses a comma list "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,
 // trig" into pad params. Returns false if the count is wrong.
 bool ParseParamList(const std::string& spec,
-    spdsx::device::PadDeviceParams* p) {
+                    spdsx::device::PadDeviceParams* p) {
   std::vector<int> v;
   size_t start = 0;
   while (start <= spec.size()) {
     const size_t comma = spec.find(',', start);
-    const std::string tok = spec.substr(start,
-        comma == std::string::npos ? std::string::npos : comma - start);
+    const std::string tok = spec.substr(
+        start, comma == std::string::npos ? std::string::npos : comma - start);
     v.push_back(std::atoi(tok.c_str()));
     if (comma == std::string::npos) {
       break;
@@ -851,11 +947,15 @@ bool ParseParamList(const std::string& spec,
   return true;
 }
 
-int RunSetParams(const std::string& port_arg, int kit, int pad,
-    const std::string& params_spec, bool commit) {
+int RunSetParams(const std::string& port_arg,
+                 int kit,
+                 int pad,
+                 const std::string& params_spec,
+                 bool commit) {
   if (pad < 1 || pad > 9 || params_spec.empty()) {
-    std::fprintf(stderr, "setparams needs --pad <1-9> and --params "
-        "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,trig\n");
+    std::fprintf(stderr,
+                 "setparams needs --pad <1-9> and --params "
+                 "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,trig\n");
     return 2;
   }
   spdsx::device::PadDeviceParams p;
@@ -865,11 +965,23 @@ int RunSetParams(const std::string& port_arg, int kit, int pad,
   }
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
-  std::printf("opened %s: kit %d pad %d params <- mode=%d fp=%d fe=%d "
-      "dyn=%d curve=%d fixvel=%d hh(%d,%d,%d) trig=%d%s\n", port.c_str(),
-      kit, pad, p.layer_mode, p.fade_point, p.fade_end, p.dynamics,
-      p.dynamics_curve, p.fixed_velocity, p.hi_hat_volume, p.hi_hat_fade_in,
-      p.hi_hat_decay, p.trigger_reserve, commit ? " (committing)" : "");
+  std::printf(
+      "opened %s: kit %d pad %d params <- mode=%d fp=%d fe=%d "
+      "dyn=%d curve=%d fixvel=%d hh(%d,%d,%d) trig=%d%s\n",
+      port.c_str(),
+      kit,
+      pad,
+      p.layer_mode,
+      p.fade_point,
+      p.fade_end,
+      p.dynamics,
+      p.dynamics_curve,
+      p.fixed_velocity,
+      p.hi_hat_volume,
+      p.hi_hat_fade_in,
+      p.hi_hat_decay,
+      p.trigger_reserve,
+      commit ? " (committing)" : "");
   dev.SetPadLayerParams(kit, pad, p);
   if (commit) {
     dev.Commit();
@@ -878,16 +990,21 @@ int RunSetParams(const std::string& port_arg, int kit, int pad,
   return 0;
 }
 
-int RunSetName(const std::string& port_arg, int kit, const std::string& name,
-    bool commit) {
+int RunSetName(const std::string& port_arg,
+               int kit,
+               const std::string& name,
+               bool commit) {
   if (name.empty()) {
     std::fprintf(stderr, "setname needs --name <text>\n");
     return 2;
   }
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
-  std::printf("opened %s: kit %d name <- \"%s\"%s\n", port.c_str(), kit,
-      name.c_str(), commit ? " (committing)" : " (working state)");
+  std::printf("opened %s: kit %d name <- \"%s\"%s\n",
+              port.c_str(),
+              kit,
+              name.c_str(),
+              commit ? " (committing)" : " (working state)");
   dev.SetKitName(kit, name);
   if (commit) {
     dev.Commit();
@@ -900,7 +1017,8 @@ int RunDeleteWave(const std::string& port_arg, int index) {
   const std::string port = ResolvePort(port_arg);
   spdsx::device::SpdsxDevice dev(port);
   std::printf("opened %s, deleting sample %d (then flash commit)...\n",
-      port.c_str(), index);
+              port.c_str(),
+              index);
   dev.DeleteWave(index);
   std::printf("done\n");
   return 0;
@@ -919,25 +1037,40 @@ int RunSamples(const std::string& port_arg, const std::string& from_path) {
   const Bytes clean = spdsx::device::CleanBulkImage(raw);
   const auto samples = spdsx::device::ParseSampleDir(clean);
   std::printf("%zu raw bytes -> %zu clean bytes -> %zu samples\n",
-      raw.size(), clean.size(), samples.size());
-  std::printf("%6s  %-16s  %-16s  %8s  %s\n", "index", "wavename",
-      "category", "seconds", "filename");
+              raw.size(),
+              clean.size(),
+              samples.size());
+  std::printf("%6s  %-16s  %-16s  %8s  %s\n",
+              "index",
+              "wavename",
+              "category",
+              "seconds",
+              "filename");
   for (const auto& s : samples) {
     const auto cat = spdsx::device::SampleCategoryName(s.category);
-    std::printf("%6d  %-16s  %-16.*s  %8.2f  %s\n", s.index,
-        s.wavename.c_str(), static_cast<int>(cat.size()), cat.data(),
-        static_cast<double>(s.frames) / 48000.0, s.filename.c_str());
+    std::printf("%6d  %-16s  %-16.*s  %8.2f  %s\n",
+                s.index,
+                s.wavename.c_str(),
+                static_cast<int>(cat.size()),
+                cat.data(),
+                static_cast<double>(s.frames) / 48000.0,
+                s.filename.c_str());
   }
   return samples.empty() ? 1 : 0;
 }
 
-const char* kModeNames[] = {"MIX", "FADE1", "FADE2", "XFADE", "SWITCH",
-    "SW(MONO)", "ALTERNATE", "HI-HAT"};
+const char* kModeNames[] = {"MIX",
+                            "FADE1",
+                            "FADE2",
+                            "XFADE",
+                            "SWITCH",
+                            "SW(MONO)",
+                            "ALTERNATE",
+                            "HI-HAT"};
 const char* kCurveNames[] = {"LINEAR", "LOUD1", "LOUD2", "LOUD3"};
 
 // Prints one kit's pads with the mapped params decoded.
-int RunKit(const std::string& port_arg, const std::string& from_path,
-    int kit) {
+int RunKit(const std::string& port_arg, const std::string& from_path, int kit) {
   if (kit < 1 || kit > spdsx::device::kBankKitCount) {
     std::fprintf(stderr, "kit must be 1-%d\n", spdsx::device::kBankKitCount);
     return 2;
@@ -959,25 +1092,39 @@ int RunKit(const std::string& port_arg, const std::string& from_path,
   }
   const auto& k = kits[static_cast<size_t>(kit - 1)];
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
-  std::printf("  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
-              "  hhVol hhFadeIn hhDecay  top   bottom\n");
+  std::printf(
+      "  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
+      "  hhVol hhFadeIn hhDecay  top   bottom\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
-    std::printf("  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d\n",
-        pad + 1, mode, p.fade_point, p.fade_end, p.dynamics ? "ON" : "OFF",
-        curve, p.fixed_velocity, p.trigger_reserve ? "ON" : "OFF",
-        p.hi_hat_volume, p.hi_hat_fade_in, p.hi_hat_decay,
-        p.wave_top, p.wave_bottom);
+    std::printf(
+        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d\n",
+        pad + 1,
+        mode,
+        p.fade_point,
+        p.fade_end,
+        p.dynamics ? "ON" : "OFF",
+        curve,
+        p.fixed_velocity,
+        p.trigger_reserve ? "ON" : "OFF",
+        p.hi_hat_volume,
+        p.hi_hat_fade_in,
+        p.hi_hat_decay,
+        p.wave_top,
+        p.wave_bottom);
   }
   return 0;
 }
 
-int RunPadLink(const std::string& port_arg, int group,
-    const std::vector<std::pair<ObjectKind, int>>& objects,
-    std::vector<KitRange> ranges, bool dry_run, bool verbose) {
+int RunPadLink(const std::string& port_arg,
+               int group,
+               const std::vector<std::pair<ObjectKind, int>>& objects,
+               std::vector<KitRange> ranges,
+               bool dry_run,
+               bool verbose) {
   if (ranges.empty()) {
     ranges.push_back({1, 200});
   }
@@ -1024,7 +1171,7 @@ int RunPadLink(const std::string& port_arg, int group,
   for (const auto& range : ranges) {
     for (int kit = range.first; kit <= range.last; ++kit) {
       const Bytes sel = spdsx::device::Dt1(spdsx::device::kKitSelectAddr,
-          spdsx::device::EncodeKit(kit));
+                                           spdsx::device::EncodeKit(kit));
       std::snprintf(buf, sizeof(buf), "kit %3d select   : ", kit);
       std::printf("%s%s\n", buf, ToHex(sel).c_str());
       ++messages;
@@ -1032,25 +1179,30 @@ int RunPadLink(const std::string& port_arg, int group,
         const Bytes rep = dev->Command(sel);
         if (verbose) {
           std::printf("    <- %s\n",
-              rep.empty() ? "(no reply)" : ToHex(rep).c_str());
+                      rep.empty() ? "(no reply)" : ToHex(rep).c_str());
         }
       }
       for (const auto& [kind, index] : objects) {
-        const Bytes foc = spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
-            {spdsx::device::SelectValue(kind, index)});
-        const Bytes wr = spdsx::device::Dt1(
-            spdsx::device::PadLinkAddr(kind, index, kit),
-            {static_cast<uint8_t>(group & 0x7F)});
-        std::printf("        focus %s%d : %s\n", KindName(kind), index,
-            ToHex(foc).c_str());
-        std::printf("        write %s%d : %s\n", KindName(kind), index,
-            ToHex(wr).c_str());
+        const Bytes foc =
+            spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
+                               {spdsx::device::SelectValue(kind, index)});
+        const Bytes wr =
+            spdsx::device::Dt1(spdsx::device::PadLinkAddr(kind, index, kit),
+                               {static_cast<uint8_t>(group & 0x7F)});
+        std::printf("        focus %s%d : %s\n",
+                    KindName(kind),
+                    index,
+                    ToHex(foc).c_str());
+        std::printf("        write %s%d : %s\n",
+                    KindName(kind),
+                    index,
+                    ToHex(wr).c_str());
         messages += 2;
         if (dev != nullptr) {
           const Bytes rep = dev->Command(foc);
           if (verbose) {
             std::printf("    <- %s\n",
-                rep.empty() ? "(no reply)" : ToHex(rep).c_str());
+                        rep.empty() ? "(no reply)" : ToHex(rep).c_str());
           }
           dev->Send(wr);
           std::this_thread::sleep_for(std::chrono::duration<double>(0.02));
@@ -1059,7 +1211,8 @@ int RunPadLink(const std::string& port_arg, int group,
     }
   }
   std::printf("\n%s  %d messages.\n",
-      dry_run ? "(dry run \xe2\x80\x94 nothing sent)" : "Done.", messages);
+              dry_run ? "(dry run \xe2\x80\x94 nothing sent)" : "Done.",
+              messages);
   return 0;
 }
 
@@ -1116,8 +1269,10 @@ int main(int argc, char** argv) {
         banks.push_back(
             static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0)));
       } else if (arg == "--all") {
-        banks = {spdsx::device::kBankKits, spdsx::device::kBankSamples,
-            spdsx::device::kBankMeta, spdsx::device::kBankConfig};
+        banks = {spdsx::device::kBankKits,
+                 spdsx::device::kBankSamples,
+                 spdsx::device::kBankMeta,
+                 spdsx::device::kBankConfig};
       } else if (arg == "--out") {
         out_path = next();
       } else if (arg == "--verify") {
@@ -1139,7 +1294,7 @@ int main(int argc, char** argv) {
       } else if (!arg.empty() && arg[0] != '-' && command.empty()) {
         command = arg;
       } else if (!arg.empty() && (std::isdigit((unsigned char)arg[0]))
-          && kit_arg == 0) {
+                 && kit_arg == 0) {
         kit_arg = std::atoi(arg.c_str());  // positional kit number
       } else {
         return Usage();
@@ -1192,16 +1347,15 @@ int main(int argc, char** argv) {
       return RunSendWave(port, kit_arg, from_path, name_arg);
     }
     if (command == "assign") {
-      return RunAssign(port, kit_arg > 0 ? kit_arg : 1, sample_arg, pad_spec,
-          commit_flag);
+      return RunAssign(
+          port, kit_arg > 0 ? kit_arg : 1, sample_arg, pad_spec, commit_flag);
     }
     if (command == "setname") {
-      return RunSetName(port, kit_arg > 0 ? kit_arg : 1, name_arg,
-          commit_flag);
+      return RunSetName(port, kit_arg > 0 ? kit_arg : 1, name_arg, commit_flag);
     }
     if (command == "setparams") {
-      return RunSetParams(port, kit_arg > 0 ? kit_arg : 1, pad_num,
-          params_spec, commit_flag);
+      return RunSetParams(
+          port, kit_arg > 0 ? kit_arg : 1, pad_num, params_spec, commit_flag);
     }
     if (command == "padlink") {
       if (group < 0) {
@@ -1209,8 +1363,7 @@ int main(int argc, char** argv) {
         return 2;
       }
       if (objects.empty()) {
-        std::fprintf(stderr,
-            "padlink needs at least one --trigger or --pad\n");
+        std::fprintf(stderr, "padlink needs at least one --trigger or --pad\n");
         return 2;
       }
       return RunPadLink(port, group, objects, ranges, dry_run, verbose);

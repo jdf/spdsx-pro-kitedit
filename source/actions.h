@@ -12,24 +12,22 @@ namespace spdsx {
 // (an empty LayerSample), for both local files and device pool waves.
 class SetSampleAction : public juce::UndoableAction {
 public:
-  SetSampleAction(
-      KitModel& model, int pad, int layer, const LayerSample& new_sample)
+  SetSampleAction(KitModel& model,
+                  int pad,
+                  int layer,
+                  const LayerSample& new_sample)
       : model_(model)
       , pad_(pad)
       , layer_(layer)
       , new_(new_sample)
-      , old_(model.sample(pad, layer))
-  {
-  }
+      , old_(model.sample(pad, layer)) {}
 
-  bool perform() override
-  {
+  bool perform() override {
     model_.set_sample(pad_, layer_, new_);
     return true;
   }
 
-  bool undo() override
-  {
+  bool undo() override {
     model_.set_sample(pad_, layer_, old_);
     return true;
   }
@@ -48,18 +46,14 @@ public:
   SetKitNameAction(KitModel& model, const juce::String& name)
       : model_(model)
       , new_(name)
-      , old_(model.name())
-  {
-  }
+      , old_(model.name()) {}
 
-  bool perform() override
-  {
+  bool perform() override {
     model_.set_name(new_);
     return true;
   }
 
-  bool undo() override
-  {
+  bool undo() override {
     model_.set_name(old_);
     return true;
   }
@@ -78,18 +72,14 @@ public:
       : model_(model)
       , pad_(pad)
       , new_(params)
-      , old_(model.params(pad))
-  {
-  }
+      , old_(model.params(pad)) {}
 
-  bool perform() override
-  {
+  bool perform() override {
     model_.SetPadParams(pad_, new_);
     return true;
   }
 
-  bool undo() override
-  {
+  bool undo() override {
     model_.SetPadParams(pad_, old_);
     return true;
   }

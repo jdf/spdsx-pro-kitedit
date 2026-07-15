@@ -39,8 +39,7 @@ const juce::Colour kPadLabel(0xff8a97a6);
 
 }  // namespace
 
-juce::ApplicationProperties& MainComponent::ConfigureSettings()
-{
+juce::ApplicationProperties& MainComponent::ConfigureSettings() {
   juce::PropertiesFile::Options options;
   options.applicationName = "spdsx-patchedit";
   options.filenameSuffix = ".settings";
@@ -53,8 +52,7 @@ juce::ApplicationProperties& MainComponent::ConfigureSettings()
 
 MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
-    , browser_(ConfigureSettings())
-{
+    , browser_(ConfigureSettings()) {
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
   // The left panel: sample browser and device wave pool as tabs.
@@ -69,36 +67,37 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   for (int i = 0; i < kSlotCount; ++i) {
     slots_[static_cast<size_t>(i)] = std::make_unique<SampleSlot>(i);
     auto& slot = *slots_[static_cast<size_t>(i)];
-    slot.on_drop = [this](int idx, const juce::File& file)
-    { LoadSample(idx, file); };
-    slot.on_drop_device = [this](int idx, int sample)
-    {
+    slot.on_drop = [this](int idx, const juce::File& file) {
+      LoadSample(idx, file);
+    };
+    slot.on_drop_device = [this](int idx, int sample) {
       undo().beginNewTransaction("Assign device sample");
       undo().perform(new SetSampleAction(model_,
-          idx / KitModel::kLayersPerPad, idx % KitModel::kLayersPerPad,
-          LayerSample::DeviceWave(sample)));
+                                         idx / KitModel::kLayersPerPad,
+                                         idx % KitModel::kLayersPerPad,
+                                         LayerSample::DeviceWave(sample)));
     };
-    slot.on_click = [this](int idx)
-    {
+    slot.on_click = [this](int idx) {
       // A click anywhere in a pad is a hit on the whole pad, at the
       // cursor-height velocity.
       const int pad = idx / KitModel::kLayersPerPad;
       const auto pos = getMouseXYRelative();
       TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
     };
-    slot.on_transport = [this](int idx, TransportAction action)
-    { ApplyTransportAction(idx, action); };
-    slot.on_slot_move = [this](int from, int to, bool copy, bool whole_pad)
-    {
+    slot.on_transport = [this](int idx, TransportAction action) {
+      ApplyTransportAction(idx, action);
+    };
+    slot.on_slot_move = [this](int from, int to, bool copy, bool whole_pad) {
       if (whole_pad) {
-        MovePad(from / KitModel::kLayersPerPad, to / KitModel::kLayersPerPad,
-            copy);
+        MovePad(
+            from / KitModel::kLayersPerPad, to / KitModel::kLayersPerPad, copy);
       } else {
         MoveSample(from, to, copy);
       }
     };
-    slot.on_drag_target = [this](int idx, bool whole_pad)
-    { SetDragTarget(idx, whole_pad); };
+    slot.on_drag_target = [this](int idx, bool whole_pad) {
+      SetDragTarget(idx, whole_pad);
+    };
     addAndMakeVisible(slot);
   }
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -107,15 +106,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     for (int m = 0; m < kLayerModeCount; ++m) {
       const auto name = LayerModeName(static_cast<LayerMode>(m));
       // Item ids are mode + 1; 0 means "nothing selected" to ComboBox.
-      mode_boxes_[p]->addItem(
-          juce::String(name.data(), name.size()), m + 1);
+      mode_boxes_[p]->addItem(juce::String(name.data(), name.size()), m + 1);
     }
     mode_boxes_[p]->onChange = [this, pad] { ApplyLayerParams(pad); };
     addAndMakeVisible(*mode_boxes_[p]);
-    auto make_fade_slider = [this, pad]
-    {
-      auto slider = std::make_unique<juce::Slider>(
-          juce::Slider::LinearBar, juce::Slider::NoTextBox);
+    auto make_fade_slider = [this, pad] {
+      auto slider = std::make_unique<juce::Slider>(juce::Slider::LinearBar,
+                                                   juce::Slider::NoTextBox);
       slider->setRange(1, 127, 1);
       // One undo step per adjustment, not one per drag pixel.
       slider->setChangeNotificationOnlyOnRelease(true);
@@ -142,19 +139,17 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   velocity_slider_.setValue(
       settings_.getUserSettings()->getIntValue("uiVelocity", 100),
       juce::dontSendNotification);
-  velocity_slider_.setTextBoxStyle(
-      juce::Slider::TextBoxRight, false, 30, 18);
+  velocity_slider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 30, 18);
   velocity_slider_.setTextBoxIsEditable(true);
   // Tint the dial with the same blue->amber->red velocity colour the
   // fade bars use.
-  auto tint_velocity_slider = [this]
-  {
-    velocity_slider_.setColour(juce::Slider::rotarySliderFillColourId,
+  auto tint_velocity_slider = [this] {
+    velocity_slider_.setColour(
+        juce::Slider::rotarySliderFillColourId,
         VelocityColour(static_cast<int>(velocity_slider_.getValue())));
   };
   tint_velocity_slider();
-  velocity_slider_.onValueChange = [this, tint_velocity_slider]
-  {
+  velocity_slider_.onValueChange = [this, tint_velocity_slider] {
     settings_.getUserSettings()->setValue(
         "uiVelocity", static_cast<int>(velocity_slider_.getValue()));
     tint_velocity_slider();
@@ -169,25 +164,22 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   // Appears in the header only when the active kit references device
   // waves not yet in the local cache; one click downloads them.
   transfer_button_.onClick = [this] { DownloadKitSamples(); };
-  transfer_button_.setColour(
-      juce::TextButton::buttonColourId, juce::Colour(0xff2f6a4f));
+  transfer_button_.setColour(juce::TextButton::buttonColourId,
+                             juce::Colour(0xff2f6a4f));
   addChildComponent(transfer_button_);
   addAndMakeVisible(connection_dot_);
   // The primary sync action: appears when the active kit has edits not
   // yet pushed to the device.
   save_button_.onClick = [this] { SaveChangesToDevice(); };
-  save_button_.setColour(
-      juce::TextButton::buttonColourId, juce::Colour(0xffb5761f));
+  save_button_.setColour(juce::TextButton::buttonColourId,
+                         juce::Colour(0xffb5761f));
   addChildComponent(save_button_);
   // The unified kit control: arrows and menu switch kits (stashing the
   // old one), the pencil renames in place.
-  kit_chooser_.kit_name = [this](int i)
-  {
-    return i == device_.current_kit() ? model_.name()
-                                      : device_.kit(i).name;
+  kit_chooser_.kit_name = [this](int i) {
+    return i == device_.current_kit() ? model_.name() : device_.kit(i).name;
   };
-  kit_chooser_.on_select = [this](int index)
-  {
+  kit_chooser_.on_select = [this](int index) {
     if (index != device_.current_kit()) {
       document_.SwitchKit(index);
       MarkEdited();  // persists the new current kit
@@ -196,16 +188,15 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       UpdateSaveButton();  // reflect the newly-active kit's dirty state
     }
   };
-  kit_chooser_.on_rename = [this](const juce::String& name)
-  {
+  kit_chooser_.on_rename = [this](const juce::String& name) {
     undo().beginNewTransaction("Rename kit");
     undo().perform(new SetKitNameAction(model_, name));
   };
   addAndMakeVisible(kit_chooser_);
-  browser_.on_preview = [this](const juce::File& file)
-  { engine_.PreviewFile(file); };
-  device_samples_.on_preview = [this](const device::SampleRecord& rec)
-  {
+  browser_.on_preview = [this](const juce::File& file) {
+    engine_.PreviewFile(file);
+  };
+  device_samples_.on_preview = [this](const device::SampleRecord& rec) {
     // Autoplay-gated selection preview, mirroring the file browser:
     // audition a device wave once it's in the local cache.
     const juce::File cached = document_.CachedWaveFile(rec.index);
@@ -215,8 +206,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   };
 
   model_.AddListener(this);
-  document_.on_history_reset = [this]
-  {
+  document_.on_history_reset = [this] {
     for (auto& u : undos_) {
       if (u != nullptr) {
         u->clearUndoHistory();
@@ -227,7 +217,9 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     kit_device_dirty_.fill(false);
     UpdateSaveButton();
   };
-  document_.on_model_reload = [this](bool loading) { model_loading_ = loading; };
+  document_.on_model_reload = [this](bool loading) {
+    model_loading_ = loading;
+  };
   // Start as a fresh untitled device, so the model reflects kit 1 and
   // every header widget agrees with it.
   document_.ResetToUntitled();
@@ -238,25 +230,23 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   startTimerHz(30);
 }
 
-MainComponent::~MainComponent()
-{
+MainComponent::~MainComponent() {
   model_.RemoveListener(this);
 }
 
-void MainComponent::LoadSample(int idx, const juce::File& file)
-{
+void MainComponent::LoadSample(int idx, const juce::File& file) {
   if (idx < 0 || idx >= kSlotCount) {
-    std::fprintf(
-        stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
+    std::fprintf(stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
     return;
   }
   undo().beginNewTransaction("Load " + file.getFileName());
-  undo().perform(new SetSampleAction(model_, idx / KitModel::kLayersPerPad,
-      idx % KitModel::kLayersPerPad, LayerSample(file)));
+  undo().perform(new SetSampleAction(model_,
+                                     idx / KitModel::kLayersPerPad,
+                                     idx % KitModel::kLayersPerPad,
+                                     LayerSample(file)));
 }
 
-void MainComponent::OpenLastDocument()
-{
+void MainComponent::OpenLastDocument() {
   const juce::File last(
       settings_.getUserSettings()->getValue("lastDeviceFile"));
   if (last.existsAsFile() && document_.OpenDevice(last).wasOk()) {
@@ -276,22 +266,25 @@ void MainComponent::OpenLastDocument()
   RefreshDocumentState();
 }
 
-juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget()
-{
+juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() {
   return nullptr;
 }
 
-void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids)
-{
-  ids.addArray({commands::kUndo, commands::kRedo, commands::kFileNew,
-      commands::kFileOpen, commands::kFileSaveAs, commands::kImportKit,
-      commands::kLoadDeviceState, commands::kDownloadKitSamples,
-      commands::kToggleBrowser, commands::kToggleAutoplay});
+void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
+  ids.addArray({commands::kUndo,
+                commands::kRedo,
+                commands::kFileNew,
+                commands::kFileOpen,
+                commands::kFileSaveAs,
+                commands::kImportKit,
+                commands::kLoadDeviceState,
+                commands::kDownloadKitSamples,
+                commands::kToggleBrowser,
+                commands::kToggleAutoplay});
 }
 
-void MainComponent::getCommandInfo(
-    juce::CommandID id, juce::ApplicationCommandInfo& info)
-{
+void MainComponent::getCommandInfo(juce::CommandID id,
+                                   juce::ApplicationCommandInfo& info) {
   switch (id) {
     case commands::kUndo:
       info.setInfo("Undo", "Undo the last change", "Edit", 0);
@@ -301,8 +294,8 @@ void MainComponent::getCommandInfo(
     case commands::kRedo:
       info.setInfo("Redo", "Redo the last undone change", "Edit", 0);
       info.addDefaultKeypress('z',
-          juce::ModifierKeys::commandModifier
-              | juce::ModifierKeys::shiftModifier);
+                              juce::ModifierKeys::commandModifier
+                                  | juce::ModifierKeys::shiftModifier);
       info.setActive(undo().canRedo());
       break;
     case commands::kFileNew:
@@ -316,48 +309,55 @@ void MainComponent::getCommandInfo(
       break;
     case commands::kFileSaveAs:
       info.setInfo("Save As...",
-          "Move the device document; autosaves follow it", "File", 0);
+                   "Move the device document; autosaves follow it",
+                   "File",
+                   0);
       info.addDefaultKeypress('s',
-          juce::ModifierKeys::commandModifier
-              | juce::ModifierKeys::shiftModifier);
+                              juce::ModifierKeys::commandModifier
+                                  | juce::ModifierKeys::shiftModifier);
       break;
     case commands::kImportKit:
       info.setInfo("Import Kit...",
-          "Load a legacy single-kit .kit file into the current kit",
-          "File", 0);
+                   "Load a legacy single-kit .kit file into the current kit",
+                   "File",
+                   0);
       break;
     case commands::kLoadDeviceState:
-      info.setInfo("Load Device State...",
+      info.setInfo(
+          "Load Device State...",
           "Replace this whole document with the device's current state",
-          "File", 0);
+          "File",
+          0);
       info.setActive(!device_fetching_ && DeviceConnected());
       break;
     case commands::kDownloadKitSamples:
       info.setInfo("Download Kit Samples",
-          "Fetch this kit's device waves into the local cache so they "
-          "play",
-          "File", 0);
+                   "Fetch this kit's device waves into the local cache so they "
+                   "play",
+                   "File",
+                   0);
       info.setActive(!device_fetching_ && DeviceConnected());
       break;
     case commands::kToggleBrowser:
-      info.setInfo("Sample Browser",
-          "Show or hide the sample browser panel", "View", 0);
+      info.setInfo(
+          "Sample Browser", "Show or hide the sample browser panel", "View", 0);
       info.addDefaultKeypress('b', juce::ModifierKeys::commandModifier);
       info.setTicked(browser_visible_);
       break;
     case commands::kToggleAutoplay:
       info.setInfo("Auto-play While Browsing",
-          "Audition samples as you select them in the browser", "View", 0);
-      info.setTicked(settings_.getUserSettings()->getBoolValue(
-          "autoplayBrowsing", false));
+                   "Audition samples as you select them in the browser",
+                   "View",
+                   0);
+      info.setTicked(
+          settings_.getUserSettings()->getBoolValue("autoplayBrowsing", false));
       break;
     default:
       break;
   }
 }
 
-bool MainComponent::perform(const InvocationInfo& info)
-{
+bool MainComponent::perform(const InvocationInfo& info) {
   switch (info.commandID) {
     case commands::kUndo:
       return undo().undo();
@@ -376,18 +376,16 @@ bool MainComponent::perform(const InvocationInfo& info)
           juce::FileBrowserComponent::saveMode
               | juce::FileBrowserComponent::canSelectFiles
               | juce::FileBrowserComponent::warnAboutOverwriting,
-          [this](const juce::FileChooser& fc)
-          {
+          [this](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (file == juce::File()) {
               return;
             }
-            if (auto r = document_.CreateNew(
-                    file.withFileExtension(".spdsx"));
-                r.failed())
-            {
+            if (auto r = document_.CreateNew(file.withFileExtension(".spdsx"));
+                r.failed()) {
               juce::AlertWindow::showMessageBoxAsync(
-                  juce::MessageBoxIconType::WarningIcon, "Create a device",
+                  juce::MessageBoxIconType::WarningIcon,
+                  "Create a device",
                   r.getErrorMessage());
             }
             RefreshKitSelector();
@@ -398,22 +396,21 @@ bool MainComponent::perform(const InvocationInfo& info)
       document_.Autosave();
       open_chooser_ = std::make_unique<juce::FileChooser>(
           "Open a device",
-          juce::File(
-              settings_.getUserSettings()->getValue("lastDeviceFile"))
+          juce::File(settings_.getUserSettings()->getValue("lastDeviceFile"))
               .getParentDirectory(),
           "*.spdsx");
       open_chooser_->launchAsync(
           juce::FileBrowserComponent::openMode
               | juce::FileBrowserComponent::canSelectFiles,
-          [this](const juce::FileChooser& fc)
-          {
+          [this](const juce::FileChooser& fc) {
             const auto file = fc.getResult();
             if (file == juce::File()) {
               return;
             }
             if (auto r = document_.OpenDevice(file); r.failed()) {
               juce::AlertWindow::showMessageBoxAsync(
-                  juce::MessageBoxIconType::WarningIcon, "Open a device",
+                  juce::MessageBoxIconType::WarningIcon,
+                  "Open a device",
                   r.getErrorMessage());
             }
             RefreshKitSelector();
@@ -422,20 +419,19 @@ bool MainComponent::perform(const InvocationInfo& info)
       return true;
     case commands::kImportKit:
       import_chooser_ = std::make_unique<juce::FileChooser>(
-          "Import a kit into kit "
-              + juce::String(device_.current_kit() + 1),
-          juce::File(), "*.kit");
+          "Import a kit into kit " + juce::String(device_.current_kit() + 1),
+          juce::File(),
+          "*.kit");
       import_chooser_->launchAsync(
           juce::FileBrowserComponent::openMode
               | juce::FileBrowserComponent::canSelectFiles,
-          [this](const juce::FileChooser& fc)
-          {
+          [this](const juce::FileChooser& fc) {
             if (auto file = fc.getResult(); file.existsAsFile()) {
               if (auto result = document_.ImportKitFile(file);
-                  result.failed())
-              {
+                  result.failed()) {
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::WarningIcon, "Import Kit",
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Import Kit",
                     result.getErrorMessage());
               }
               RefreshKitSelector();
@@ -444,9 +440,10 @@ bool MainComponent::perform(const InvocationInfo& info)
           });
       return true;
     case commands::kFileSaveAs:
-      document_.saveAsInteractiveAsync(true,
-          [this](juce::FileBasedDocument::SaveResult)
-          { RefreshDocumentState(); });
+      document_.saveAsInteractiveAsync(
+          true, [this](juce::FileBasedDocument::SaveResult) {
+            RefreshDocumentState();
+          });
       return true;
     case commands::kLoadDeviceState:
       LoadDeviceState();
@@ -472,8 +469,7 @@ bool MainComponent::perform(const InvocationInfo& info)
   }
 }
 
-void MainComponent::SetBrowserVisible(bool visible)
-{
+void MainComponent::SetBrowserVisible(bool visible) {
   browser_visible_ = visible;
   panel_tabs_.setVisible(visible);
   settings_.getUserSettings()->setValue("browserVisible", visible);
@@ -484,13 +480,11 @@ void MainComponent::SetBrowserVisible(bool visible)
 
 // Window title carries the device and the active kit. No dirty state:
 // every edit autosaves.
-void MainComponent::RefreshDocumentState()
-{
+void MainComponent::RefreshDocumentState() {
   if (auto* window =
-          dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent()))
-  {
-    window->setName(document_.getDocumentTitle()
-        + juce::String::fromUTF8(" \xe2\x80\x94 ")
+          dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent())) {
+    window->setName(
+        document_.getDocumentTitle() + juce::String::fromUTF8(" \xe2\x80\x94 ")
         + juce::String(device_.current_kit() + 1) + ": " + model_.name());
   }
   // Loads and kit switches can change every widget in the header.
@@ -502,8 +496,7 @@ void MainComponent::RefreshDocumentState()
   UpdateTransferButton();
 }
 
-void MainComponent::LoadDeviceState()
-{
+void MainComponent::LoadDeviceState() {
   if (device_fetching_) {
     return;
   }
@@ -519,8 +512,7 @@ void MainComponent::LoadDeviceState()
               "Your local edits will be lost. This cannot be undone."))
           .withButton("Replace Everything")
           .withButton("Cancel"),
-      [safe](int result)
-      {
+      [safe](int result) {
         // The first button returns 1 (classic OK/cancel mapping).
         if (result == 1 && safe != nullptr) {
           safe->StartDeviceStateFetch();
@@ -528,8 +520,7 @@ void MainComponent::LoadDeviceState()
       });
 }
 
-void MainComponent::StartDeviceStateFetch()
-{
+void MainComponent::StartDeviceStateFetch() {
   if (device_fetching_.exchange(true)) {
     return;  // a fetch is already running
   }
@@ -551,18 +542,20 @@ void MainComponent::StartDeviceStateFetch()
       const auto count = [&blocks](const device::Bytes&) { ++*blocks; };
       kits = device::ParseKits(
           device::CleanBulkImage(dev.DumpBank(device::kBankKits, count)));
-      pool = device::ParseSampleDir(device::CleanBulkImage(
-          dev.DumpBank(device::kBankSamples, count)));
+      pool = device::ParseSampleDir(
+          device::CleanBulkImage(dev.DumpBank(device::kBankSamples, count)));
       if (kits.empty() || pool.empty()) {
-        error = "the device's reply was incomplete (kits or samples "
-                "missing)";
+        error =
+            "the device's reply was incomplete (kits or samples "
+            "missing)";
       }
     } catch (const std::exception& e) {
       error = e.what();
     }
-    juce::MessageManager::callAsync([safe, kits = std::move(kits),
-                                        pool = std::move(pool),
-                                        error]() mutable {
+    juce::MessageManager::callAsync([safe,
+                                     kits = std::move(kits),
+                                     pool = std::move(pool),
+                                     error]() mutable {
       if (safe != nullptr) {
         safe->FinishDeviceFetch(std::move(kits), std::move(pool), error);
       }
@@ -571,8 +564,8 @@ void MainComponent::StartDeviceStateFetch()
 }
 
 void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
-    std::vector<device::SampleRecord> pool, const juce::String& error)
-{
+                                      std::vector<device::SampleRecord> pool,
+                                      const juce::String& error) {
   device_fetching_ = false;
   fetch_blocks_.reset();
   device_samples_.SetStatus({});
@@ -588,8 +581,7 @@ void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
   RefreshDocumentState();
 }
 
-void MainComponent::DownloadKitSamples()
-{
+void MainComponent::DownloadKitSamples() {
   if (device_fetching_) {
     return;
   }
@@ -640,11 +632,10 @@ void MainComponent::DownloadKitSamples()
       for (const int index : want) {
         permille->store(0);
         current->store(index);
-        const device::Bytes smp = dev.ReadRemoteWave(
-            index, [permille](size_t got, size_t total) {
-              permille->store(total > 0
-                      ? static_cast<int>(got * 1000 / total)
-                      : 0);
+        const device::Bytes smp =
+            dev.ReadRemoteWave(index, [permille](size_t got, size_t total) {
+              permille->store(total > 0 ? static_cast<int>(got * 1000 / total)
+                                        : 0);
             });
         device::Bytes wav = device::RfwvToWav(smp);
         current->store(0);
@@ -654,12 +645,11 @@ void MainComponent::DownloadKitSamples()
         ++done;
         // Store the blob + refresh slots on the message thread (the DB is
         // only touched there).
-        juce::MessageManager::callAsync(
-            [safe, index, wav = std::move(wav)] {
-              if (safe != nullptr) {
-                safe->OnWaveDownloaded(index, wav);
-              }
-            });
+        juce::MessageManager::callAsync([safe, index, wav = std::move(wav)] {
+          if (safe != nullptr) {
+            safe->OnWaveDownloaded(index, wav);
+          }
+        });
       }
     } catch (const std::exception& e) {
       error = e.what();
@@ -672,8 +662,7 @@ void MainComponent::DownloadKitSamples()
   }).detach();
 }
 
-int MainComponent::UncachedDeviceWaveCount() const
-{
+int MainComponent::UncachedDeviceWaveCount() const {
   std::vector<int> seen;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
@@ -683,8 +672,7 @@ int MainComponent::UncachedDeviceWaveCount() const
       }
       if (!document_.HasCachedAudio(s.device_index)
           && std::find(seen.begin(), seen.end(), s.device_index)
-              == seen.end())
-      {
+              == seen.end()) {
         seen.push_back(s.device_index);
       }
     }
@@ -692,13 +680,13 @@ int MainComponent::UncachedDeviceWaveCount() const
   return static_cast<int>(seen.size());
 }
 
-void MainComponent::UpdateTransferButton()
-{
+void MainComponent::UpdateTransferButton() {
   // Hidden while a fetch runs (its progress shows in the slots and the
   // Device tab) and when nothing is missing.
   const int n = device_fetching_ ? 0 : UncachedDeviceWaveCount();
   transfer_button_.setButtonText(juce::String::fromUTF8("\xe2\x86\x93 ")
-      + juce::String(n) + (n == 1 ? " sample" : " samples"));
+                                 + juce::String(n)
+                                 + (n == 1 ? " sample" : " samples"));
   const bool show = n > 0;
   // Greyed when the device isn't connected — there's nothing to download
   // from, but keep it visible so the pending count still shows.
@@ -709,8 +697,7 @@ void MainComponent::UpdateTransferButton()
   }
 }
 
-void MainComponent::PollConnection()
-{
+void MainComponent::PollConnection() {
   // One probe at a time, throttled; skip while a device operation holds
   // the port (we're plainly connected then, and a second open would
   // clash).
@@ -748,8 +735,7 @@ void MainComponent::PollConnection()
   }).detach();
 }
 
-void MainComponent::MarkDeviceDirty()
-{
+void MainComponent::MarkDeviceDirty() {
   // A load reissues every change listener; only real edits count.
   if (model_loading_) {
     return;
@@ -758,8 +744,7 @@ void MainComponent::MarkDeviceDirty()
   UpdateSaveButton();
 }
 
-void MainComponent::UpdateSaveButton()
-{
+void MainComponent::UpdateSaveButton() {
   const bool dirty =
       kit_device_dirty_[static_cast<size_t>(device_.current_kit())];
   save_button_.setEnabled(DeviceConnected());
@@ -769,8 +754,7 @@ void MainComponent::UpdateSaveButton()
   }
 }
 
-void MainComponent::SaveChangesToDevice()
-{
+void MainComponent::SaveChangesToDevice() {
   // TODO: push the active kit to the device (upload new local samples +
   // register, reassign layers, write name/waves/params, commit). For now
   // this just clears the dirty flag so the button behaviour is testable.
@@ -778,28 +762,27 @@ void MainComponent::SaveChangesToDevice()
   UpdateSaveButton();
 }
 
-void MainComponent::UpdateDownloadIndicators()
-{
+void MainComponent::UpdateDownloadIndicators() {
   if (download_indices_.empty()) {
     return;
   }
   const int current =
       download_current_ != nullptr ? download_current_->load() : 0;
-  const float progress =
-      download_permille_ != nullptr ? download_permille_->load() / 1000.0f
-                                    : 0.0f;
+  const float progress = download_permille_ != nullptr
+      ? download_permille_->load() / 1000.0f
+      : 0.0f;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       const LayerSample& s = model_.sample(pad, layer);
       if (!s.is_device()
-          || std::find(download_indices_.begin(), download_indices_.end(),
-                 s.device_index)
-              == download_indices_.end())
-      {
+          || std::find(download_indices_.begin(),
+                       download_indices_.end(),
+                       s.device_index)
+              == download_indices_.end()) {
         continue;
       }
-      auto& slot = *slots_[static_cast<size_t>(
-          pad * KitModel::kLayersPerPad + layer)];
+      auto& slot =
+          *slots_[static_cast<size_t>(pad * KitModel::kLayersPerPad + layer)];
       if (s.device_index == current) {
         slot.SetDownloadState(SampleSlot::DownloadState::kActive, progress);
       } else {
@@ -810,16 +793,14 @@ void MainComponent::UpdateDownloadIndicators()
 }
 
 void MainComponent::OnWaveDownloaded(int sample_index,
-    const device::Bytes& wav)
-{
+                                     const device::Bytes& wav) {
   // On the message thread: store the blob in the document, then refresh.
   document_.StoreWaveAudio(sample_index,
-      juce::MemoryBlock(wav.data(), wav.size()));
+                           juce::MemoryBlock(wav.data(), wav.size()));
   OnWaveCached(sample_index);
 }
 
-void MainComponent::OnWaveCached(int sample_index)
-{
+void MainComponent::OnWaveCached(int sample_index) {
   // Refresh any slot in the active kit now backed by this cached wave.
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
@@ -831,9 +812,9 @@ void MainComponent::OnWaveCached(int sample_index)
   }
 }
 
-void MainComponent::FinishKitSampleDownload(
-    const juce::String& error, int done, int total)
-{
+void MainComponent::FinishKitSampleDownload(const juce::String& error,
+                                            int done,
+                                            int total) {
   device_fetching_ = false;
   device_samples_.SetStatus({});
   commands_.commandStatusChanged();
@@ -852,15 +833,13 @@ void MainComponent::FinishKitSampleDownload(
   UpdateTransferButton();
   if (error.isNotEmpty() && done == 0) {
     juce::AlertWindow::showMessageBoxAsync(
-        juce::MessageBoxIconType::WarningIcon, "Download Kit Samples",
-        error);
+        juce::MessageBoxIconType::WarningIcon, "Download Kit Samples", error);
     return;
   }
   (void)total;
 }
 
-void MainComponent::RefreshDeviceSamples()
-{
+void MainComponent::RefreshDeviceSamples() {
   device_samples_.Refresh();
   // Re-resolve device-wave slot displays against the (new) pool.
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -872,13 +851,11 @@ void MainComponent::RefreshDeviceSamples()
   }
 }
 
-void MainComponent::RefreshKitSelector()
-{
+void MainComponent::RefreshKitSelector() {
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
 }
 
-juce::UndoManager& MainComponent::undo()
-{
+juce::UndoManager& MainComponent::undo() {
   auto& u = undos_[static_cast<size_t>(device_.current_kit())];
   if (u == nullptr) {
     u = std::make_unique<juce::UndoManager>();
@@ -886,14 +863,12 @@ juce::UndoManager& MainComponent::undo()
   return *u;
 }
 
-void MainComponent::MarkEdited()
-{
+void MainComponent::MarkEdited() {
   last_edit_ms_ = juce::Time::getMillisecondCounter();
   document_.changed();
 }
 
-void MainComponent::KitNameChanged()
-{
+void MainComponent::KitNameChanged() {
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   MarkEdited();
   MarkDeviceDirty();
@@ -904,15 +879,13 @@ void MainComponent::KitNameChanged()
 // here, whether the change came from a user gesture, undo, or a loaded
 // kit file. The pad-shaped model maps to the flat slot components as
 // idx = pad * 2 + layer.
-void MainComponent::SampleChanged(int pad, int layer)
-{
+void MainComponent::SampleChanged(int pad, int layer) {
   MarkEdited();
   MarkDeviceDirty();
   SyncSlotFromModel(pad, layer);
 }
 
-void MainComponent::SyncSlotFromModel(int pad, int layer)
-{
+void MainComponent::SyncSlotFromModel(int pad, int layer) {
   const int idx = pad * KitModel::kLayersPerPad + layer;
   const LayerSample& sample = model_.sample(pad, layer);
   auto& slot = *slots_[static_cast<size_t>(idx)];
@@ -933,18 +906,18 @@ void MainComponent::SyncSlotFromModel(int pad, int layer)
       LoadAudioIntoSlot(idx, cached, name);
     } else {
       engine_.Clear(idx);
-      slot.SetDeviceSample(name,
-          rec != nullptr ? static_cast<double>(rec->frames) / 48000.0
-                         : 0.0);
+      slot.SetDeviceSample(
+          name,
+          rec != nullptr ? static_cast<double>(rec->frames) / 48000.0 : 0.0);
     }
     return;
   }
   LoadAudioIntoSlot(idx, sample.file, sample.file.getFileName());
 }
 
-void MainComponent::LoadAudioIntoSlot(
-    int idx, const juce::File& file, const juce::String& display_name)
-{
+void MainComponent::LoadAudioIntoSlot(int idx,
+                                      const juce::File& file,
+                                      const juce::String& display_name) {
   auto& slot = *slots_[static_cast<size_t>(idx)];
   auto info = engine_.Load(idx, file);
   if (!info) {
@@ -957,18 +930,15 @@ void MainComponent::LoadAudioIntoSlot(
   // Too-short files play fine but render no spectrogram; the slot just
   // shows the info bar in that case.
   juce::Image image;
-  if (auto png = render_spectrogram(
-          file.getFullPathName().toStdString(), idx);
-      !png.empty())
-  {
+  if (auto png = render_spectrogram(file.getFullPathName().toStdString(), idx);
+      !png.empty()) {
     image = juce::ImageFileFormat::loadFrom(juce::File(png));
   }
   slot.SetSample(
       display_name, info->duration_seconds, info->sample_rate, image);
 }
 
-void MainComponent::paint(juce::Graphics& g)
-{
+void MainComponent::paint(juce::Graphics& g) {
   g.fillAll(kWindowBg);
 
   const auto now = juce::Time::getMillisecondCounter();
@@ -995,16 +965,15 @@ void MainComponent::paint(juce::Graphics& g)
       g.drawRoundedRectangle(pad.toFloat().reduced(0.5f), 10.0f, 1.0f);
       g.setColour(kPadLabel);
       g.setFont(juce::Font(juce::FontOptions(13.0f)).boldened());
-      g.drawText(juce::String(r * 3 + c + 1),
-          pad.reduced(kPadPadding + 2, kPadPadding)
-              .removeFromTop(kPadHeader),
+      g.drawText(
+          juce::String(r * 3 + c + 1),
+          pad.reduced(kPadPadding + 2, kPadPadding).removeFromTop(kPadHeader),
           juce::Justification::centredLeft);
     }
   }
 }
 
-juce::Rectangle<int> MainComponent::GridArea() const
-{
+juce::Rectangle<int> MainComponent::GridArea() const {
   auto area = getLocalBounds();
   area.removeFromTop(kHeaderHeight);
   if (browser_visible_) {
@@ -1013,20 +982,19 @@ juce::Rectangle<int> MainComponent::GridArea() const
   return area;
 }
 
-juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const
-{
+juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const {
   const auto area = GridArea();
   const int cell_w =
       (area.getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
   const int cell_h =
       (area.getHeight() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
   return {area.getX() + kGridPadding + col * (cell_w + kGridSpacing),
-      area.getY() + kGridPadding + row * (cell_h + kGridSpacing), cell_w,
-      cell_h};
+          area.getY() + kGridPadding + row * (cell_h + kGridSpacing),
+          cell_w,
+          cell_h};
 }
 
-void MainComponent::resized()
-{
+void MainComponent::resized() {
   // Right edge of the header, laid out right-to-left: the compact
   // velocity knob, then (when visible) the transfer button.
   auto header = getLocalBounds().removeFromTop(kHeaderHeight);
@@ -1034,8 +1002,8 @@ void MainComponent::resized()
   connection_dot_.setBounds(header.removeFromLeft(24));
   header.removeFromRight(10);
   auto vel = header.removeFromRight(96);
-  velocity_slider_.setBounds(vel.removeFromRight(62).withSizeKeepingCentre(
-      62, kHeaderHeight - 8));
+  velocity_slider_.setBounds(
+      vel.removeFromRight(62).withSizeKeepingCentre(62, kHeaderHeight - 8));
   velocity_caption_.setBounds(vel);
   if (transfer_button_.isVisible()) {
     header.removeFromRight(8);
@@ -1048,10 +1016,10 @@ void MainComponent::resized()
         header.removeFromRight(180).withSizeKeepingCentre(180, 26));
   }
   // The kit chooser owns the header centre.
-  kit_chooser_.setBounds(getLocalBounds()
+  kit_chooser_.setBounds(
+      getLocalBounds()
           .removeFromTop(kHeaderHeight)
-          .withSizeKeepingCentre(
-              juce::jmin(500, getWidth() - 2 * 200), 28));
+          .withSizeKeepingCentre(juce::jmin(500, getWidth() - 2 * 200), 28));
   panel_tabs_.setBounds(
       0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
@@ -1078,8 +1046,7 @@ void MainComponent::resized()
   }
 }
 
-bool MainComponent::keyPressed(const juce::KeyPress& key)
-{
+bool MainComponent::keyPressed(const juce::KeyPress& key) {
   if (key == juce::KeyPress::spaceKey) {
     // OS auto-repeat re-sends keyPressed while held; only the first
     // press of a trigger key plays (a drummer holding a stick down
@@ -1102,10 +1069,9 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
   bool pedal_down = key.getModifiers().isShiftDown() || HiHatPedalDown();
   if (code >= '1' && code <= '9') {
     pad = code - '1';
-  } else if (const auto pos = juce::String("!@#$%^&*(").indexOfChar(
-                 key.getTextCharacter());
-             pos >= 0)
-  {
+  } else if (const auto pos =
+                 juce::String("!@#$%^&*(").indexOfChar(key.getTextCharacter());
+             pos >= 0) {
     pad = pos;
     pedal_down = true;
   }
@@ -1129,13 +1095,11 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 // keyPressed only reports presses; releases arrive here, so anything
 // that cares about key-up (the H pedal, the auto-repeat guards) polls
 // the actual key state.
-bool MainComponent::keyStateChanged(bool /*is_key_down*/)
-{
+bool MainComponent::keyStateChanged(bool /*is_key_down*/) {
   SetHiHatKeyDown(juce::KeyPress::isKeyCurrentlyDown('H')
-      || juce::KeyPress::isKeyCurrentlyDown('h'));
+                  || juce::KeyPress::isKeyCurrentlyDown('h'));
   if (held_space_
-      && !juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::spaceKey))
-  {
+      && !juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::spaceKey)) {
     held_space_ = false;
   }
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -1143,16 +1107,14 @@ bool MainComponent::keyStateChanged(bool /*is_key_down*/)
     // mid-hold; the key only counts as released when both are up.
     if (held_pad_keys_[static_cast<size_t>(pad)]
         && !juce::KeyPress::isKeyCurrentlyDown('1' + pad)
-        && !juce::KeyPress::isKeyCurrentlyDown("!@#$%^&*("[pad]))
-    {
+        && !juce::KeyPress::isKeyCurrentlyDown("!@#$%^&*("[pad])) {
       held_pad_keys_[static_cast<size_t>(pad)] = false;
     }
   }
   return false;
 }
 
-void MainComponent::SetHiHatKeyDown(bool down)
-{
+void MainComponent::SetHiHatKeyDown(bool down) {
   if (down == hihat_key_down_) {
     return;  // auto-repeat, or a different key changed state
   }
@@ -1169,19 +1131,16 @@ void MainComponent::SetHiHatKeyDown(bool down)
     }
     const int open_idx = pad * KitModel::kLayersPerPad + 1;
     engine_.Stop(open_idx);
-    slots_[static_cast<size_t>(open_idx)]->set_play_state(
-        PlayState::kStopped);
+    slots_[static_cast<size_t>(open_idx)]->set_play_state(PlayState::kStopped);
     TriggerPad(pad, velocity, /*pedal_down=*/true);
   }
 }
 
-bool MainComponent::HiHatPedalDown() const
-{
+bool MainComponent::HiHatPedalDown() const {
   return hihat_key_down_ || hihat_cc_.load() >= 64;
 }
 
-void MainComponent::ApplyTransportAction(int idx, TransportAction action)
-{
+void MainComponent::ApplyTransportAction(int idx, TransportAction action) {
   auto& slot = *slots_[static_cast<size_t>(idx)];
   if (!slot.is_playable()) {
     return;
@@ -1216,16 +1175,14 @@ void MainComponent::ApplyTransportAction(int idx, TransportAction action)
 // Clicks on the pad surface itself (the header strip, the gaps between
 // slots) land here; clicks on a slot body arrive via on_click. Both are
 // whole-pad hits.
-void MainComponent::mouseDown(const juce::MouseEvent& event)
-{
+void MainComponent::mouseDown(const juce::MouseEvent& event) {
   const auto pos = event.getPosition();
   if (const int pad = PadAt(pos); pad >= 0) {
     TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
   }
 }
 
-int MainComponent::PadAt(juce::Point<int> point) const
-{
+int MainComponent::PadAt(juce::Point<int> point) const {
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     if (PadBounds(pad / 3, pad % 3).contains(point)) {
       return pad;
@@ -1234,19 +1191,16 @@ int MainComponent::PadAt(juce::Point<int> point) const
   return -1;
 }
 
-int MainComponent::VelocityForPointInPad(int pad, juce::Point<int> point)
-    const
-{
+int MainComponent::VelocityForPointInPad(int pad,
+                                         juce::Point<int> point) const {
   const auto bounds = PadBounds(pad / 3, pad % 3);
-  const float height_fraction =
-      static_cast<float>(bounds.getBottom() - point.y)
+  const float height_fraction = static_cast<float>(bounds.getBottom() - point.y)
       / static_cast<float>(juce::jmax(1, bounds.getHeight()));
   return juce::jlimit(
       1, 127, static_cast<int>(std::lround(height_fraction * 127.0f)));
 }
 
-void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
-{
+void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down) {
   if (pad < 0 || pad >= KitModel::kPadCount) {
     return;
   }
@@ -1256,8 +1210,12 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
   pad_flash_ms_[p] = juce::Time::getMillisecondCounter();
   repaint(PadBounds(pad / 3, pad % 3));
   const PadParams& params = model_.params(pad);
-  LayerWeights weights = ComputeLayerWeights(params.mode, velocity,
-      params.fade_point, params.fade_end, alternate_flip_[p], pedal_down);
+  LayerWeights weights = ComputeLayerWeights(params.mode,
+                                             velocity,
+                                             params.fade_point,
+                                             params.fade_end,
+                                             alternate_flip_[p],
+                                             pedal_down);
   if (params.mode == LayerMode::kHiHat) {
     // Closed-pedal volume shapes the closed (top) layer. Its fade
     // in/decay siblings need engine envelopes and stay device-only.
@@ -1282,8 +1240,7 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
     }
   }
   for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
-    const float gain =
-        (layer == 0 ? weights.top : weights.bottom) * loudness;
+    const float gain = (layer == 0 ? weights.top : weights.bottom) * loudness;
     const int idx = pad * KitModel::kLayersPerPad + layer;
     auto& slot = *slots_[static_cast<size_t>(idx)];
     if (gain <= 0.0f || !slot.is_playable()) {
@@ -1296,14 +1253,13 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down)
     engine_.Play(idx);
     slot.set_play_state(PlayState::kPlaying);
     // Tint the layer with the loudness the layer mode gave it.
-    slot.set_velocity_highlight(juce::jlimit(
-        1, 127, static_cast<int>(std::lround(gain * 127.0f))));
+    slot.set_velocity_highlight(
+        juce::jlimit(1, 127, static_cast<int>(std::lround(gain * 127.0f))));
     slot.FlashTransportButton(TransportAction::kPlay);
   }
 }
 
-void MainComponent::ApplyLayerParams(int pad)
-{
+void MainComponent::ApplyLayerParams(int pad) {
   const auto p = static_cast<size_t>(pad);
   PadParams params = model_.params(pad);
   params.mode = static_cast<LayerMode>(mode_boxes_[p]->getSelectedId() - 1);
@@ -1316,17 +1272,14 @@ void MainComponent::ApplyLayerParams(int pad)
   if (params == model_.params(pad)) {
     return;
   }
-  undo().beginNewTransaction(
-      "Change pad " + juce::String(pad + 1) + " layers");
+  undo().beginNewTransaction("Change pad " + juce::String(pad + 1) + " layers");
   undo().perform(new SetPadParamsAction(model_, pad, params));
 }
 
-void MainComponent::ShowPadSettings(int pad)
-{
+void MainComponent::ShowPadSettings(int pad) {
   auto panel = std::make_unique<PadSettingsPanel>();
   panel->SetParams(model_.params(pad));
-  panel->on_change = [this, pad](const PadParams& edited)
-  {
+  panel->on_change = [this, pad](const PadParams& edited) {
     // The panel only owns these four fields; the pad's mode and fade
     // values may be edited in the header while the panel is open.
     PadParams changed = model_.params(pad);
@@ -1340,43 +1293,43 @@ void MainComponent::ShowPadSettings(int pad)
     if (changed == model_.params(pad)) {
       return;
     }
-    undo().beginNewTransaction(
-        "Change pad " + juce::String(pad + 1) + " settings");
+    undo().beginNewTransaction("Change pad " + juce::String(pad + 1)
+                               + " settings");
     undo().perform(new SetPadParamsAction(model_, pad, changed));
   };
   pad_settings_panel_ = panel.get();
   pad_settings_pad_ = pad;
-  juce::CallOutBox::launchAsynchronously(std::move(panel),
+  juce::CallOutBox::launchAsynchronously(
+      std::move(panel),
       pad_menu_buttons_[static_cast<size_t>(pad)]->getScreenBounds(),
       nullptr);
 }
 
-void MainComponent::UpdatePadWidgets(int pad)
-{
+void MainComponent::UpdatePadWidgets(int pad) {
   const auto p = static_cast<size_t>(pad);
   const PadParams& params = model_.params(pad);
-  mode_boxes_[p]->setSelectedId(
-      static_cast<int>(params.mode) + 1, juce::dontSendNotification);
-  fade_point_sliders_[p]->setValue(
-      params.fade_point, juce::dontSendNotification);
+  mode_boxes_[p]->setSelectedId(static_cast<int>(params.mode) + 1,
+                                juce::dontSendNotification);
+  fade_point_sliders_[p]->setValue(params.fade_point,
+                                   juce::dontSendNotification);
   // The end can't go below the point; keep the constraint in the
   // slider's own range so drags stop there instead of snapping back.
   fade_end_sliders_[p]->setRange(params.fade_point, 127, 1);
-  fade_end_sliders_[p]->setValue(
-      params.fade_end, juce::dontSendNotification);
+  fade_end_sliders_[p]->setValue(params.fade_end, juce::dontSendNotification);
   // The default LookAndFeel's bar fill is indistinguishable from our
   // background; paint each bar in its value's velocity colour (the
   // same blue->amber->red language the pad flashes use).
-  fade_point_sliders_[p]->setColour(juce::Slider::trackColourId,
+  fade_point_sliders_[p]->setColour(
+      juce::Slider::trackColourId,
       VelocityColour(params.fade_point).withAlpha(0.5f));
-  fade_end_sliders_[p]->setColour(juce::Slider::trackColourId,
+  fade_end_sliders_[p]->setColour(
+      juce::Slider::trackColourId,
       VelocityColour(params.fade_end).withAlpha(0.5f));
   fade_point_sliders_[p]->setVisible(UsesFadePoint(params.mode));
   fade_end_sliders_[p]->setVisible(UsesFadeEnd(params.mode));
 }
 
-void MainComponent::PadParamsChanged(int pad)
-{
+void MainComponent::PadParamsChanged(int pad) {
   MarkEdited();
   MarkDeviceDirty();
   UpdatePadWidgets(pad);
@@ -1387,24 +1340,26 @@ void MainComponent::PadParamsChanged(int pad)
   }
 }
 
-void MainComponent::MoveSample(int from, int to, bool copy)
-{
+void MainComponent::MoveSample(int from, int to, bool copy) {
   if (from == to || from < 0 || to < 0) {
     return;
   }
-  const LayerSample sample = model_.sample(
-      from / KitModel::kLayersPerPad, from % KitModel::kLayersPerPad);
+  const LayerSample sample = model_.sample(from / KitModel::kLayersPerPad,
+                                           from % KitModel::kLayersPerPad);
   undo().beginNewTransaction(copy ? "Duplicate sample" : "Move sample");
-  undo().perform(new SetSampleAction(model_, to / KitModel::kLayersPerPad,
-      to % KitModel::kLayersPerPad, sample));
+  undo().perform(new SetSampleAction(model_,
+                                     to / KitModel::kLayersPerPad,
+                                     to % KitModel::kLayersPerPad,
+                                     sample));
   if (!copy) {
-    undo().perform(new SetSampleAction(model_, from / KitModel::kLayersPerPad,
-        from % KitModel::kLayersPerPad, LayerSample()));
+    undo().perform(new SetSampleAction(model_,
+                                       from / KitModel::kLayersPerPad,
+                                       from % KitModel::kLayersPerPad,
+                                       LayerSample()));
   }
 }
 
-void MainComponent::MovePad(int from_pad, int to_pad, bool copy)
-{
+void MainComponent::MovePad(int from_pad, int to_pad, bool copy) {
   if (from_pad == to_pad || from_pad < 0 || to_pad < 0) {
     return;
   }
@@ -1416,23 +1371,19 @@ void MainComponent::MovePad(int from_pad, int to_pad, bool copy)
   undo().perform(new SetSampleAction(model_, to_pad, 1, bottom));
   if (!copy) {
     undo().perform(new SetSampleAction(model_, from_pad, 0, LayerSample()));
-    undo().perform(
-        new SetSampleAction(model_, from_pad, 1, LayerSample()));
+    undo().perform(new SetSampleAction(model_, from_pad, 1, LayerSample()));
   }
 }
 
-void MainComponent::SetDragTarget(int idx, bool whole_pad)
-{
+void MainComponent::SetDragTarget(int idx, bool whole_pad) {
   // idx ^ 1 flips the layer bit, giving the other slot of the same pad.
   for (int i = 0; i < kSlotCount; ++i) {
-    const bool on =
-        idx >= 0 && (i == idx || (whole_pad && i == (idx ^ 1)));
+    const bool on = idx >= 0 && (i == idx || (whole_pad && i == (idx ^ 1)));
     slots_[static_cast<size_t>(i)]->set_drag_hover(on);
   }
 }
 
-void MainComponent::OpenMidiInputs()
-{
+void MainComponent::OpenMidiInputs() {
   for (const auto& info : juce::MidiInput::getAvailableDevices()) {
     if (auto in = juce::MidiInput::openDevice(info.identifier, this)) {
       in->start();
@@ -1443,8 +1394,7 @@ void MainComponent::OpenMidiInputs()
 }
 
 void MainComponent::handleIncomingMidiMessage(
-    juce::MidiInput*, const juce::MidiMessage& message)
-{
+    juce::MidiInput*, const juce::MidiMessage& message) {
   // Runs on the MIDI thread; marshal to the message thread before touching
   // the audio engine or UI.
   // CC4 is the hi-hat pedal on the HH CTRL jack; remember its position
@@ -1462,18 +1412,15 @@ void MainComponent::handleIncomingMidiMessage(
   }
   const int velocity = message.getVelocity();
   juce::Component::SafePointer<MainComponent> safe(this);
-  juce::MessageManager::callAsync(
-      [safe, pad, velocity]
-      {
-        if (safe != nullptr) {
-          // A real hit: velocity-aware, through the pad's layer mode.
-          safe->TriggerPad(pad, velocity, safe->HiHatPedalDown());
-        }
-      });
+  juce::MessageManager::callAsync([safe, pad, velocity] {
+    if (safe != nullptr) {
+      // A real hit: velocity-aware, through the pad's layer mode.
+      safe->TriggerPad(pad, velocity, safe->HiHatPedalDown());
+    }
+  });
 }
 
-void MainComponent::timerCallback()
-{
+void MainComponent::timerCallback() {
   // Keep menu enablement in step with the undo history.
   if (undo().canUndo() != could_undo_ || undo().canRedo() != could_redo_) {
     could_undo_ = undo().canUndo();
@@ -1496,8 +1443,7 @@ void MainComponent::timerCallback()
   // there is no explicit save.
   if (document_.hasChangedSinceSaved()
       && juce::Time::getMillisecondCounter() - last_edit_ms_
-          >= kAutosaveQuietMs)
-  {
+          >= kAutosaveQuietMs) {
     document_.Autosave();
   }
 

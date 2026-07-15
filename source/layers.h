@@ -15,14 +15,14 @@
 namespace spdsx {
 
 enum class LayerMode {
-  kMix,         // A and B always play together; velocity only sets loudness
-  kFade1,       // B joins, at full presence, at/above the fade point
-  kFade2,       // B blooms in from the fade point, equal to A at fade end
-  kXfade,       // like kFade2 but A trades away as B comes up
-  kSwitch,      // A below the fade point, B at/above it, never both
+  kMix,  // A and B always play together; velocity only sets loudness
+  kFade1,  // B joins, at full presence, at/above the fade point
+  kFade2,  // B blooms in from the fade point, equal to A at fade end
+  kXfade,  // like kFade2 but A trades away as B comes up
+  kSwitch,  // A below the fade point, B at/above it, never both
   kSwitchMono,  // kSwitch, but a hit chokes whatever is still ringing
-  kAlternate,   // A and B alternate per hit, velocity-independent
-  kHiHat,       // pedal down = A (closed), pedal up = B (open)
+  kAlternate,  // A and B alternate per hit, velocity-independent
+  kHiHat,  // pedal down = A (closed), pedal up = B (open)
 };
 
 inline constexpr int kLayerModeCount = 8;
@@ -58,8 +58,7 @@ inline constexpr int kDefaultFixedVelocity = 127;
 float DynamicsGain(DynamicsCurve curve, int velocity);
 
 std::string_view DynamicsCurveName(DynamicsCurve curve);
-DynamicsCurve ParseDynamicsCurve(std::string_view name,
-    DynamicsCurve fallback);
+DynamicsCurve ParseDynamicsCurve(std::string_view name, DynamicsCurve fallback);
 
 // Per-hit result: each layer's selection weight, 0..1 (0 = that layer
 // doesn't fire; blended modes give fractions), plus whether the hit
@@ -76,8 +75,12 @@ struct LayerWeights {
 // velocity and fade_point/fade_end are MIDI-style 1..127. alternate_flip
 // is the pad's flip-flop state (false = A fires next); pedal_down is the
 // hi-hat pedal. Modes ignore the inputs they don't use.
-LayerWeights ComputeLayerWeights(LayerMode mode, int velocity,
-    int fade_point, int fade_end, bool alternate_flip, bool pedal_down);
+LayerWeights ComputeLayerWeights(LayerMode mode,
+                                 int velocity,
+                                 int fade_point,
+                                 int fade_end,
+                                 bool alternate_flip,
+                                 bool pedal_down);
 
 // True when the mode reads the fade point (and, for the blended modes,
 // the fade end); drives which controls the UI shows.

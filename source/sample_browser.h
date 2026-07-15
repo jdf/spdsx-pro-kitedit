@@ -10,9 +10,10 @@
 
 namespace spdsx {
 
-class SampleBrowser : public juce::Component,
-                      private juce::FileBrowserListener,
-                      private juce::Timer {
+class SampleBrowser
+    : public juce::Component
+    , private juce::FileBrowserListener
+    , private juce::Timer {
 public:
   explicit SampleBrowser(juce::ApplicationProperties& settings);
   ~SampleBrowser() override;
@@ -26,8 +27,11 @@ public:
 private:
   // FileBrowserListener: preview the selection when autoplay is enabled.
   void selectionChanged() override;
+
   void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
+
   void fileDoubleClicked(const juce::File&) override {}
+
   void browserRootChanged(const juce::File&) override {}
 
   void SetRoot(const juce::File& root, bool persist);

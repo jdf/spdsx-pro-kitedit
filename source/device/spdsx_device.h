@@ -31,7 +31,7 @@ Bytes Unwrap(const Bytes& frame);
 std::string FindDevicePort();
 
 class SpdsxDevice {
- public:
+public:
   explicit SpdsxDevice(const std::string& port);
 
   // Writes a framed payload and waits for the device's framed reply. Use for
@@ -66,15 +66,20 @@ class SpdsxDevice {
   // the device. (The record's 0x84 "content hash" field, whose algorithm
   // the official app uses but never shared, is written as 0 — the device
   // ignores it entirely; see WAVE-UPLOAD-DELETE-PROTOCOL.md.)
-  void UploadWave(int sample_index, const Bytes& smp,
-      const std::string& wavename, const std::string& filename);
+  void UploadWave(int sample_index,
+                  const Bytes& smp,
+                  const std::string& wavename,
+                  const std::string& filename);
 
   Bytes SelectKit(int kit);
   Bytes SelectObject(ObjectKind kind, int index);
   // Focus (replies; drains) then write the pad-link group (fire-and-forget)
   // for a specific kit; pace_seconds paces the no-ack write.
-  void SetPadLink(int kit, ObjectKind kind, int index, int group,
-      double pace_seconds = 0.02);
+  void SetPadLink(int kit,
+                  ObjectKind kind,
+                  int index,
+                  int group,
+                  double pace_seconds = 0.02);
 
   // Selects the kit, then writes its 16-char name (space-padded/truncated).
   void SetKitName(int kit, const std::string& name, double pace_seconds = 0.02);
@@ -82,8 +87,8 @@ class SpdsxDevice {
   // Selects the kit, focuses the pad, then assigns a wave (sample number) to
   // one of its slots. NOTE: message bytes match captures, but the full
   // sequence has not yet been driven against hardware.
-  void SetPadWave(int kit, int pad, PadSlot slot, int sample,
-      double pace_seconds = 0.02);
+  void SetPadWave(
+      int kit, int pad, PadSlot slot, int sample, double pace_seconds = 0.02);
 
   // Selects the kit, focuses the pad, then writes its hit-response layer
   // params (mode, fades, dynamics, curve, fixed velocity, hi-hat
@@ -91,8 +96,10 @@ class SpdsxDevice {
   // field. pad is 1-based. Changes hit working state; persist with
   // Commit(). NOTE: message bytes match captures, not yet driven end-to-
   // end against hardware.
-  void SetPadLayerParams(int kit, int pad, const PadDeviceParams& params,
-      double pace_seconds = 0.02);
+  void SetPadLayerParams(int kit,
+                         int pad,
+                         const PadDeviceParams& params,
+                         double pace_seconds = 0.02);
 
   using ProgressCallback = std::function<void(size_t done, size_t total)>;
 
@@ -104,7 +111,8 @@ class SpdsxDevice {
   // raw `.SMP` bytes (RFWV header + PCM). Throws on protocol failure.
   // Preload waves aren't exportable; only user waves resolve.
   Bytes ReadRemoteWave(int sample_index,
-      const ProgressCallback& on_progress = {}, double idle_timeout = 1.0);
+                       const ProgressCallback& on_progress = {},
+                       double idle_timeout = 1.0);
 
   using BlockCallback = std::function<void(const Bytes& block)>;
 
@@ -115,10 +123,12 @@ class SpdsxDevice {
   // PREPARE all four banks, BEGIN the target, then repeated READs — each
   // yielding a device-chosen batch of 6c 02 blocks — until one yields
   // none, then END. on_block, if given, fires per block (for progress).
-  Bytes DumpBank(uint8_t bank, const BlockCallback& on_block = {},
-      double idle_timeout = 1.0, double block_timeout = 15.0);
+  Bytes DumpBank(uint8_t bank,
+                 const BlockCallback& on_block = {},
+                 double idle_timeout = 1.0,
+                 double block_timeout = 15.0);
 
- private:
+private:
   // Reads one transport frame's payload; empty on idle/malformed.
   Bytes ReadBulkFrame(double idle_timeout, double body_timeout);
 
@@ -128,8 +138,10 @@ class SpdsxDevice {
   // (live-verified byte-exact); RegisterWave writes the two DT1 directory
   // records at 0x2000000 + N*256 and flash-commits.
   void WriteRemoteFile(int sample_index, const Bytes& smp);
-  void RegisterWave(int sample_index, int frames,
-      const std::string& wavename, const std::string& filename);
+  void RegisterWave(int sample_index,
+                    int frames,
+                    const std::string& wavename,
+                    const std::string& filename);
 
   SerialPort port_;
 };

@@ -24,6 +24,7 @@ public:
   // Updates the display; the parent calls this whenever the current
   // kit or its name changes.
   void SetCurrent(int index, const juce::String& name);
+
   int current() const { return current_; }
 
   void paint(juce::Graphics& g) override;

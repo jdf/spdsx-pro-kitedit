@@ -61,32 +61,18 @@ AttributeMacros:
 BinPackArguments: false
 BinPackParameters: false
 BitFieldColonSpacing: Both
-BraceWrapping:
-  AfterCaseLabel: false
-  AfterClass: true
-  AfterControlStatement: MultiLine
-  AfterEnum: true
-  AfterExternBlock: true
-  AfterFunction: true
-  AfterNamespace: true
-  AfterObjCDeclaration: false
-  AfterStruct: true
-  AfterUnion: true
-  BeforeCatch: false
-  BeforeElse: false
-  BeforeLambdaBody: true
-  BeforeWhile: false
-  IndentBraces: false
-  SplitEmptyFunction: true
-  SplitEmptyRecord: true
-  SplitEmptyNamespace: true
-BreakAdjacentStringLiterals: false
+# Keep adjacent string literals on their own lines. With this off, a run of
+# them is packed past the column limit and then split mid-string, which is
+# both unreadable and not idempotent.
+BreakAdjacentStringLiterals: true
 BreakAfterAttributes: Leave
 BreakAfterJavaFieldAnnotations: true
 BreakArrays: true
 BreakBeforeBinaryOperators: NonAssignment
 BreakBeforeConceptDeclarations: Always
-BreakBeforeBraces: Custom
+# Google style: the opening brace attaches to the line that opens the block —
+# functions, classes, namespaces, control statements, and lambdas alike.
+BreakBeforeBraces: Attach
 BreakBeforeInlineASMColon: OnlyMultiline
 BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeComma
@@ -112,24 +98,28 @@ IfMacros:
   - KJ_IF_MAYBE
 IncludeBlocks: Regroup
 IncludeCategories:
-  # Standard library headers come before anything else
+  # A file's own header sorts above all of these (category 0, matched via
+  # IncludeIsMainRegex), then standard library, then other libraries, then
+  # this project's headers.
   - Regex: '^<[a-z_]+>'
-    Priority: -1
-    SortPriority: 0
-    CaseSensitive: false
-  - Regex: '^<.+\.h(pp)?>'
     Priority: 1
     SortPriority: 0
     CaseSensitive: false
-  - Regex: '^<.*'
+  - Regex: '^<.+\.h(pp)?>'
     Priority: 2
     SortPriority: 0
     CaseSensitive: false
-  - Regex: '.*'
+  - Regex: '^<.*'
     Priority: 3
     SortPriority: 0
     CaseSensitive: false
-IncludeIsMainRegex: ''
+  - Regex: '.*'
+    Priority: 4
+    SortPriority: 0
+    CaseSensitive: false
+# clang-format's default: pairs foo_test.cc with foo.h, so a test's header
+# under test sorts first like any other main include.
+IncludeIsMainRegex: '([-_](test|unittest))?$'
 IncludeIsMainSourceRegex: ''
 IndentAccessModifiers: false
 IndentCaseBlocks: false

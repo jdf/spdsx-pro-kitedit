@@ -20,7 +20,10 @@ namespace spdsx {
 
 // Which stored copy of the kits: the working document, or the last-synced
 // base used for three-way conflict detection.
-enum class Snapshot { kCurrent, kBase };
+enum class Snapshot {
+  kCurrent,
+  kBase
+};
 
 class DeviceDb {
 public:
@@ -31,7 +34,7 @@ public:
   // Opens (creating and initializing the schema if new) the database at
   // `path`. Returns null and fills `error` on failure.
   static std::unique_ptr<DeviceDb> Open(const juce::File& path,
-      juce::String& error);
+                                        juce::String& error);
 
   // Reads a snapshot's 200 kits (names + pads) into the model's kit
   // array. kCurrent also loads the current-kit index and the sample pool.
@@ -40,7 +43,7 @@ public:
   // Writes the model's kits + current-kit index into a snapshot, in one
   // transaction. Does not touch the sample pool or audio blobs.
   void WriteKits(const DeviceModel& model,
-      Snapshot snapshot = Snapshot::kCurrent);
+                 Snapshot snapshot = Snapshot::kCurrent);
 
   // Replaces the stored sample-pool directory metadata with the model's,
   // preserving any audio blobs already cached for those indices.
@@ -61,7 +64,9 @@ public:
   void CaptureBase();
 
 private:
-  explicit DeviceDb(sqlite3* db) : db_(db) {}
+  explicit DeviceDb(sqlite3* db)
+      : db_(db) {}
+
   sqlite3* db_ = nullptr;
 };
 

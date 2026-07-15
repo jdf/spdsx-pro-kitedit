@@ -26,8 +26,7 @@ public:
 };
 
 // A device kit record carrying values the parser would really produce.
-device::KitRecord DeviceKit(std::string name)
-{
+device::KitRecord DeviceKit(std::string name) {
   device::KitRecord rec;
   rec.name = std::move(name);
   for (auto& pad : rec.pads) {
@@ -39,8 +38,7 @@ device::KitRecord DeviceKit(std::string name)
   return rec;
 }
 
-void ExecSql(const juce::File& path, const char* sql)
-{
+void ExecSql(const juce::File& path, const char* sql) {
   sqlite3* raw = nullptr;
   ASSERT_EQ(sqlite3_open(path.getFullPathName().toRawUTF8(), &raw), SQLITE_OK);
   ASSERT_EQ(sqlite3_exec(raw, sql, nullptr, nullptr, nullptr), SQLITE_OK);
@@ -49,8 +47,7 @@ void ExecSql(const juce::File& path, const char* sql)
 
 class DeviceDocumentTest : public ::testing::Test {
 protected:
-  void SetUp() override
-  {
+  void SetUp() override {
     juce::PropertiesFile::Options options;
     options.applicationName = "spdsx-patchedit-test";
     options.filenameSuffix = ".settings";
@@ -67,14 +64,12 @@ protected:
     doc->on_model_reload = [this](bool loading) { reloads.push_back(loading); };
   }
 
-  void TearDown() override
-  {
+  void TearDown() override {
     // CachedWaveFile extracts into the shared temp cache, not our TempDir.
     WaveCache().deleteRecursively();
   }
 
-  static juce::File WaveCache()
-  {
+  static juce::File WaveCache() {
     return juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getChildFile("spdsx-wavecache");
   }
@@ -92,8 +87,7 @@ protected:
 
 // ---- Title ----
 
-TEST_F(DeviceDocumentTest, IsUntitledUntilItHasAFile)
-{
+TEST_F(DeviceDocumentTest, IsUntitledUntilItHasAFile) {
   EXPECT_EQ(doc->getDocumentTitle(), juce::String("Untitled Device"));
 
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
@@ -102,8 +96,7 @@ TEST_F(DeviceDocumentTest, IsUntitledUntilItHasAFile)
 
 // ---- CreateNew ----
 
-TEST_F(DeviceDocumentTest, CreateNewWritesAFileAndStartsClean)
-{
+TEST_F(DeviceDocumentTest, CreateNewWritesAFileAndStartsClean) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
 
   EXPECT_TRUE(path().existsAsFile());
@@ -113,8 +106,7 @@ TEST_F(DeviceDocumentTest, CreateNewWritesAFileAndStartsClean)
   EXPECT_EQ(doc->getLastDocumentOpened(), path());
 }
 
-TEST_F(DeviceDocumentTest, CreateNewReplacesAnExistingDocument)
-{
+TEST_F(DeviceDocumentTest, CreateNewReplacesAnExistingDocument) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   model.set_name("EDITED");
   doc->Autosave();
@@ -126,8 +118,7 @@ TEST_F(DeviceDocumentTest, CreateNewReplacesAnExistingDocument)
 }
 
 // A legacy folder-package document could be sitting at the same path.
-TEST_F(DeviceDocumentTest, CreateNewReplacesALegacyFolderAtThePath)
-{
+TEST_F(DeviceDocumentTest, CreateNewReplacesALegacyFolderAtThePath) {
   ASSERT_TRUE(path().createDirectory().wasOk());
   path().getChildFile("device.json").replaceWithText("{}");
   ASSERT_TRUE(path().isDirectory());
@@ -138,15 +129,13 @@ TEST_F(DeviceDocumentTest, CreateNewReplacesALegacyFolderAtThePath)
   EXPECT_FALSE(path().isDirectory());
 }
 
-TEST_F(DeviceDocumentTest, CreateNewReportsAPathItCannotUse)
-{
+TEST_F(DeviceDocumentTest, CreateNewReportsAPathItCannotUse) {
   EXPECT_TRUE(doc->CreateNew(temp.file("no/such/dir/x.spdsx")).failed());
 }
 
 // ---- Stashing the active kit ----
 
-TEST_F(DeviceDocumentTest, StashActiveKitCopiesTheLiveModelIntoTheDevice)
-{
+TEST_F(DeviceDocumentTest, StashActiveKitCopiesTheLiveModelIntoTheDevice) {
   model.set_name("LIVE");
   model.set_sample(2, 1, LayerSample::DeviceWave(9));
   PadParams params = model.params(2);
@@ -163,8 +152,7 @@ TEST_F(DeviceDocumentTest, StashActiveKitCopiesTheLiveModelIntoTheDevice)
 
 // ---- SwitchKit ----
 
-TEST_F(DeviceDocumentTest, SwitchKitStashesTheOldKitAndLoadsTheNew)
-{
+TEST_F(DeviceDocumentTest, SwitchKitStashesTheOldKitAndLoadsTheNew) {
   model.set_name("KIT ZERO");
   device.kit(5).name = "KIT FIVE";
 
@@ -181,8 +169,7 @@ TEST_F(DeviceDocumentTest, SwitchKitStashesTheOldKitAndLoadsTheNew)
 // Switching kits is view state, so it must not dirty a clean document nor
 // clean a dirty one -- even though reloading the model fires change
 // listeners that would otherwise mark it edited.
-TEST_F(DeviceDocumentTest, SwitchKitPreservesTheChangedFlag)
-{
+TEST_F(DeviceDocumentTest, SwitchKitPreservesTheChangedFlag) {
   doc->setChangedFlag(false);
   doc->SwitchKit(3);
   EXPECT_FALSE(doc->hasChangedSinceSaved());
@@ -193,21 +180,18 @@ TEST_F(DeviceDocumentTest, SwitchKitPreservesTheChangedFlag)
 }
 
 // Undo histories are per-kit and survive a switch.
-TEST_F(DeviceDocumentTest, SwitchKitLeavesTheUndoHistoriesAlone)
-{
+TEST_F(DeviceDocumentTest, SwitchKitLeavesTheUndoHistoriesAlone) {
   doc->SwitchKit(3);
   EXPECT_EQ(history_resets, 0);
 }
 
 // The UI uses the bracket to tell a load's listener storm from a real edit.
-TEST_F(DeviceDocumentTest, SwitchKitBracketsTheModelReload)
-{
+TEST_F(DeviceDocumentTest, SwitchKitBracketsTheModelReload) {
   doc->SwitchKit(3);
   EXPECT_EQ(reloads, (std::vector<bool> {true, false}));
 }
 
-TEST_F(DeviceDocumentTest, SwitchKitIgnoresTheCurrentAndOutOfRangeKits)
-{
+TEST_F(DeviceDocumentTest, SwitchKitIgnoresTheCurrentAndOutOfRangeKits) {
   doc->SwitchKit(device.current_kit());
   doc->SwitchKit(-1);
   doc->SwitchKit(DeviceModel::kKitCount);
@@ -218,8 +202,7 @@ TEST_F(DeviceDocumentTest, SwitchKitIgnoresTheCurrentAndOutOfRangeKits)
 
 // ---- ResetToUntitled ----
 
-TEST_F(DeviceDocumentTest, ResetToUntitledClearsEverything)
-{
+TEST_F(DeviceDocumentTest, ResetToUntitledClearsEverything) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   model.set_name("EDITED");
   doc->StashActiveKit();
@@ -237,8 +220,7 @@ TEST_F(DeviceDocumentTest, ResetToUntitledClearsEverything)
 
 // ---- Autosave / OpenDevice round trip ----
 
-TEST_F(DeviceDocumentTest, AutosavePersistsTheLiveKitAndMarksItSaved)
-{
+TEST_F(DeviceDocumentTest, AutosavePersistsTheLiveKitAndMarksItSaved) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   model.set_name("AUTOSAVED");
   doc->setChangedFlag(true);
@@ -255,15 +237,13 @@ TEST_F(DeviceDocumentTest, AutosavePersistsTheLiveKitAndMarksItSaved)
 }
 
 // Only the --load test runs reach the untitled state; it must not crash.
-TEST_F(DeviceDocumentTest, AutosaveWhileUntitledDoesNothing)
-{
+TEST_F(DeviceDocumentTest, AutosaveWhileUntitledDoesNothing) {
   model.set_name("NOWHERE TO GO");
   doc->Autosave();
   EXPECT_EQ(doc->getFile(), juce::File());
 }
 
-TEST_F(DeviceDocumentTest, OpenDeviceStartsCleanAndRemembersThePath)
-{
+TEST_F(DeviceDocumentTest, OpenDeviceStartsCleanAndRemembersThePath) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   doc->Autosave();
 
@@ -277,8 +257,7 @@ TEST_F(DeviceDocumentTest, OpenDeviceStartsCleanAndRemembersThePath)
   EXPECT_EQ(other.getLastDocumentOpened(), path());
 }
 
-TEST_F(DeviceDocumentTest, OpenDeviceReportsAFileItCannotRead)
-{
+TEST_F(DeviceDocumentTest, OpenDeviceReportsAFileItCannotRead) {
   const juce::File junk = temp.file("junk.spdsx");
   junk.replaceWithText("not a database");
 
@@ -288,8 +267,7 @@ TEST_F(DeviceDocumentTest, OpenDeviceReportsAFileItCannotRead)
 
 // The loader refuses a document from a newer build rather than silently
 // misreading it.
-TEST_F(DeviceDocumentTest, OpenDeviceRefusesANewerSchema)
-{
+TEST_F(DeviceDocumentTest, OpenDeviceRefusesANewerSchema) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   ExecSql(path(), "UPDATE meta SET value='99' WHERE key='schema_version';");
 
@@ -305,8 +283,7 @@ TEST_F(DeviceDocumentTest, OpenDeviceRefusesANewerSchema)
 
 // ---- saveDocument: Save As carries the database, blobs and all ----
 
-TEST_F(DeviceDocumentTest, SaveDocumentToANewPathCarriesTheCachedAudio)
-{
+TEST_F(DeviceDocumentTest, SaveDocumentToANewPathCarriesTheCachedAudio) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   const juce::MemoryBlock wav("cached-bytes", 12);
   doc->StoreWaveAudio(3, wav);
@@ -326,16 +303,14 @@ TEST_F(DeviceDocumentTest, SaveDocumentToANewPathCarriesTheCachedAudio)
   EXPECT_TRUE(other.HasCachedAudio(3));
 }
 
-TEST_F(DeviceDocumentTest, SaveDocumentReportsAPathItCannotOpen)
-{
+TEST_F(DeviceDocumentTest, SaveDocumentReportsAPathItCannotOpen) {
   // Untitled: nothing to carry across, so this is the plain open failure.
   EXPECT_TRUE(doc->saveDocument(temp.file("no/such/dir/x.spdsx")).failed());
 }
 
 // Save As has to carry the existing database across; if the copy cannot be
 // made, say so rather than reporting a save that did not happen.
-TEST_F(DeviceDocumentTest, SaveDocumentReportsAFailedCopy)
-{
+TEST_F(DeviceDocumentTest, SaveDocumentReportsAFailedCopy) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
 
   const juce::Result result =
@@ -349,8 +324,7 @@ TEST_F(DeviceDocumentTest, SaveDocumentReportsAFailedCopy)
 // Carrying the database across means closing it first, so a copy that fails
 // must put it back: otherwise the document keeps taking edits for the rest of
 // the session while Autosave silently drops every one of them.
-TEST_F(DeviceDocumentTest, AFailedSaveAsLeavesTheDocumentStillSaving)
-{
+TEST_F(DeviceDocumentTest, AFailedSaveAsLeavesTheDocumentStillSaving) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   ASSERT_TRUE(doc->saveDocument(temp.file("no/such/dir/moved.spdsx")).failed());
 
@@ -367,8 +341,7 @@ TEST_F(DeviceDocumentTest, AFailedSaveAsLeavesTheDocumentStillSaving)
 // Worst case: the copy fails and the original has gone too (the volume it
 // lived on disappeared). Report that, rather than only the failed copy --
 // there is no database to save into any more.
-TEST_F(DeviceDocumentTest, SaveDocumentReportsWhenTheOriginalIsGoneToo)
-{
+TEST_F(DeviceDocumentTest, SaveDocumentReportsWhenTheOriginalIsGoneToo) {
   const juce::File dir = temp.dir().getChildFile("vanishing");
   ASSERT_TRUE(dir.createDirectory().wasOk());
   ASSERT_TRUE(doc->CreateNew(dir.getChildFile("dev.spdsx")).wasOk());
@@ -385,8 +358,7 @@ TEST_F(DeviceDocumentTest, SaveDocumentReportsWhenTheOriginalIsGoneToo)
 
 // ---- Cached wave audio ----
 
-TEST_F(DeviceDocumentTest, CachedAudioRoundTripsAndExtractsAPlayableFile)
-{
+TEST_F(DeviceDocumentTest, CachedAudioRoundTripsAndExtractsAPlayableFile) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   EXPECT_FALSE(doc->HasCachedAudio(3));
 
@@ -399,15 +371,13 @@ TEST_F(DeviceDocumentTest, CachedAudioRoundTripsAndExtractsAPlayableFile)
   EXPECT_EQ(extracted.getSize(), static_cast<juce::int64>(wav.getSize()));
 }
 
-TEST_F(DeviceDocumentTest, CachedWaveFileIsInvalidForAnUncachedWave)
-{
+TEST_F(DeviceDocumentTest, CachedWaveFileIsInvalidForAnUncachedWave) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   EXPECT_EQ(doc->CachedWaveFile(404), juce::File());
 }
 
 // A re-download must not keep serving the previous extraction.
-TEST_F(DeviceDocumentTest, StoreWaveAudioInvalidatesAStaleExtraction)
-{
+TEST_F(DeviceDocumentTest, StoreWaveAudioInvalidatesAStaleExtraction) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   doc->StoreWaveAudio(3, juce::MemoryBlock("first", 5));
   ASSERT_TRUE(doc->CachedWaveFile(3).existsAsFile());
@@ -420,8 +390,7 @@ TEST_F(DeviceDocumentTest, StoreWaveAudioInvalidatesAStaleExtraction)
 
 // There is nowhere to put audio before the document has a database, and
 // index 0 is the "no sample" sentinel.
-TEST_F(DeviceDocumentTest, AudioIsIgnoredWithoutADatabaseOrAValidIndex)
-{
+TEST_F(DeviceDocumentTest, AudioIsIgnoredWithoutADatabaseOrAValidIndex) {
   doc->StoreWaveAudio(3, juce::MemoryBlock("x", 1));  // still untitled
   EXPECT_FALSE(doc->HasCachedAudio(3));
 
@@ -433,8 +402,7 @@ TEST_F(DeviceDocumentTest, AudioIsIgnoredWithoutADatabaseOrAValidIndex)
 
 // ---- ReplaceWithDeviceState ----
 
-TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsKitsAndPool)
-{
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsKitsAndPool) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
 
   device::KitRecord first = DeviceKit("FROM DEVICE");
@@ -470,8 +438,7 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsKitsAndPool)
 // The closed-pedal trio lives at kit-record +0x07/08/09 (mapped live
 // 2026-07-13); ParseKits reads it and SetPadLayerParams writes it back, so a
 // device read must carry it too rather than resetting it to the defaults.
-TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsTheHiHatClosedPedalTrio)
-{
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsTheHiHatClosedPedalTrio) {
   device::KitRecord rec = DeviceKit("HIHAT");
   rec.pads[8].layer_mode = static_cast<uint8_t>(LayerMode::kHiHat);
   rec.pads[8].hi_hat_volume = 100;
@@ -489,8 +456,7 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateMapsTheHiHatClosedPedalTrio)
 
 // The device gave us fewer kits than the model holds: the rest are blank,
 // not stale leftovers.
-TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateDefaultsTheKitsNotSupplied)
-{
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateDefaultsTheKitsNotSupplied) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   device.kit(1).name = "STALE";
 
@@ -504,8 +470,7 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateDefaultsTheKitsNotSupplied)
 
 // Freshly read from the hardware, so device == current == base: the sync
 // baseline is established in the same breath.
-TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateCapturesTheSyncBase)
-{
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateCapturesTheSyncBase) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   history_resets = 0;
 
@@ -524,8 +489,7 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateCapturesTheSyncBase)
   EXPECT_EQ(current.kit(0).name, juce::String("FROM DEVICE"));
 }
 
-TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateClampsOutOfRangeDeviceValues)
-{
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateClampsOutOfRangeDeviceValues) {
   device::KitRecord rec = DeviceKit("WILD");
   rec.pads[0].layer_mode = 200;
   rec.pads[0].dynamics_curve = 200;
@@ -545,16 +509,14 @@ TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateClampsOutOfRangeDeviceValues)
 }
 
 // An unnamed record keeps the model's default rather than becoming blank.
-TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateKeepsTheDefaultNameWhenEmpty)
-{
+TEST_F(DeviceDocumentTest, ReplaceWithDeviceStateKeepsTheDefaultNameWhenEmpty) {
   doc->ReplaceWithDeviceState({DeviceKit("")}, {});
   EXPECT_EQ(device.kit(0).name, juce::String("USER KIT"));
 }
 
 // ---- ImportKitFile: the legacy single-kit .kit reader ----
 
-TEST_F(DeviceDocumentTest, ImportKitFileReadsThePadFormat)
-{
+TEST_F(DeviceDocumentTest, ImportKitFileReadsThePadFormat) {
   const juce::File file = temp.file("legacy.kit");
   file.replaceWithText(R"({
     "version": 4, "name": "LEGACY",
@@ -582,8 +544,7 @@ TEST_F(DeviceDocumentTest, ImportKitFileReadsThePadFormat)
 }
 
 // v1 files predate pads: 18 flat slots in (pad * 2 + layer) order.
-TEST_F(DeviceDocumentTest, ImportKitFileReadsTheFlatSlotFormat)
-{
+TEST_F(DeviceDocumentTest, ImportKitFileReadsTheFlatSlotFormat) {
   const juce::File file = temp.file("v1.kit");
   file.replaceWithText(R"({
     "version": 1, "name": "FLAT",
@@ -601,8 +562,7 @@ TEST_F(DeviceDocumentTest, ImportKitFileReadsTheFlatSlotFormat)
 
 // Old and hand-edited files degrade rather than fail: absent fields fall
 // back to defaults, and entries of the wrong type become empty.
-TEST_F(DeviceDocumentTest, ImportKitFileToleratesSparseAndOddFiles)
-{
+TEST_F(DeviceDocumentTest, ImportKitFileToleratesSparseAndOddFiles) {
   const juce::File file = temp.file("sparse.kit");
   file.replaceWithText(R"({
     "version": 2,
@@ -619,8 +579,7 @@ TEST_F(DeviceDocumentTest, ImportKitFileToleratesSparseAndOddFiles)
   EXPECT_EQ(model.params(1).fixed_velocity, kDefaultFixedVelocity);
 }
 
-TEST_F(DeviceDocumentTest, ImportKitFileRefusesANewerKitFormat)
-{
+TEST_F(DeviceDocumentTest, ImportKitFileRefusesANewerKitFormat) {
   const juce::File file = temp.file("future.kit");
   file.replaceWithText(R"({"version": 99, "name": "FUTURE"})");
 
@@ -632,8 +591,7 @@ TEST_F(DeviceDocumentTest, ImportKitFileRefusesANewerKitFormat)
   EXPECT_EQ(model.name(), juce::String("Untitled Kit"));  // untouched
 }
 
-TEST_F(DeviceDocumentTest, ImportKitFileRefusesSomethingThatIsNotAKit)
-{
+TEST_F(DeviceDocumentTest, ImportKitFileRefusesSomethingThatIsNotAKit) {
   const juce::File file = temp.file("junk.kit");
   file.replaceWithText("this is not JSON");
 
@@ -644,8 +602,7 @@ TEST_F(DeviceDocumentTest, ImportKitFileRefusesSomethingThatIsNotAKit)
       << result.getErrorMessage();
 }
 
-TEST_F(DeviceDocumentTest, ImportKitFileLandsOnTheActiveKit)
-{
+TEST_F(DeviceDocumentTest, ImportKitFileLandsOnTheActiveKit) {
   const juce::File file = temp.file("k.kit");
   file.replaceWithText(R"({"version": 4, "name": "IMPORTED"})");
   doc->SwitchKit(5);
@@ -662,8 +619,7 @@ TEST_F(DeviceDocumentTest, ImportKitFileLandsOnTheActiveKit)
 
 // ---- The remembered document path ----
 
-TEST_F(DeviceDocumentTest, TheLastOpenedDocumentRoundTripsThroughSettings)
-{
+TEST_F(DeviceDocumentTest, TheLastOpenedDocumentRoundTripsThroughSettings) {
   EXPECT_EQ(doc->getLastDocumentOpened(), juce::File());
 
   doc->setLastDocumentOpened(path());

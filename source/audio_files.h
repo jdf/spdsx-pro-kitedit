@@ -16,8 +16,7 @@ inline constexpr const char* kSampleDragId = "sample-browser-file";
 // the device samples panel: "spdsx-devsample:<pool index>".
 inline constexpr const char* kDeviceSampleDragPrefix = "spdsx-devsample:";
 
-inline bool LooksLikeAudio(const juce::String& path)
-{
+inline bool LooksLikeAudio(const juce::String& path) {
   static const juce::StringArray kExtensions {
       ".wav", ".aif", ".aiff", ".flac", ".ogg", ".mp3"};
   for (const auto& ext : kExtensions) {

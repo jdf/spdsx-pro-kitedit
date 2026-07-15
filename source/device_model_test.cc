@@ -10,8 +10,7 @@
 namespace spdsx {
 namespace {
 
-device::SampleRecord Record(int index, std::string wavename)
-{
+device::SampleRecord Record(int index, std::string wavename) {
   device::SampleRecord record;
   record.index = index;
   record.wavename = std::move(wavename);
@@ -19,22 +18,19 @@ device::SampleRecord Record(int index, std::string wavename)
 }
 
 // FindSample binary-searches, so the pool must be in index order.
-std::vector<device::SampleRecord> Pool()
-{
+std::vector<device::SampleRecord> Pool() {
   return {Record(1, "Kick"), Record(7, "Snare"), Record(1590, "A_sine")};
 }
 
 // ---- KitData ----
 
-TEST(KitData, DefaultsToTheDevicesOwnKitName)
-{
+TEST(KitData, DefaultsToTheDevicesOwnKitName) {
   EXPECT_EQ(KitData().name, juce::String("USER KIT"));
 }
 
 // KitData and KitModel both seed from KitModel::DefaultParams, so a stored
 // kit and a freshly edited one start out agreeing.
-TEST(KitData, PadDefaultsMatchTheKitModels)
-{
+TEST(KitData, PadDefaultsMatchTheKitModels) {
   const KitData data;
   const KitModel model;
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
@@ -47,8 +43,7 @@ TEST(KitData, PadDefaultsMatchTheKitModels)
 
 // ---- DeviceModel: the kit array ----
 
-TEST(DeviceModel, HoldsTheDevicesTwoHundredKits)
-{
+TEST(DeviceModel, HoldsTheDevicesTwoHundredKits) {
   const DeviceModel model;
   EXPECT_EQ(DeviceModel::kKitCount, 200);
   EXPECT_EQ(model.kit(0).name, juce::String("USER KIT"));
@@ -56,15 +51,13 @@ TEST(DeviceModel, HoldsTheDevicesTwoHundredKits)
             juce::String("USER KIT"));
 }
 
-TEST(DeviceModel, KitIndexIsBoundsChecked)
-{
+TEST(DeviceModel, KitIndexIsBoundsChecked) {
   DeviceModel model;
   EXPECT_THROW((void)model.kit(DeviceModel::kKitCount), std::out_of_range);
   EXPECT_THROW((void)model.kit(-1), std::out_of_range);
 }
 
-TEST(DeviceModel, KitsAreMutableAndIndependent)
-{
+TEST(DeviceModel, KitsAreMutableAndIndependent) {
   DeviceModel model;
   model.kit(129).name = "TRACER XYZZY";
 
@@ -75,13 +68,11 @@ TEST(DeviceModel, KitsAreMutableAndIndependent)
 
 // ---- DeviceModel: the active kit (view state) ----
 
-TEST(DeviceModel, StartsOnTheFirstKit)
-{
+TEST(DeviceModel, StartsOnTheFirstKit) {
   EXPECT_EQ(DeviceModel().current_kit(), 0);
 }
 
-TEST(DeviceModel, RemembersTheCurrentKit)
-{
+TEST(DeviceModel, RemembersTheCurrentKit) {
   DeviceModel model;
   model.set_current_kit(199);
   EXPECT_EQ(model.current_kit(), 199);
@@ -89,13 +80,11 @@ TEST(DeviceModel, RemembersTheCurrentKit)
 
 // ---- DeviceModel: the sample pool ----
 
-TEST(DeviceModel, StartsWithAnEmptyPool)
-{
+TEST(DeviceModel, StartsWithAnEmptyPool) {
   EXPECT_TRUE(DeviceModel().sample_pool().empty());
 }
 
-TEST(DeviceModel, StoresTheSamplePool)
-{
+TEST(DeviceModel, StoresTheSamplePool) {
   DeviceModel model;
   model.set_sample_pool(Pool());
 
@@ -103,8 +92,7 @@ TEST(DeviceModel, StoresTheSamplePool)
   EXPECT_EQ(model.sample_pool().front().wavename, "Kick");
 }
 
-TEST(DeviceModel, FindSampleReturnsTheRecordForAPoolIndex)
-{
+TEST(DeviceModel, FindSampleReturnsTheRecordForAPoolIndex) {
   DeviceModel model;
   model.set_sample_pool(Pool());
 
@@ -118,8 +106,7 @@ TEST(DeviceModel, FindSampleReturnsTheRecordForAPoolIndex)
 
 // The pool is sparse: it lists only the named waves, so an index between
 // two entries is absent rather than nearby.
-TEST(DeviceModel, FindSampleRejectsIndicesThePoolDoesNotList)
-{
+TEST(DeviceModel, FindSampleRejectsIndicesThePoolDoesNotList) {
   DeviceModel model;
   model.set_sample_pool(Pool());
 
@@ -128,15 +115,13 @@ TEST(DeviceModel, FindSampleRejectsIndicesThePoolDoesNotList)
   EXPECT_EQ(model.FindSample(20000), nullptr);  // past the last
 }
 
-TEST(DeviceModel, FindSampleOnAnEmptyPoolFindsNothing)
-{
+TEST(DeviceModel, FindSampleOnAnEmptyPoolFindsNothing) {
   EXPECT_EQ(DeviceModel().FindSample(1), nullptr);
 }
 
 // ---- DeviceModel::Reset ----
 
-TEST(DeviceModel, ResetRestoresEveryKitThePoolAndTheCurrentKit)
-{
+TEST(DeviceModel, ResetRestoresEveryKitThePoolAndTheCurrentKit) {
   DeviceModel model;
   model.kit(5).name = "EDITED";
   model.kit(5).pads[0].samples.first = LayerSample::DeviceWave(7);

@@ -37,15 +37,16 @@ Bytes CleanBulkImage(const Bytes& raw) {
 std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
   std::vector<KitRecord> kits;
   for (int i = 0; i < kBankKitCount; ++i) {
-    const size_t rec = kKitArrayBase + static_cast<size_t>(i) * kKitRecordStride;
+    const size_t rec =
+        kKitArrayBase + static_cast<size_t>(i) * kKitRecordStride;
     if (rec + kKitNameOffset + kKitNameLen > clean_image.size()) {
       break;
     }
     KitRecord k;
     k.name = TrimName(clean_image, rec + kKitNameOffset, kKitNameLen);
     for (int pad = 0; pad < kPadsPerKit; ++pad) {
-      const size_t p = rec + kPadTableBase
-          + static_cast<size_t>(pad) * kPadBlockStride;
+      const size_t p =
+          rec + kPadTableBase + static_cast<size_t>(pad) * kPadBlockStride;
       if (p + kPadTrigReserve >= clean_image.size()) {
         break;
       }
@@ -64,8 +65,8 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       const size_t top = rec + kLayerTableBase
           + static_cast<size_t>(pad) * 2 * kLayerBlockStride;
       if (top + kLayerBlockStride + 1 < clean_image.size()) {
-        pp.wave_top = static_cast<uint16_t>(clean_image[top]
-            | clean_image[top + 1] << 8);
+        pp.wave_top =
+            static_cast<uint16_t>(clean_image[top] | clean_image[top + 1] << 8);
         pp.wave_bottom = static_cast<uint16_t>(
             clean_image[top + kLayerBlockStride]
             | clean_image[top + kLayerBlockStride + 1] << 8);
