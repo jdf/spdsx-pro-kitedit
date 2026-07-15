@@ -84,8 +84,8 @@ add_executable(spdutil source/spdutil_main.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
 
 # ---- Unit tests & coverage ----
-# One aggregating test binary compiles every source/*_test.h (through
-# testing/all_tests.cc) alongside the production translation units, so line
+# One test binary compiles every source/*_test.cc (each header's suite, next
+# to the header it covers) alongside the production translation units, so line
 # coverage is attributed to our code. It is a JUCE console app because most
 # headers pull in JUCE; the two entry points (main.cc, spdutil_main.cc) are
 # left out so gtest_main provides main().
@@ -97,8 +97,17 @@ if(SPDSX_TESTS)
     find_package(GTest CONFIG REQUIRED)
 
     juce_add_console_app(spdsx_tests PRODUCT_NAME "spdsx_tests")
+    # The suites: one *_test.cc per covered header. Add new ones here.
     target_sources(spdsx_tests PRIVATE
-        testing/all_tests.cc
+        testing/juce_test_environment.cc
+        source/actions_test.cc
+        source/device_db_test.cc
+        source/device_document_test.cc
+        source/device_model_test.cc
+        source/kit_model_test.cc
+    )
+    # The production translation units under test.
+    target_sources(spdsx_tests PRIVATE
         source/audio.cc
         source/device_db.cc
         source/device_document.cc

@@ -1,5 +1,4 @@
-#ifndef SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_TEST_H_
-#define SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_TEST_H_
+#include "kit_model.h"
 
 #include <stdexcept>
 #include <utility>
@@ -7,12 +6,8 @@
 
 #include <gtest/gtest.h>
 
-#include "kit_model.h"
-
-// Test-local helpers go in a per-header namespace: every *_test.h compiles
-// into one translation unit (testing/all_tests.cc), so helpers at global or
-// anonymous-namespace scope would collide between suites.
-namespace spdsx::kit_model_test {
+namespace spdsx {
+namespace {
 
 // Records what the model announced, so the tests can assert both that a
 // notification fired and that it carried the right pad/layer.
@@ -267,6 +262,5 @@ TEST_F(KitModelTest, RemovedListenersStopHearingChanges)
   model.AddListener(&listener);  // TearDown removes it again.
 }
 
-}  // namespace spdsx::kit_model_test
-
-#endif  // SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_TEST_H_
+}  // namespace
+}  // namespace spdsx

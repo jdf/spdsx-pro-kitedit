@@ -1,5 +1,4 @@
-#ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_DB_TEST_H_
-#define SPDSX_PATCHEDIT_SOURCE_DEVICE_DB_TEST_H_
+#include "device_db.h"
 
 #include <cstring>
 #include <memory>
@@ -10,11 +9,10 @@
 #include <gtest/gtest.h>
 #include <sqlite3.h>
 
-#include "device_db.h"
 #include "temp_dir.h"
 
-// Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::device_db_test {
+namespace spdsx {
+namespace {
 
 // A model with something distinctive in every field the store persists.
 DeviceModel EditedModel()
@@ -499,6 +497,5 @@ TEST_F(DeviceDbTest, WritePoolUpdatesMetadataInPlace)
   EXPECT_EQ(read.sample_pool().front().frames, 2u);
 }
 
-}  // namespace spdsx::device_db_test
-
-#endif  // SPDSX_PATCHEDIT_SOURCE_DEVICE_DB_TEST_H_
+}  // namespace
+}  // namespace spdsx

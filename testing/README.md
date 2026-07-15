@@ -1,33 +1,42 @@
 # testing — unit-test infrastructure
 
-Test-only code: fixtures, helpers, the aggregating runner, and the coverage
-script. The tests themselves live next to the code they cover, in `source/`.
+Test-only code: fixtures, helpers, session setup, and the coverage script. The
+tests themselves live next to the code they cover, in `source/`.
 
 ## Convention
 
 For every `source/foo.h` (and `source/device/foo.h`) there is a
-`source/foo_test.h` holding that header's `TEST()`s. They are `.h` files,
-compiled in a single translation unit — [`all_tests.cc`](all_tests.cc) —
-because gtest registers tests through static objects, so each suite must be
-included exactly once. When you add a suite, add one `#include` line to
-`all_tests.cc` (kept sorted).
+`source/foo_test.cc` holding that header's `TEST()`s. Each suite is its own
+translation unit, listed in the `spdsx_tests` target in the top-level
+`CMakeLists.txt` — add a line there when you add a suite.
 
-A `foo_test.h` includes its header under test and any helpers here:
+A `foo_test.cc` includes its header under test first, then anything else it
+needs; test-local helpers and fixtures go in an anonymous namespace:
 
 ```cpp
-#ifndef SPDSX_PATCHEDIT_SOURCE_FOO_TEST_H_
-#define SPDSX_PATCHEDIT_SOURCE_FOO_TEST_H_
-#include <gtest/gtest.h>
 #include "foo.h"
+
+#include <gtest/gtest.h>
+
+namespace spdsx {
+namespace {
+
 TEST(Foo, DoesThing) { /* ... */ }
-#endif  // SPDSX_PATCHEDIT_SOURCE_FOO_TEST_H_
+
+}  // namespace
+}  // namespace spdsx
 ```
+
+Test suite names are global to the binary, so keep them distinct across
+suites (`TEST(Foo, ...)` for `foo.h`).
 
 ## Helpers here
 
 - [`juce_test_environment.h`](juce_test_environment.h) — a gtest global
   environment that brings up the JUCE message manager for the session, so
-  JUCE-backed code under test works. Registered once in `all_tests.cc`.
+  JUCE-backed code under test works. Registered by
+  [`juce_test_environment.cc`](juce_test_environment.cc), so no suite has to
+  do it.
 - [`temp_dir.h`](temp_dir.h) — RAII temp directory for on-disk tests
   (`DeviceDb`, `DeviceDocument`).
 - [`coverage.sh`](coverage.sh) — runs the suite under LLVM source-based
@@ -66,7 +75,7 @@ $BIN --gtest_break_on_failure         # trap into the debugger on failure
 ## In VS Code
 
 The Testing panel lists every `TEST()` individually, with run/debug buttons in
-the gutter of the `source/*_test.h` that defines it — via the **TestMate C++**
+the gutter of the `source/*_test.cc` that defines it — via the **TestMate C++**
 extension (a workspace recommendation; configured in `.vscode/settings.json`,
 debugging through CodeLLDB). Tasks: **run tests**, **build tests**, **coverage
 report**, **presubmit**. `launch.json` has `spdsx_tests` and `spdsx_tests

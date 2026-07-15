@@ -1,5 +1,4 @@
-#ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_MODEL_TEST_H_
-#define SPDSX_PATCHEDIT_SOURCE_DEVICE_MODEL_TEST_H_
+#include "device_model.h"
 
 #include <stdexcept>
 #include <string>
@@ -8,10 +7,8 @@
 
 #include <gtest/gtest.h>
 
-#include "device_model.h"
-
-// Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::device_model_test {
+namespace spdsx {
+namespace {
 
 device::SampleRecord Record(int index, std::string wavename)
 {
@@ -156,6 +153,5 @@ TEST(DeviceModel, ResetRestoresEveryKitThePoolAndTheCurrentKit)
             juce::String("USER KIT"));
 }
 
-}  // namespace spdsx::device_model_test
-
-#endif  // SPDSX_PATCHEDIT_SOURCE_DEVICE_MODEL_TEST_H_
+}  // namespace
+}  // namespace spdsx

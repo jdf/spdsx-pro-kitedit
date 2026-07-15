@@ -27,8 +27,8 @@ xcrun llvm-profdata merge -sparse "$COV"/*.profraw -o "$COV/spdsx.profdata"
 
 # Restrict to our production code: the trailing SRC path includes only that
 # tree, and the ignore regex drops anything third-party or generated, plus the
-# *_test.h suites themselves (their own coverage is not a useful signal).
-IGNORE='(vcpkg_installed|/JUCE/|juce_|CMakeFiles|_deps/|/build|_test\.h)'
+# *_test.cc suites themselves (their own coverage is not a useful signal).
+IGNORE='(vcpkg_installed|/JUCE/|juce_|CMakeFiles|_deps/|/build|_test\.(cc|h))'
 
 echo
 echo "==== Coverage report (source/) ===="

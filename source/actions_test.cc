@@ -1,12 +1,9 @@
-#ifndef SPDSX_PATCHEDIT_SOURCE_ACTIONS_TEST_H_
-#define SPDSX_PATCHEDIT_SOURCE_ACTIONS_TEST_H_
+#include "actions.h"
 
 #include <gtest/gtest.h>
 
-#include "actions.h"
-
-// Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::actions_test {
+namespace spdsx {
+namespace {
 
 class ActionsTest : public ::testing::Test {
 protected:
@@ -165,6 +162,5 @@ TEST_F(ActionsTest, SeparateTransactionsUndoSeparately)
   EXPECT_EQ(model.name(), juce::String("Untitled Kit"));
 }
 
-}  // namespace spdsx::actions_test
-
-#endif  // SPDSX_PATCHEDIT_SOURCE_ACTIONS_TEST_H_
+}  // namespace
+}  // namespace spdsx

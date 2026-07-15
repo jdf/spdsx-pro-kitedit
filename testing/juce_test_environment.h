@@ -10,7 +10,8 @@ namespace spdsx_testing {
 
 // Brings up the JUCE message manager for the whole test session, so tests may
 // construct Components or use juce::MessageManager without a real application.
-// Registered once as a gtest global environment (see testing/all_tests.cc).
+// Registered once as a gtest global environment, in juce_test_environment.cc,
+// so no individual suite has to set it up.
 class JuceTestEnvironment : public ::testing::Environment {
  public:
   void SetUp() override {

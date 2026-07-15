@@ -1,5 +1,4 @@
-#ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_TEST_H_
-#define SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_TEST_H_
+#include "device_document.h"
 
 #include <memory>
 #include <string>
@@ -9,11 +8,10 @@
 #include <gtest/gtest.h>
 #include <sqlite3.h>
 
-#include "device_document.h"
 #include "temp_dir.h"
 
-// Test-local helpers go in a per-header namespace; see kit_model_test.h.
-namespace spdsx::device_document_test {
+namespace spdsx {
+namespace {
 
 // loadDocument/saveDocument are protected: FileBasedDocument's synchronous
 // save/load are compiled out in JUCE 8, so the app drives them through
@@ -613,6 +611,5 @@ TEST_F(DeviceDocumentTest, TheLastOpenedDocumentRoundTripsThroughSettings)
   EXPECT_EQ(doc->getLastDocumentOpened(), path());
 }
 
-}  // namespace spdsx::device_document_test
-
-#endif  // SPDSX_PATCHEDIT_SOURCE_DEVICE_DOCUMENT_TEST_H_
+}  // namespace
+}  // namespace spdsx

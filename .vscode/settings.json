@@ -17,7 +17,7 @@
   },
   // TestMate drives the Testing panel: it finds the built gtest binary and
   // lists every TEST individually, with run/debug buttons in the gutter of the
-  // source/*_test.h that defines it. The glob also picks up the coverage
+  // source/*_test.cc that defines it. The glob also picks up the coverage
   // preset's Debug build if that tree exists.
   "testMate.cpp.test.executables": "build*/spdsx_tests_artefacts/*/spdsx_tests",
   // Debug a single test through CodeLLDB (the same debugger as the app).
