@@ -78,6 +78,10 @@ public:
   // one physical device, so launching back into it is the common case.
   void OpenLastDocument();
 
+  // Opens a specific device document and refreshes the UI around it.
+  // Shared by File > Open and Finder (double-clicking a .spdsx).
+  void OpenDocument(const juce::File& file);
+
   void paint(juce::Graphics& g) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;

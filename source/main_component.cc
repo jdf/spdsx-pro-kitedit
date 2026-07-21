@@ -267,6 +267,17 @@ void MainComponent::OpenLastDocument() {
   RefreshDocumentState();
 }
 
+void MainComponent::OpenDocument(const juce::File& file) {
+  if (const auto r = document_.OpenDevice(file); r.failed()) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon,
+        "Open a device",
+        r.getErrorMessage());
+  }
+  RefreshKitSelector();
+  RefreshDocumentState();
+}
+
 juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() {
   return nullptr;
 }
@@ -404,18 +415,9 @@ bool MainComponent::perform(const InvocationInfo& info) {
           juce::FileBrowserComponent::openMode
               | juce::FileBrowserComponent::canSelectFiles,
           [this](const juce::FileChooser& fc) {
-            const auto file = fc.getResult();
-            if (file == juce::File()) {
-              return;
+            if (const auto file = fc.getResult(); file != juce::File()) {
+              OpenDocument(file);
             }
-            if (auto r = document_.OpenDevice(file); r.failed()) {
-              juce::AlertWindow::showMessageBoxAsync(
-                  juce::MessageBoxIconType::WarningIcon,
-                  "Open a device",
-                  r.getErrorMessage());
-            }
-            RefreshKitSelector();
-            RefreshDocumentState();
           });
       return true;
     case commands::kImportKit:

@@ -78,6 +78,21 @@ public:
 
   const juce::String getApplicationVersion() override { return "0.1.0"; }
 
+  // A document app: a second launch (or a Finder double-click of a
+  // .spdsx while running) routes into this instance instead.
+  bool moreThanOneInstanceAllowed() override { return false; }
+
+  // Where Finder document opens land, both on a running instance and —
+  // via the odoc Apple event that follows launch — on a fresh one (in
+  // that case it overrides the last-document auto-open).
+  void anotherInstanceStarted(const juce::String& commandLine) override {
+    const juce::File file(commandLine.unquoted().trim());
+    if (content != nullptr && file.hasFileExtension("spdsx")
+        && file.existsAsFile()) {
+      content->OpenDocument(file);
+    }
+  }
+
   void initialise(const juce::String&) override {
     content = new MainComponent(command_manager);
     command_manager.registerAllCommandsForTarget(content);
