@@ -52,6 +52,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/pad_settings.cc
     source/sample_browser.cc
     source/sample_slot.cc
+    source/sample_upload.cc
     source/spectro.cc
 )
 target_compile_definitions(spdsx-patchedit PRIVATE
@@ -126,6 +127,7 @@ if(SPDSX_TESTS)
         source/device_sync_test.cc
         source/kit_model_test.cc
         source/layers_test.cc
+        source/sample_upload_test.cc
     )
     # The production translation units under test.
     target_sources(spdsx_tests PRIVATE
@@ -140,6 +142,7 @@ if(SPDSX_TESTS)
         source/pad_settings.cc
         source/sample_browser.cc
         source/sample_slot.cc
+        source/sample_upload.cc
         source/spectro.cc
     )
     target_include_directories(spdsx_tests PRIVATE source testing)
