@@ -75,6 +75,8 @@ struct Pad {
   // top, bottom; an empty LayerSample means the layer holds nothing.
   std::pair<LayerSample, LayerSample> samples;
   PadParams params;
+
+  bool operator==(const Pad&) const = default;
 };
 
 class KitModel {

@@ -41,6 +41,34 @@ TEST(KitData, PadDefaultsMatchTheKitModels) {
   }
 }
 
+// Whole-kit equality is what the three-way sync diffs, so every field —
+// name, any pad's params, any layer's sample — must participate.
+TEST(KitData, EqualityCoversNamePadParamsAndSamples) {
+  const KitData a;
+  EXPECT_EQ(a, KitData());
+
+  KitData renamed;
+  renamed.name = "OTHER";
+  EXPECT_NE(a, renamed);
+
+  KitData tweaked;
+  tweaked.pads[4].params.fade_point = 99;
+  EXPECT_NE(a, tweaked);
+
+  KitData assigned;
+  assigned.pads[8].samples.second = LayerSample::DeviceWave(127);
+  EXPECT_NE(a, assigned);
+
+  KitData file_layer;
+  file_layer.pads[0].samples.first = LayerSample(juce::File("/tmp/kick.wav"));
+  EXPECT_NE(a, file_layer);
+  // A device wave and a local file are different identities even on the
+  // same layer of otherwise identical kits.
+  KitData wave_layer;
+  wave_layer.pads[0].samples.first = LayerSample::DeviceWave(1);
+  EXPECT_NE(file_layer, wave_layer);
+}
+
 // ---- DeviceModel: the kit array ----
 
 TEST(DeviceModel, HoldsTheDevicesTwoHundredKits) {

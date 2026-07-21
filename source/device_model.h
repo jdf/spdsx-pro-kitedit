@@ -24,6 +24,9 @@ struct KitData {
 
   juce::String name {"USER KIT"};  // the device's own default kit name
   std::array<Pad, KitModel::kPadCount> pads;
+
+  // Whole-kit value equality — what the three-way device sync diffs.
+  bool operator==(const KitData&) const = default;
 };
 
 class DeviceModel {
