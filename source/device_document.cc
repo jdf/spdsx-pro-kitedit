@@ -1,5 +1,7 @@
 #include "device_document.h"
 
+#include <algorithm>
+
 #include "device_sync.h"  // KitDataFromDevice
 
 namespace spdsx {
@@ -88,6 +90,7 @@ void DeviceDocument::ResetHistory() {
 
 void DeviceDocument::ResetToUntitled() {
   device_.Reset();
+  base_.Reset();
   LoadActiveKitIntoModel();
   ResetHistory();
   setFile(juce::File());
@@ -194,6 +197,8 @@ juce::Result DeviceDocument::loadDocument(const juce::File& chosen) {
   }
   device_.Reset();
   db_->ReadKits(device_);  // kits + pads + current kit + sample pool
+  base_.Reset();
+  db_->ReadKits(base_, Snapshot::kBase);
   LoadActiveKitIntoModel();
   ResetHistory();  // a freshly loaded device starts with clean histories
   return juce::Result::ok();
@@ -250,6 +255,7 @@ juce::Result DeviceDocument::CreateNew(const juce::File& file) {
     file.deleteFile();
   }
   device_.Reset();
+  base_.Reset();
   LoadActiveKitIntoModel();
   ResetHistory();
   setFile(file);
@@ -289,9 +295,115 @@ void DeviceDocument::ReplaceWithDeviceState(
     db_->WritePool(device_);
     db_->CaptureBase();
   }
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    base_.kit(i) = device_.kit(i);
+  }
   // Replaced wholesale; deliberately not undoable.
   ResetHistory();
   changed();
+}
+
+KitData DeviceDocument::KitContent(int index) const {
+  if (index != device_.current_kit()) {
+    return device_.kit(index);
+  }
+  // The active kit's stored copy can be stale; the model is the truth.
+  KitData kit;
+  kit.name = model_.name();
+  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    auto& stored = kit.pads[static_cast<size_t>(pad)];
+    stored.samples = {model_.sample(pad, 0), model_.sample(pad, 1)};
+    stored.params = model_.params(pad);
+  }
+  return kit;
+}
+
+const KitData& DeviceDocument::BaseKit(int index) const {
+  return base_.kit(index);
+}
+
+bool DeviceDocument::KitDirtyVsBase(int index) const {
+  return KitContent(index) != base_.kit(index);
+}
+
+std::vector<int> DeviceDocument::DirtyKits() const {
+  std::vector<int> dirty;
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    if (KitDirtyVsBase(i)) {
+      dirty.push_back(i);
+    }
+  }
+  return dirty;
+}
+
+void DeviceDocument::ApplySyncedKit(int index,
+                                    const KitData& current,
+                                    const KitData& base) {
+  device_.kit(index) = current;
+  base_.kit(index) = base;
+  if (index == device_.current_kit()) {
+    LoadActiveKitIntoModel();
+  }
+}
+
+void DeviceDocument::PersistSync() {
+  if (db_ == nullptr) {
+    return;
+  }
+  StashActiveKit();
+  db_->WriteKits(device_);
+  db_->WriteKits(base_, Snapshot::kBase);
+  setChangedFlag(false);
+}
+
+void DeviceDocument::ReplaceFileLayers(const juce::File& file,
+                                       int device_index) {
+  const LayerSample wave = LayerSample::DeviceWave(device_index);
+  const auto replace = [&](LayerSample& s) {
+    if (s.is_file() && s.file == file) {
+      s = wave;
+    }
+  };
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    if (i == device_.current_kit()) {
+      // Through the model, so slots and listeners follow.
+      for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+        for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
+          const LayerSample& s = model_.sample(pad, layer);
+          if (s.is_file() && s.file == file) {
+            model_.set_sample(pad, layer, wave);
+          }
+        }
+      }
+      continue;
+    }
+    for (auto& pad : device_.kit(i).pads) {
+      replace(pad.samples.first);
+      replace(pad.samples.second);
+    }
+  }
+}
+
+void DeviceDocument::UpdateSamplePool(std::vector<device::SampleRecord> pool) {
+  device_.set_sample_pool(std::move(pool));
+  if (db_ != nullptr) {
+    db_->WritePool(device_);
+  }
+}
+
+void DeviceDocument::AddPoolRecord(const device::SampleRecord& record) {
+  std::vector<device::SampleRecord> pool = device_.sample_pool();
+  const auto at = std::lower_bound(
+      pool.begin(),
+      pool.end(),
+      record.index,
+      [](const device::SampleRecord& r, int i) { return r.index < i; });
+  if (at != pool.end() && at->index == record.index) {
+    *at = record;
+  } else {
+    pool.insert(at, record);
+  }
+  UpdateSamplePool(std::move(pool));
 }
 
 juce::Result DeviceDocument::ImportKitFile(const juce::File& file) {

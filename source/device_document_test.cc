@@ -626,5 +626,132 @@ TEST_F(DeviceDocumentTest, TheLastOpenedDocumentRoundTripsThroughSettings) {
   EXPECT_EQ(doc->getLastDocumentOpened(), path());
 }
 
+// ---- Three-way sync support: base, dirty, apply, persist ----
+
+TEST_F(DeviceDocumentTest, AFreshDocumentIsCleanVsBase) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  EXPECT_TRUE(doc->DirtyKits().empty());
+}
+
+// The active kit's content comes from the live model, not the (possibly
+// stale) stored copy — an unsaved edit must read as dirty immediately.
+TEST_F(DeviceDocumentTest, KitContentTracksTheLiveModelForTheActiveKit) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  model.set_name("EDITED LIVE");
+
+  EXPECT_EQ(doc->KitContent(0).name, juce::String("EDITED LIVE"));
+  EXPECT_TRUE(doc->KitDirtyVsBase(0));
+  EXPECT_EQ(doc->DirtyKits(), std::vector<int>({0}));
+}
+
+TEST_F(DeviceDocumentTest, LoadDeviceStateLeavesEveryKitCleanVsBase) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  doc->ReplaceWithDeviceState({DeviceKit("FROM DEVICE")}, {});
+
+  EXPECT_TRUE(doc->DirtyKits().empty());
+  EXPECT_EQ(doc->BaseKit(0).name, juce::String("FROM DEVICE"));
+
+  model.set_name("TOUCHED");
+  EXPECT_EQ(doc->DirtyKits(), std::vector<int>({0}));
+}
+
+TEST_F(DeviceDocumentTest, ApplySyncedKitAdvancesBothCopiesAndTheModel) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  KitData merged;
+  merged.name = "MERGED";
+  merged.pads[0].samples.first = LayerSample::DeviceWave(42);
+
+  doc->ApplySyncedKit(0, merged, merged);
+
+  EXPECT_EQ(model.name(), juce::String("MERGED"));  // active kit reloads
+  EXPECT_EQ(device.kit(0), merged);
+  EXPECT_EQ(doc->BaseKit(0), merged);
+  EXPECT_FALSE(doc->KitDirtyVsBase(0));
+}
+
+// A skipped conflict advances current but not base, so it stays dirty.
+TEST_F(DeviceDocumentTest, ApplySyncedKitCanLeaveBaseBehind) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  KitData mine;
+  mine.name = "STILL DIFFERENT";
+
+  doc->ApplySyncedKit(3, mine, doc->BaseKit(3));
+
+  EXPECT_TRUE(doc->KitDirtyVsBase(3));
+}
+
+TEST_F(DeviceDocumentTest, PersistSyncRoundTripsBothSnapshots) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  KitData merged;
+  merged.name = "PUSHED";
+  doc->ApplySyncedKit(7, merged, merged);
+  KitData local;
+  local.name = "LOCAL ONLY";
+  doc->ApplySyncedKit(8, local, doc->BaseKit(8));
+
+  doc->PersistSync();
+
+  // A second document opening the same file sees the same dirty state.
+  KitModel model2;
+  DeviceModel device2;
+  TestDocument doc2(device2, model2, settings);
+  ASSERT_TRUE(doc2.OpenDevice(path()).wasOk());
+  EXPECT_EQ(doc2.BaseKit(7).name, juce::String("PUSHED"));
+  EXPECT_FALSE(doc2.KitDirtyVsBase(7));
+  EXPECT_EQ(doc2.KitContent(8).name, juce::String("LOCAL ONLY"));
+  EXPECT_TRUE(doc2.KitDirtyVsBase(8));
+  EXPECT_EQ(doc2.DirtyKits(), std::vector<int>({8}));
+}
+
+TEST_F(DeviceDocumentTest, ReplaceFileLayersSwapsTheFileEverywhere) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  const juce::File wav = temp.file("clap.wav");
+  // On the active kit through the model, and stored on another kit.
+  model.set_sample(0, 1, LayerSample(wav));
+  device.kit(9).pads[2].samples.first = LayerSample(wav);
+  device.kit(9).pads[2].samples.second = LayerSample(temp.file("other.wav"));
+
+  doc->ReplaceFileLayers(wav, 1596);
+
+  EXPECT_EQ(model.sample(0, 1), LayerSample::DeviceWave(1596));
+  EXPECT_EQ(device.kit(9).pads[2].samples.first, LayerSample::DeviceWave(1596));
+  // A different file on the same pad is untouched.
+  EXPECT_TRUE(device.kit(9).pads[2].samples.second.is_file());
+}
+
+TEST_F(DeviceDocumentTest, AddPoolRecordInsertsSortedAndPersists) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  device::SampleRecord a;
+  a.index = 10;
+  a.wavename = "TEN";
+  device::SampleRecord b;
+  b.index = 3;
+  b.wavename = "THREE";
+
+  doc->AddPoolRecord(a);
+  doc->AddPoolRecord(b);
+
+  ASSERT_EQ(device.sample_pool().size(), 2u);
+  EXPECT_EQ(device.sample_pool()[0].index, 3);
+  EXPECT_EQ(device.sample_pool()[1].index, 10);
+  // FindSample binary-searches, so ordering is load-bearing.
+  ASSERT_NE(device.FindSample(10), nullptr);
+  EXPECT_EQ(device.FindSample(10)->wavename, "TEN");
+
+  // Overwriting an index replaces the record rather than duplicating it.
+  a.wavename = "TEN AGAIN";
+  doc->AddPoolRecord(a);
+  ASSERT_EQ(device.sample_pool().size(), 2u);
+  EXPECT_EQ(device.FindSample(10)->wavename, "TEN AGAIN");
+
+  // And the pool survives a reload.
+  KitModel model2;
+  DeviceModel device2;
+  TestDocument doc2(device2, model2, settings);
+  ASSERT_TRUE(doc2.OpenDevice(path()).wasOk());
+  ASSERT_EQ(device2.sample_pool().size(), 2u);
+  EXPECT_EQ(device2.sample_pool()[1].wavename, "TEN AGAIN");
+}
+
 }  // namespace
 }  // namespace spdsx

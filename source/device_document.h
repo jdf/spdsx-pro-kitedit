@@ -67,6 +67,34 @@ public:
   void ReplaceWithDeviceState(const std::vector<device::KitRecord>& kits,
                               std::vector<device::SampleRecord> pool);
 
+  // ---- Three-way device sync ----
+  // A kit's current content; the live model when the kit is active.
+  KitData KitContent(int index) const;
+  // The last-synced base copy of a kit — what the device held after the
+  // last Load Device State or successful push.
+  const KitData& BaseKit(int index) const;
+  // True when a kit's content differs from its base: it has changes not
+  // yet pushed to the device (or pulled from it).
+  bool KitDirtyVsBase(int index) const;
+  // Every kit index where that's true.
+  std::vector<int> DirtyKits() const;
+  // Lands one kit's sync outcome: the merged content and the base it
+  // advances to. Reloads the model when the kit is active (a load, not
+  // a user edit). PersistSync writes the batch.
+  void ApplySyncedKit(int index, const KitData& current, const KitData& base);
+  // Writes both snapshots to the DB after a batch of ApplySyncedKit.
+  void PersistSync();
+  // Replaces every current-snapshot layer holding `file` with the pool
+  // wave it became. An upload is durable the moment it lands; recording
+  // it here keeps a sync that fails later from re-uploading the file.
+  void ReplaceFileLayers(const juce::File& file, int device_index);
+  // Replaces the pool directory metadata (a fresh device read) and
+  // persists it; cached audio blobs for surviving indices are kept.
+  void UpdateSamplePool(std::vector<device::SampleRecord> pool);
+  // Adds (or overwrites) one pool record — a just-registered upload —
+  // and persists the pool.
+  void AddPoolRecord(const device::SampleRecord& record);
+
   // Opens a device folder (or its device.json directly). All device
   // opening goes through here: FileBasedDocument::loadFrom insists the
   // target existsAsFile(), which a folder document never satisfies.
@@ -98,6 +126,10 @@ private:
   juce::ApplicationProperties& settings_;
   // The open document's database (null while untitled).
   std::unique_ptr<DeviceDb> db_;
+  // The in-memory copy of the base snapshot (kits only; the pool is
+  // device-owned and has no base). Mirrors the DB's base rows so dirty
+  // checks don't hit SQLite on every edit.
+  DeviceModel base_;
 };
 
 }  // namespace spdsx
