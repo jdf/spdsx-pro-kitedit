@@ -36,8 +36,13 @@ find_package(specgram CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 # The document is a single SQLite file (*.spdsx) — no package/UTI needed.
+# DOCUMENT_EXTENSIONS registers it with Finder (double-clicking a .spdsx
+# opens the app; App::anotherInstanceStarted routes it to the document),
+# and ICON_BIG becomes the bundle's .icns (source: assets/icon.svg).
 juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit"
-    BUNDLE_ID com.jdf.spdsx-patchedit)
+    BUNDLE_ID com.jdf.spdsx-patchedit
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
+    DOCUMENT_EXTENSIONS spdsx)
 
 target_sources(spdsx-patchedit PRIVATE
     source/audio.cc

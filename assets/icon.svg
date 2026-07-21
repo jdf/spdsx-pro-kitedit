@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The app icon: the 3x3 pad grid on the app's own palette, with the
+     bottom-right pad (pad 9, the hi-hat) lit in the save-button amber.
+     Source of truth for assets/icon.png (see assets/README.md). -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024"
+     xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a212b"/>
+      <stop offset="1" stop-color="#0d1116"/>
+    </linearGradient>
+    <linearGradient id="pad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232d3a"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="hot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e29a35"/>
+      <stop offset="1" stop-color="#9c6318"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f0b45a" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#f0b45a" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#f0b45a" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tileclip">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+  </defs>
+
+  <!-- The macOS-style tile, inset from the canvas edge. -->
+  <rect x="100" y="100" width="824" height="824" rx="185"
+        fill="url(#tile)" stroke="#2b3542" stroke-width="6"/>
+
+  <!-- 3x3 pads: grid area 186..838, cells 200 with 26 gaps, radius 30. -->
+  <g stroke="#2f3a48" stroke-width="5" fill="url(#pad)">
+    <rect x="186" y="186" width="200" height="200" rx="30"/>
+    <rect x="412" y="186" width="200" height="200" rx="30"/>
+    <rect x="638" y="186" width="200" height="200" rx="30"/>
+    <rect x="186" y="412" width="200" height="200" rx="30"/>
+    <rect x="412" y="412" width="200" height="200" rx="30"/>
+    <rect x="638" y="412" width="200" height="200" rx="30"/>
+    <rect x="186" y="638" width="200" height="200" rx="30"/>
+    <rect x="412" y="638" width="200" height="200" rx="30"/>
+  </g>
+
+  <!-- Pad 9, mid-hit. -->
+  <circle cx="738" cy="738" r="210" fill="url(#glow)" clip-path="url(#tileclip)"/>
+  <rect x="638" y="638" width="200" height="200" rx="30"
+        fill="url(#hot)" stroke="#f2bc6a" stroke-width="5"/>
+</svg>
