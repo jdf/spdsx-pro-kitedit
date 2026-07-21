@@ -1318,11 +1318,11 @@ void MainComponent::resized() {
     save_button_.setBounds(
         header.removeFromRight(w).withSizeKeepingCentre(w, 26));
   }
-  // The kit chooser owns the header centre.
-  kit_chooser_.setBounds(
-      getLocalBounds()
-          .removeFromTop(kHeaderHeight)
-          .withSizeKeepingCentre(juce::jmin(500, getWidth() - 2 * 200), 28));
+  // The kit chooser owns what's LEFT of the header — `header` has been
+  // whittled down by everything laid out above, so sizing within it is
+  // what keeps the chooser clear of the save/transfer buttons.
+  kit_chooser_.setBounds(header.withSizeKeepingCentre(
+      juce::jmin(500, header.getWidth() - 16), 28));
   panel_tabs_.setBounds(
       0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
