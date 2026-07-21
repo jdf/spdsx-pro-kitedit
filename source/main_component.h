@@ -15,6 +15,7 @@
 #include "device_document.h"
 #include "device_model.h"
 #include "device_samples.h"
+#include "device_sync.h"
 #include "kit_chooser.h"
 #include "kit_model.h"
 #include "pad_settings.h"
@@ -182,15 +183,32 @@ private:
   // updating device_connected_ + the header dot + command enablement.
   // Skipped while a device operation holds the port.
   void PollConnection();
-  // Marks the active kit as changed-since-last-device-push (unless a kit
-  // load is in progress) and refreshes the save button.
-  void MarkDeviceDirty();
-  // Shows/enables the header "Save Changes to Device" button: visible when
-  // the active kit has un-pushed edits, enabled when a device is connected.
+  // Shows/enables the header "Save Changes to Device" button: visible
+  // when any kit differs from the last-synced base snapshot, enabled
+  // when a device is connected and no sync is already running.
   void UpdateSaveButton();
-  // Pushes the active kit's edits to the device. (Not yet implemented —
-  // currently clears the dirty flag as a placeholder.)
+  // The three-way sync (jdf's Phase 3 spec): a fresh device read on a
+  // worker ("theirs"), a per-pad current/base/theirs diff, a resolution
+  // dialog for conflicts, then uploads + kit writes + one flash commit
+  // on a worker, and finally the base snapshots advance.
   void SaveChangesToDevice();
+  // Message-thread landing for the fresh device read; builds the
+  // conflict list and either runs the push or asks the user first.
+  void FinishSyncFetch(std::vector<device::KitRecord> kits,
+                       std::vector<device::SampleRecord> pool,
+                       const juce::String& error);
+  // Plans every kit with the user's conflict resolutions and starts the
+  // push worker (converting + uploading local files first).
+  void RunSyncPush(const std::vector<SyncResolution>& resolutions);
+  // Abandons an in-flight sync (dialog cancelled or fetch failed).
+  void CancelSync();
+  // Message-thread landing for one durable upload: records the new pool
+  // wave, caches its audio, and swaps the file layers to the new index —
+  // kept even if a later push step fails, so a retry won't re-upload.
+  void OnWaveUploaded(UploadPlan plan, juce::MemoryBlock wav, int frames);
+  // Message-thread landing for the push: on success lands every kit's
+  // merged content, advances base, and persists both snapshots.
+  void FinishSyncPush(const juce::String& error, bool committed);
 
   // True only while the device answered the most recent probe. Actions
   // that need the hardware (Load Device State, Download Kit Samples) are
@@ -259,13 +277,27 @@ private:
   std::atomic<bool> device_connected_ {false};
   std::atomic<bool> conn_check_running_ {false};
   juce::uint32 last_conn_check_ms_ = 0;
-  // "Save Changes to Device" header button + per-kit dirty-vs-device
-  // tracking. model_loading_ suppresses dirtying during kit loads (which
-  // fire the same change listeners as user edits).
+  // "Save Changes to Device" header button. Dirtiness is computed, not
+  // tracked: a kit is dirty when its content differs from the document's
+  // base snapshot (DeviceDocument::DirtyKits). model_loading_ marks kit
+  // loads, whose change listeners are not user edits.
   juce::TextButton save_button_ {
       juce::String::fromUTF8("Save Changes to Device")};
-  std::array<bool, DeviceModel::kKitCount> kit_device_dirty_ {};
   bool model_loading_ = false;
+
+  // An in-flight "Save Changes to Device": the fresh device read, the
+  // conflicts awaiting resolution, and the per-kit plans being pushed.
+  // Present only while the sync runs; device_fetching_ stays true for
+  // its whole span so nothing else opens the port.
+  struct SyncSession {
+    std::vector<KitData> theirs;  // all 200 kits, from the fresh read
+    std::vector<SyncConflict> conflicts;
+    std::vector<std::pair<int, KitSyncPlan>> plans;
+    std::vector<UploadPlan> uploads;
+    bool pulled = false;  // device-side changes landed locally
+  };
+
+  std::unique_ptr<SyncSession> sync_;
   // The unified kit control: arrows, kit menu, in-place rename.
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;

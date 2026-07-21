@@ -3,13 +3,16 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <thread>
 
 #include "actions.h"
 #include "commands.h"
 #include "device/kit_image.h"
 #include "device/spdsx_device.h"
+#include "sample_upload.h"
 #include "spectro.h"
+#include "sync_dialog.h"
 
 namespace spdsx {
 
@@ -212,9 +215,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
         u->clearUndoHistory();
       }
     }
-    // A wholesale content replacement (open/new/import/load device state)
-    // is the clean baseline: nothing is un-pushed.
-    kit_device_dirty_.fill(false);
+    // A wholesale content replacement can move the dirty-vs-base line.
     UpdateSaveButton();
   };
   document_.on_model_reload = [this](bool loading) {
@@ -739,31 +740,325 @@ void MainComponent::PollConnection() {
   }).detach();
 }
 
-void MainComponent::MarkDeviceDirty() {
-  // A load reissues every change listener; only real edits count.
-  if (model_loading_) {
-    return;
-  }
-  kit_device_dirty_[static_cast<size_t>(device_.current_kit())] = true;
-  UpdateSaveButton();
-}
-
 void MainComponent::UpdateSaveButton() {
-  const bool dirty =
-      kit_device_dirty_[static_cast<size_t>(device_.current_kit())];
-  save_button_.setEnabled(DeviceConnected());
-  if (dirty != save_button_.isVisible()) {
-    save_button_.setVisible(dirty);
-    resized();  // reclaim/space the header
+  const int dirty = static_cast<int>(document_.DirtyKits().size());
+  const juce::String label = "Save Changes to Device";
+  const juce::String text =
+      dirty > 1 ? label + " (" + juce::String(dirty) + " kits)" : label;
+  save_button_.setEnabled(DeviceConnected() && !device_fetching_);
+  const bool show = dirty > 0;
+  if (text != save_button_.getButtonText()
+      || show != save_button_.isVisible()) {
+    save_button_.setButtonText(text);
+    save_button_.setVisible(show);
+    resized();  // reclaim/space the header for the (possibly wider) label
   }
 }
 
 void MainComponent::SaveChangesToDevice() {
-  // TODO: push the active kit to the device (upload new local samples +
-  // register, reassign layers, write name/waves/params, commit). For now
-  // this just clears the dirty flag so the button behaviour is testable.
-  kit_device_dirty_[static_cast<size_t>(device_.current_kit())] = false;
+  if (device_fetching_.exchange(true)) {
+    return;  // the port is busy (a fetch, a download, or another sync)
+  }
+  document_.StashActiveKit();
+  const std::vector<int> dirty = document_.DirtyKits();
+  if (dirty.empty() || !DeviceConnected()) {
+    device_fetching_ = false;
+    UpdateSaveButton();
+    return;
+  }
+  // Uploads need a trustworthy picture of which pool indices are free,
+  // so a sync that will upload also re-reads the pool directory.
+  bool need_pool = false;
+  for (const int kit : dirty) {
+    const KitData content = document_.KitContent(kit);
+    for (const auto& pad : content.pads) {
+      need_pool |= pad.samples.first.is_file() || pad.samples.second.is_file();
+    }
+  }
+  commands_.commandStatusChanged();
+  UpdateSaveButton();  // disabled while the sync runs
+  device_samples_.SetStatus(
+      juce::String::fromUTF8("sync: reading device state\xe2\x80\xa6"));
+  juce::Component::SafePointer<MainComponent> safe(this);
+  std::thread([safe, need_pool] {
+    std::vector<device::KitRecord> kits;
+    std::vector<device::SampleRecord> pool;
+    juce::String error;
+    try {
+      const std::unique_ptr<device::SerialPort> serial =
+          device::PlatformPorts().Open(device::FindDevicePort());
+      device::SpdsxDevice dev(serial.get());
+      kits = device::ParseKits(
+          device::CleanBulkImage(dev.DumpBank(device::kBankKits)));
+      if (kits.empty()) {
+        error = "the device's kit data came back empty";
+      } else if (need_pool) {
+        pool = device::ParseSampleDir(
+            device::CleanBulkImage(dev.DumpBank(device::kBankSamples)));
+        if (pool.empty()) {
+          error = "the device's sample directory came back empty";
+        }
+      }
+    } catch (const std::exception& e) {
+      error = e.what();
+    }
+    juce::MessageManager::callAsync([safe,
+                                     kits = std::move(kits),
+                                     pool = std::move(pool),
+                                     error]() mutable {
+      if (safe != nullptr) {
+        safe->FinishSyncFetch(std::move(kits), std::move(pool), error);
+      }
+    });
+  }).detach();
+}
+
+void MainComponent::FinishSyncFetch(std::vector<device::KitRecord> kits,
+                                    std::vector<device::SampleRecord> pool,
+                                    const juce::String& error) {
+  if (error.isNotEmpty()) {
+    device_samples_.SetStatus({});
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon, "Save Changes to Device", error);
+    CancelSync();
+    return;
+  }
+  sync_ = std::make_unique<SyncSession>();
+  sync_->theirs.reserve(DeviceModel::kKitCount);
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    sync_->theirs.push_back(
+        i < static_cast<int>(kits.size())
+            ? KitDataFromDevice(kits[static_cast<size_t>(i)])
+            : KitData());
+  }
+  if (!pool.empty()) {
+    // The fresh directory is simply newer truth; audio blobs for
+    // surviving indices are kept.
+    document_.UpdateSamplePool(std::move(pool));
+    RefreshDeviceSamples();
+  }
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    const auto found = FindKitConflicts(i,
+                                        document_.KitContent(i),
+                                        document_.BaseKit(i),
+                                        sync_->theirs[static_cast<size_t>(i)]);
+    sync_->conflicts.insert(sync_->conflicts.end(), found.begin(), found.end());
+  }
+  if (sync_->conflicts.empty()) {
+    RunSyncPush({});
+    return;
+  }
+  device_samples_.SetStatus(
+      juce::String::fromUTF8("sync: resolving conflicts\xe2\x80\xa6"));
+  juce::Component::SafePointer<MainComponent> safe(this);
+  SyncConflictPanel::Show(
+      sync_->conflicts,
+      [safe](std::vector<SyncResolution> resolutions) {
+        if (safe != nullptr) {
+          safe->RunSyncPush(resolutions);
+        }
+      },
+      [safe] {
+        if (safe != nullptr) {
+          safe->device_samples_.SetStatus({});
+          safe->CancelSync();
+        }
+      });
+}
+
+void MainComponent::RunSyncPush(
+    const std::vector<SyncResolution>& resolutions) {
+  jassert(sync_ != nullptr);
+
+  // Fold the dialog's answers (parallel to sync_->conflicts) back into
+  // per-kit resolution tables; everything unconflicted merges cleanly
+  // whatever the table says.
+  struct KitResolutions {
+    SyncResolution name = SyncResolution::kMine;
+    std::array<SyncResolution, KitModel::kPadCount> pads;
+
+    KitResolutions() { pads.fill(SyncResolution::kMine); }
+  };
+
+  std::map<int, KitResolutions> by_kit;
+  for (size_t i = 0; i < sync_->conflicts.size() && i < resolutions.size();
+       ++i) {
+    const SyncConflict& conflict = sync_->conflicts[i];
+    auto& kit = by_kit[conflict.kit];
+    if (conflict.pad < 0) {
+      kit.name = resolutions[i];
+    } else {
+      kit.pads[static_cast<size_t>(conflict.pad)] = resolutions[i];
+    }
+  }
+
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    const KitData current = document_.KitContent(i);
+    const KitData& base = document_.BaseKit(i);
+    const KitData& theirs = sync_->theirs[static_cast<size_t>(i)];
+    if (current == base && theirs == base) {
+      continue;
+    }
+    const KitResolutions res =
+        by_kit.count(i) != 0 ? by_kit[i] : KitResolutions();
+    KitSyncPlan plan = PlanKitSync(current, base, theirs, res.name, res.pads);
+    const bool relevant = plan.WritesDevice() || plan.new_current != current
+        || plan.new_base != base;
+    if (!relevant) {
+      continue;
+    }
+    sync_->pulled |= plan.new_current != current;
+    sync_->plans.emplace_back(i, std::move(plan));
+  }
+  if (sync_->plans.empty()) {
+    FinishSyncPush({}, true);  // conflicts all skipped; nothing to do
+    return;
+  }
+
+  sync_->uploads = PlanUploads(sync_->plans, device_.sample_pool());
+  SubstituteUploads(sync_->plans, sync_->uploads);
+  std::vector<KitWrite> writes;
+  for (const auto& [kit, plan] : sync_->plans) {
+    KitWrite write = BuildKitWrite(kit, plan);
+    if (write.name || !write.pads.empty()) {
+      writes.push_back(std::move(write));
+    }
+  }
+
+  device_samples_.SetStatus(
+      juce::String::fromUTF8("sync: saving to device\xe2\x80\xa6"));
+  juce::Component::SafePointer<MainComponent> safe(this);
+  std::thread([safe, uploads = sync_->uploads, writes = std::move(writes)] {
+    juce::String error;
+    bool committed = false;
+    try {
+      // Convert every file before touching the port, so a bad file
+      // aborts the push with the device untouched.
+      std::vector<SmpUpload> smp_uploads;
+      for (const UploadPlan& plan : uploads) {
+        juce::String convert_error;
+        SmpUpload upload;
+        upload.index = plan.index;
+        upload.smp = SmpFromAudioFile(plan.file, convert_error);
+        upload.wavename = plan.wavename;
+        upload.filename = plan.filename;
+        if (upload.smp.empty()) {
+          throw std::runtime_error(convert_error.toStdString());
+        }
+        smp_uploads.push_back(std::move(upload));
+      }
+      const std::unique_ptr<device::SerialPort> serial =
+          device::PlatformPorts().Open(device::FindDevicePort());
+      device::SpdsxDevice dev(serial.get());
+      committed = ExecutePush(
+          dev, smp_uploads, writes, [safe, &uploads](const SmpUpload& done) {
+            // This upload is durable (UploadWave commits); tell the
+            // document even if a later step fails.
+            const auto plan = std::find_if(
+                uploads.begin(), uploads.end(), [&done](const UploadPlan& p) {
+                  return p.index == done.index;
+                });
+            if (plan == uploads.end()) {
+              return;
+            }
+            const device::Bytes wav_bytes = device::RfwvToWav(done.smp);
+            const device::RfwvHeader header = device::ParseRfwvHeader(done.smp);
+            const int frames = header.channels > 0
+                ? static_cast<int>(header.data_bytes / (2u * header.channels))
+                : 0;
+            juce::MemoryBlock wav(wav_bytes.data(), wav_bytes.size());
+            juce::MessageManager::callAsync(
+                [safe, plan = *plan, wav = std::move(wav), frames]() mutable {
+                  if (safe != nullptr) {
+                    safe->OnWaveUploaded(plan, std::move(wav), frames);
+                  }
+                });
+          });
+    } catch (const std::exception& e) {
+      error = e.what();
+    }
+    juce::MessageManager::callAsync([safe, error, committed] {
+      if (safe != nullptr) {
+        safe->FinishSyncPush(error, committed);
+      }
+    });
+  }).detach();
+}
+
+void MainComponent::CancelSync() {
+  sync_.reset();
+  device_fetching_ = false;
+  commands_.commandStatusChanged();
   UpdateSaveButton();
+}
+
+void MainComponent::OnWaveUploaded(UploadPlan plan,
+                                   juce::MemoryBlock wav,
+                                   int frames) {
+  device::SampleRecord record;
+  record.index = plan.index;
+  record.wavename = plan.wavename;
+  record.filename = plan.filename;
+  record.frames = static_cast<uint32_t>(frames);
+  document_.AddPoolRecord(record);
+  document_.StoreWaveAudio(plan.index, wav);
+  // The file has become a device wave everywhere it was assigned; the
+  // active kit's slots follow through the model listeners.
+  document_.ReplaceFileLayers(plan.file, plan.index);
+  MarkEdited();
+  RefreshDeviceSamples();
+}
+
+void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
+  device_samples_.SetStatus({});
+  if (sync_ == nullptr) {
+    CancelSync();
+    return;
+  }
+  if (error.isNotEmpty() || !committed) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon,
+        "Save Changes to Device",
+        error.isNotEmpty()
+            ? error
+            : juce::String("the device did not confirm the flash commit"));
+    // Nothing advanced: the kits stay dirty and the next sync re-diffs
+    // against a fresh device read. Completed uploads were recorded as
+    // they landed, so a retry won't re-send them.
+    CancelSync();
+    return;
+  }
+  for (const auto& [kit, plan] : sync_->plans) {
+    document_.ApplySyncedKit(kit, plan.new_current, plan.new_base);
+  }
+  document_.PersistSync();
+  if (sync_->pulled) {
+    // Device-side changes replaced local content outside the undo
+    // system; stale histories would undo into nonsense.
+    for (auto& u : undos_) {
+      if (u != nullptr) {
+        u->clearUndoHistory();
+      }
+    }
+  }
+  const bool skipped = std::any_of(
+      sync_->plans.begin(), sync_->plans.end(), [](const auto& entry) {
+        return entry.second.skipped;
+      });
+  sync_.reset();
+  device_fetching_ = false;
+  commands_.commandStatusChanged();
+  RefreshKitSelector();
+  RefreshDocumentState();
+  UpdateSaveButton();
+  device_samples_.SetStatus(skipped ? "synced (skipped conflicts remain)"
+                                    : "synced with device");
+  juce::Timer::callAfterDelay(
+      2000, [safe = juce::Component::SafePointer<MainComponent>(this)] {
+        if (safe != nullptr) {
+          safe->device_samples_.SetStatus({});
+        }
+      });
 }
 
 void MainComponent::UpdateDownloadIndicators() {
@@ -875,7 +1170,7 @@ void MainComponent::MarkEdited() {
 void MainComponent::KitNameChanged() {
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   MarkEdited();
-  MarkDeviceDirty();
+  UpdateSaveButton();
   RefreshDocumentState();
 }
 
@@ -885,7 +1180,7 @@ void MainComponent::KitNameChanged() {
 // idx = pad * 2 + layer.
 void MainComponent::SampleChanged(int pad, int layer) {
   MarkEdited();
-  MarkDeviceDirty();
+  UpdateSaveButton();
   SyncSlotFromModel(pad, layer);
 }
 
@@ -1016,8 +1311,10 @@ void MainComponent::resized() {
   }
   if (save_button_.isVisible()) {
     header.removeFromRight(8);
+    // Wide enough for the "(N kits)" suffix when several kits are dirty.
+    const int w = juce::jmax(180, save_button_.getBestWidthForHeight(26));
     save_button_.setBounds(
-        header.removeFromRight(180).withSizeKeepingCentre(180, 26));
+        header.removeFromRight(w).withSizeKeepingCentre(w, 26));
   }
   // The kit chooser owns the header centre.
   kit_chooser_.setBounds(
@@ -1335,7 +1632,7 @@ void MainComponent::UpdatePadWidgets(int pad) {
 
 void MainComponent::PadParamsChanged(int pad) {
   MarkEdited();
-  MarkDeviceDirty();
+  UpdateSaveButton();
   UpdatePadWidgets(pad);
   // Keep an open settings panel honest when undo/redo (or anything
   // else) changes the pad underneath it.
