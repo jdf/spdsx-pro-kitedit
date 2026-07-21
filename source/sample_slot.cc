@@ -346,10 +346,13 @@ void SampleSlot::paint(juce::Graphics& g) {
   g.setColour(hovered_ || drag_hover_ ? kSlotBgHover : kSlotBg);
   g.fillRoundedRectangle(bounds, 8.0f);
 
+  // The spectrogram stops above the info bar rather than running under
+  // it: the bar is opaque enough that overlaying would hide the low
+  // frequencies (the bottom rows of the image).
+  const auto image_area =
+      bounds.reduced(kImageInset).withTrimmedBottom(kInfoBarHeight);
   if (image_.isValid()) {
-    g.drawImage(image_,
-                bounds.reduced(kImageInset),
-                juce::RectanglePlacement::stretchToFit);
+    g.drawImage(image_, image_area, juce::RectanglePlacement::stretchToFit);
   } else if (device_wave_) {
     if (download_state_ != DownloadState::kNone) {
       PaintDownloadIndicator(g);
@@ -372,13 +375,13 @@ void SampleSlot::paint(juce::Graphics& g) {
   }
 
   if (has_sample()) {
-    // Playhead, visible while playing or paused.
+    // Playhead, visible while playing or paused; spans the image area,
+    // stopping where the spectrogram does.
     if (play_state_ != PlayState::kStopped) {
-      const float span = bounds.getWidth() - 2.0f * kImageInset;
-      const float x = kImageInset + span * static_cast<float>(position_);
+      const float x = image_area.getX()
+          + image_area.getWidth() * static_cast<float>(position_);
       g.setColour(kPlayhead);
-      g.fillRect(
-          x - 1.0f, kImageInset, 2.0f, bounds.getHeight() - 2.0f * kImageInset);
+      g.fillRect(x - 1.0f, image_area.getY(), 2.0f, image_area.getHeight());
     }
 
     // Info bar: a scrim keeps the text legible over the spectrogram.
