@@ -54,6 +54,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/sample_slot.cc
     source/sample_upload.cc
     source/spectro.cc
+    source/sync_dialog.cc
 )
 target_compile_definitions(spdsx-patchedit PRIVATE
     JUCE_WEB_BROWSER=0
@@ -144,6 +145,7 @@ if(SPDSX_TESTS)
         source/sample_slot.cc
         source/sample_upload.cc
         source/spectro.cc
+        source/sync_dialog.cc
     )
     target_include_directories(spdsx_tests PRIVATE source testing)
     target_compile_definitions(spdsx_tests PRIVATE
