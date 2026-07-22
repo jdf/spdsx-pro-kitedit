@@ -195,9 +195,15 @@ private:
   // larger device op holds the port. Rapid switches coalesce to the
   // latest kit, and only one worker runs at a time.
   void SyncDeviceKit();
+  // Switches the app's active kit (0-based index): document, chooser,
+  // header state. The device is NOT told — the kit chooser follows this
+  // with SyncDeviceKit; a device-initiated adoption must not echo back.
+  void AdoptKit(int index);
   // Periodically probes for the device on a worker thread (throttled),
   // updating device_connected_ + the header dot + command enablement.
-  // Skipped while a device operation holds the port.
+  // Skipped while a device operation holds the port. On the transition
+  // to connected (app launch included) it also reads the device's
+  // ACTIVE kit and adopts it, so the app opens on what the unit shows.
   void PollConnection();
   // Shows/enables the header "Save Changes to Device" button: visible
   // when any kit differs from the last-synced base snapshot, enabled

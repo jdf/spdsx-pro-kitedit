@@ -784,6 +784,35 @@ Bytes BulkAck() {
   return {0xF0, 0x41, 0x6C, 0x7A, 0x00, 0x00, 0x00, 0x00, 0x10, 0xF7};
 }
 
+// The active kit rides at the head of the kits bank (u16 LE, 0-based —
+// found by diffing dumps across a kit switch): one PREPARE/BEGIN, one
+// READ batch, END. Never the whole ~700 KB bank.
+TEST_F(SpdsxDeviceTest, CurrentKitReadsTheHeadOfTheKitsBank) {
+  for (int i = 0; i < 5; ++i) {
+    port.QueueReply(BulkAck());  // four prepares, then begin
+  }
+  // A properly-headed block frame: the 14-byte block header CleanBulkImage
+  // strips, the clean data (current kit first), the trailing f7.
+  Bytes block = {
+      0xF0, 0x41, 0x6C, 0x02, 0, 0, 0, 0, 0x10, 0x40, 0, 0, 0, 0};
+  block.push_back(0x0B);  // kit 12, 0-based, u16 LE
+  block.push_back(0x00);
+  block.insert(block.end(), 8, 0x00);
+  block.push_back(0xF7);
+  port.QueueReply(block);
+
+  EXPECT_EQ(dev.CurrentKit(0.01, 0.01), 12);
+
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 7u);  // 4 prepares, begin, one read, end
+  EXPECT_EQ(sent[5], BulkRequest(kBulkRead, kBankKits, kBulkNextChunk));
+  EXPECT_EQ(sent.back(), BulkRequest(kBulkEnd, kBankKits, 0));
+}
+
+TEST_F(SpdsxDeviceTest, CurrentKitIsZeroWhenNothingAnswers) {
+  EXPECT_EQ(dev.CurrentKit(0.01, 0.01), 0);
+}
+
 TEST_F(SpdsxDeviceTest, DumpBankFollowsThePrepareBeginReadEndHandshake) {
   for (int i = 0; i < 5; ++i) {
     port.QueueReply(BulkAck());  // four prepares, then begin

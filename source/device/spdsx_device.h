@@ -183,6 +183,13 @@ public:
                        const ProgressCallback& on_progress = {},
                        double idle_timeout = 1.0);
 
+  // Reads the device's ACTIVE kit (1-200). The current kit is the first
+  // u16 LE of the kits bank's clean image, 0-based — found 2026-07-22 by
+  // diffing bank dumps across a kit switch (the single byte that
+  // changes). Streams only the first read batch of the bank, not the
+  // whole ~700 KB. Returns 0 when nothing readable answers.
+  int CurrentKit(double idle_timeout = 1.0, double block_timeout = 15.0);
+
   using BlockCallback = std::function<void(const Bytes& block)>;
 
   // Streams a whole bank (0x10/0x20/0x30/0x40) and returns the reassembled

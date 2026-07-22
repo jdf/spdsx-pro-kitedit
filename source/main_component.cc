@@ -191,11 +191,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   };
   kit_chooser_.on_select = [this](int index) {
     if (index != device_.current_kit()) {
-      document_.SwitchKit(index);
-      MarkEdited();  // persists the new current kit
-      RefreshKitSelector();
-      RefreshDocumentState();
-      UpdateSaveButton();  // reflect the newly-active kit's dirty state
+      AdoptKit(index);
       SyncDeviceKit();  // the connected unit follows to this kit
     }
   };
@@ -764,6 +760,18 @@ void MainComponent::UpdateTransferButton() {
   }
 }
 
+void MainComponent::AdoptKit(int index) {
+  if (index == device_.current_kit() || index < 0
+      || index >= DeviceModel::kKitCount) {
+    return;
+  }
+  document_.SwitchKit(index);
+  MarkEdited();  // persists the new current kit
+  RefreshKitSelector();
+  RefreshDocumentState();
+  UpdateSaveButton();  // reflect the newly-active kit's dirty state
+}
+
 void MainComponent::SyncDeviceKit() {
   // Only when a device is present and no larger op holds the port; the
   // kit-select is cheap but still opens the port for the round trip.
@@ -816,14 +824,26 @@ void MainComponent::PollConnection() {
   last_conn_check_ms_ = now;
   conn_check_running_ = true;
   juce::Component::SafePointer<MainComponent> safe(this);
-  std::thread([safe] {
+  const bool was_connected = device_connected_.load();
+  std::thread([safe, was_connected] {
     bool connected = false;
+    int device_kit = 0;  // 1-based; 0 = not read
     try {
-      connected = !device::FindDevicePort().empty();
+      const std::string path = device::FindDevicePort();
+      connected = !path.empty();
+      // On the way from disconnected to connected (app launch included),
+      // learn the unit's active kit so the app can open on it. Steady-
+      // state polls stay a cheap ping.
+      if (connected && !was_connected) {
+        const std::unique_ptr<device::SerialPort> serial =
+            device::PlatformPorts().Open(path);
+        device::SpdsxDevice dev(serial.get());
+        device_kit = dev.CurrentKit();
+      }
     } catch (const std::exception&) {
       connected = false;  // no node, or nothing answered
     }
-    juce::MessageManager::callAsync([safe, connected] {
+    juce::MessageManager::callAsync([safe, connected, device_kit] {
       if (safe == nullptr) {
         return;
       }
@@ -834,6 +854,9 @@ void MainComponent::PollConnection() {
         safe->commands_.commandStatusChanged();  // re-enable device menu items
         safe->UpdateTransferButton();
         safe->UpdateSaveButton();  // enable/disable with connection
+        if (connected && device_kit > 0) {
+          safe->AdoptKit(device_kit - 1);  // follow the unit, no echo back
+        }
       }
     });
   }).detach();

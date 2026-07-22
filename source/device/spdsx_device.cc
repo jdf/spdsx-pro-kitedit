@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <thread>
 
+#include "device/kit_image.h"  // CleanBulkImage, kBankKitCount
 #include "device/sample_image.h"
 
 namespace spdsx::device {
@@ -713,6 +714,34 @@ void SpdsxDevice::PrepareUploadBatch() {
   // bulk image, so the answer is drained and dropped). The per-file session
   // open/close lives in UploadWave/RegisterWave.
   Command(ShortControl(0x0D));
+}
+
+int SpdsxDevice::CurrentKit(double idle_timeout, double block_timeout) {
+  // The same PREPARE/BEGIN handshake as a full dump, but a single READ:
+  // the first batch always carries the head of the bank, and the current
+  // kit lives at clean offset 0.
+  for (uint8_t b : {kBankKits, kBankSamples, kBankMeta, kBankConfig}) {
+    Command(BulkRequest(kBulkPrepare, b, 0));
+  }
+  Command(BulkRequest(kBulkBegin, kBankKits, 0));
+  port_->Write(Wrap(BulkRequest(kBulkRead, kBankKits, kBulkNextChunk)));
+  Bytes image;
+  for (;;) {
+    const Bytes payload = ReadBulkFrame(idle_timeout, block_timeout);
+    if (payload.size() < 4 || payload[1] != 0x41 || payload[2] != 0x6C
+        || payload[3] != 0x02) {
+      break;  // idle or a non-data frame: the batch is done
+    }
+    image.insert(image.end(), payload.begin(), payload.end());
+  }
+  Command(BulkRequest(kBulkEnd, kBankKits, 0));
+
+  const Bytes clean = CleanBulkImage(image);
+  if (clean.size() < 2) {
+    return 0;
+  }
+  const int zero_based = clean[0] | clean[1] << 8;
+  return zero_based >= 0 && zero_based < kBankKitCount ? zero_based + 1 : 0;
 }
 
 Bytes SpdsxDevice::DumpBank(uint8_t bank,

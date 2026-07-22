@@ -154,6 +154,7 @@ int Usage() {
       "                  (0-127) and decay (0-127, 127 = none); --commit\n"
       "                  to persist\n"
       "  selectkit <N>   switch the device's playback kit (1-200)\n"
+      "  currentkit      print the device's active kit\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
       "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
@@ -740,6 +741,20 @@ int RunSetLayer(const SetLayerArgs& args) {
   return 0;
 }
 
+int RunCurrentKit(const std::string& port_arg) {
+  const std::string port = ResolvePort(port_arg);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
+  const int kit = dev.CurrentKit();
+  if (kit <= 0) {
+    std::fprintf(stderr, "couldn't read the current kit\n");
+    return 1;
+  }
+  std::printf("current kit: %d\n", kit);
+  return 0;
+}
+
 int RunSelectKit(const std::string& port_arg, int kit) {
   // Deliberately the app's kit-follow shape in miniature: open, one
   // fire-and-forget DT1, close. The write must survive the close (the
@@ -1131,6 +1146,9 @@ int main(int argc, char** argv) {
         return 2;
       }
       return RunSelectKit(port, kit_arg);
+    }
+    if (command == "currentkit") {
+      return RunCurrentKit(port);
     }
     if (command == "deletewave") {
       if (kit_arg <= 0) {
