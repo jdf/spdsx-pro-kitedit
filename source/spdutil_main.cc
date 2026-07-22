@@ -460,7 +460,8 @@ int RunSendWave(const std::string& port_arg,
   }
   std::printf("committing the batch to flash...\n");
   std::fflush(stdout);
-  if (!dev.Commit()) {
+  // The flash commit's duration scales with the batch; give it headroom.
+  if (!dev.Commit(30.0 + 6.0 * static_cast<double>(from_paths.size()))) {
     std::fprintf(stderr, "commit did not confirm\n");
     return 1;
   }

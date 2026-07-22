@@ -1057,7 +1057,10 @@ void MainComponent::RunSyncPush(
           device::PlatformPorts().Open(device::FindDevicePort());
       device::SpdsxDevice dev(serial.get());
       committed = ExecutePush(
-          dev, smp_uploads, writes, [safe, &uploads](const SmpUpload& done) {
+          dev,
+          smp_uploads,
+          writes,
+          [safe, &uploads](const SmpUpload& done) {
             // This upload is durable (UploadWave commits); tell the
             // document even if a later step fails.
             const auto plan = std::find_if(
@@ -1079,7 +1082,13 @@ void MainComponent::RunSyncPush(
                     safe->OnWaveUploaded(plan, std::move(wav), frames);
                   }
                 });
-          });
+          },
+          /*pace_seconds=*/0.02,
+          // The batch flash commit's duration scales with how much was
+          // staged; give it generous headroom so a slow-but-fine commit
+          // isn't misreported as a failure.
+          /*commit_timeout_seconds=*/30.0
+              + 6.0 * static_cast<double>(smp_uploads.size()));
     } catch (const std::exception& e) {
       error = e.what();
     }
