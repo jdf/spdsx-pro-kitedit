@@ -187,6 +187,11 @@ private:
   int UncachedDeviceWaveCount() const;
   // Shows/hides + labels the header transfer button from that count.
   void UpdateTransferButton();
+  // Moves the connected unit's playback kit to match the app's active
+  // kit (a DT1 kit-select). No-op when no device is connected or a
+  // larger device op holds the port. Rapid switches coalesce to the
+  // latest kit, and only one worker runs at a time.
+  void SyncDeviceKit();
   // Periodically probes for the device on a worker thread (throttled),
   // updating device_connected_ + the header dot + command enablement.
   // Skipped while a device operation holds the port.
@@ -285,6 +290,14 @@ private:
   std::atomic<bool> device_connected_ {false};
   std::atomic<bool> conn_check_running_ {false};
   juce::uint32 last_conn_check_ms_ = 0;
+  // Follow-the-app kit selection on the unit: the pending 1-based kit
+  // (shared so a detached worker can read it after switches), and a
+  // single-runner flag. shared_ptr so the worker never touches a
+  // destroyed component.
+  std::shared_ptr<std::atomic<int>> pending_select_kit_ =
+      std::make_shared<std::atomic<int>>(0);
+  std::shared_ptr<std::atomic<bool>> kit_select_running_ =
+      std::make_shared<std::atomic<bool>>(false);
   // "Save Changes to Device" header button. Dirtiness is computed, not
   // tracked: a kit is dirty when its content differs from the document's
   // base snapshot (DeviceDocument::DirtyKits). model_loading_ marks kit

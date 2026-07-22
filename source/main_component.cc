@@ -196,6 +196,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       RefreshKitSelector();
       RefreshDocumentState();
       UpdateSaveButton();  // reflect the newly-active kit's dirty state
+      SyncDeviceKit();  // the connected unit follows to this kit
     }
   };
   kit_chooser_.on_rename = [this](const juce::String& name) {
@@ -731,12 +732,45 @@ void MainComponent::UpdateTransferButton() {
   }
 }
 
+void MainComponent::SyncDeviceKit() {
+  // Only when a device is present and no larger op holds the port; the
+  // kit-select is cheap but still opens the port for the round trip.
+  if (!DeviceConnected() || device_fetching_) {
+    return;
+  }
+  pending_select_kit_->store(device_.current_kit() + 1);  // device is 1-based
+  if (kit_select_running_->exchange(true)) {
+    return;  // a worker is already running; it will pick up the new pending
+  }
+  auto pending = pending_select_kit_;
+  auto running = kit_select_running_;
+  std::thread([pending, running] {
+    try {
+      const std::unique_ptr<device::SerialPort> serial =
+          device::PlatformPorts().Open(device::FindDevicePort());
+      device::SpdsxDevice dev(serial.get());
+      // Coalesce: send the latest pending kit, and keep sending while the
+      // user switches again mid-flight, so we never leave the unit stale.
+      int sent = -1;
+      for (int want = pending->load(); want != sent; want = pending->load()) {
+        sent = want;
+        dev.SelectKit(want);
+      }
+    } catch (const std::exception&) {
+      // The device went away, or the port was busy: the unit just doesn't
+      // follow this time. The next switch (or a reconnect) tries again.
+    }
+    running->store(false);
+  }).detach();
+}
+
 void MainComponent::PollConnection() {
   // One probe at a time, throttled; skip while a device operation holds
   // the port (we're plainly connected then, and a second open would
   // clash).
   constexpr juce::uint32 kPollIntervalMs = 2000;
-  if (device_fetching_ || conn_check_running_.load()) {
+  if (device_fetching_ || conn_check_running_.load()
+      || kit_select_running_->load()) {
     return;
   }
   const juce::uint32 now = juce::Time::getMillisecondCounter();
