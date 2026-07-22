@@ -434,19 +434,44 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   const Bytes header(smp.begin(), smp.begin() + kRfwvHeaderSize);
   const Bytes pcm(smp.begin() + kRfwvHeaderSize, smp.end());
 
+  const bool trace = std::getenv("SPDSX_TRACE") != nullptr;
+  auto trace_ack = [&](const char* label, const Bytes& ack) {
+    if (!trace) {
+      return;
+    }
+    std::string hex;
+    char buf[4];
+    for (size_t i = 0; i < ack.size() && i < 16; ++i) {
+      std::snprintf(buf, sizeof(buf), "%02x ", ack[i]);
+      hex += buf;
+    }
+    std::fprintf(stderr, "  %-14s -> %s\n", label, hex.c_str());
+  };
   auto step = [&](const char* label, const Bytes& req) {
     // Flash-backed file ops can take a few hundred ms to answer.
     const Bytes ack = Command(req, 3.0);
-    if (std::getenv("SPDSX_TRACE") != nullptr) {
-      std::string hex;
-      char buf[4];
-      for (size_t i = 0; i < ack.size() && i < 16; ++i) {
-        std::snprintf(buf, sizeof(buf), "%02x ", ack[i]);
-        hex += buf;
-      }
-      std::fprintf(stderr, "  %-14s -> %s\n", label, hex.c_str());
-    }
+    trace_ack(label, ack);
     return ack;
+  };
+  // Writes file data in 03/06 frames. The device caps a single write-data
+  // frame at 64 KiB of payload, so a larger blob goes as a back-to-back
+  // burst of 64 KiB frames answered by ONE ack — exactly how the official
+  // app writes (import-large-1.log: a 243 KiB sample = three 64 KiB frames
+  // plus the remainder, one write, one ack). A single oversized frame,
+  // which is what we sent before, wedges the unit mid-write.
+  constexpr size_t kMaxWriteChunk = 65536;
+  auto write_data = [&](const char* label, const Bytes& data) {
+    Bytes burst;
+    for (size_t off = 0; off < data.size(); off += kMaxWriteChunk) {
+      const size_t n = std::min(kMaxWriteChunk, data.size() - off);
+      const Bytes frame = Wrap(FileRequest(
+          0x06,
+          WriteBody(Bytes(data.begin() + static_cast<long>(off),
+                          data.begin() + static_cast<long>(off + n)))));
+      burst.insert(burst.end(), frame.begin(), frame.end());
+    }
+    port_->Write(burst);
+    trace_ack(label, ReadFrame(3.0));
   };
   step("begin", ControlFrame(0x09, 1));
   step("stat tmp", FileRequest(0x0A, PathBody(tmp_path)));
@@ -464,9 +489,9 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   // (The app also issues a 03/19 free-space query on "/SPDSXREMOTE//"
   // here; its reply isn't consumed and replaying it gets no ack, so we
   // skip it — the write completes without it.)
-  step("write pcm", FileRequest(0x06, WriteBody(pcm)));
+  write_data("write pcm", pcm);
   step("seek 0", FileRequest(0x07, Bytes(11, 0x00)));
-  step("write hdr", FileRequest(0x06, WriteBody(header)));
+  write_data("write hdr", header);  // 512 bytes: always one frame
   step("close", FileRequest(0x03, Bytes(11, 0x00)));
 }
 

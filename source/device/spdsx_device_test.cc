@@ -484,6 +484,57 @@ TEST_F(SpdsxDeviceTest, UploadWaveEncodesTheWriteLengthAsSeptets) {
             Bytes({0x00, 0x04, 0x00}));  // 512
 }
 
+// A real sample is hundreds of KB, and the device caps a write-data frame
+// at 64 KiB: a larger PCM must go as a back-to-back burst of 64 KiB frames
+// with ONE ack (import-large-1.log). Sending it as a single oversized frame
+// wedges the unit — this is the bug the first live upload hit.
+TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
+  // 150000 bytes of PCM -> two full 64 KiB frames + an 18928-byte remainder.
+  Bytes pcm(150000);
+  for (size_t i = 0; i < pcm.size(); ++i) {
+    pcm[i] = static_cast<uint8_t>(i * 7 + 1);
+  }
+  Bytes smp = PcmToRfwv(pcm, 48000, 1, 16);
+  QueueUploadReplies(port, DirReply());
+
+  dev.UploadWave(1601, smp, "big", "big.wav");
+
+  // The PCM went out as one Write() (one burst); locate it: the only frame
+  // long enough to exceed a single 64 KiB payload.
+  const std::vector<Bytes>& writes = port.writes();
+  const Bytes* burst = nullptr;
+  for (const Bytes& w : writes) {
+    if (w.size() > 70000) {
+      burst = &w;
+      break;
+    }
+  }
+  ASSERT_NE(burst, nullptr) << "no multi-frame burst was written";
+
+  // Walk the transport frames packed into that one write and reassemble
+  // their data, checking each carries at most 64 KiB.
+  Bytes reassembled;
+  size_t frames = 0;
+  size_t i = 0;
+  while (i + 20 <= burst->size()) {
+    ASSERT_EQ((*burst)[i], 0x0d);
+    ASSERT_EQ((*burst)[i + 3], 0x06);  // remote-file channel
+    const size_t len = (*burst)[i + 16] | (*burst)[i + 17] << 8
+        | (*burst)[i + 18] << 16 | (*burst)[i + 19] << 24;
+    const Bytes payload(burst->begin() + static_cast<long>(i + 20),
+                        burst->begin() + static_cast<long>(i + 20 + len));
+    // payload: f0 41 7a 03 06 | 5 zeros 40 00 <3 septets> <data> | f7
+    ASSERT_EQ(payload[4], 0x06);
+    const Bytes data(payload.begin() + 15, payload.end() - 1);
+    EXPECT_LE(data.size(), 65536u) << "frame " << frames << " over 64 KiB";
+    reassembled.insert(reassembled.end(), data.begin(), data.end());
+    ++frames;
+    i += 20 + len;
+  }
+  EXPECT_EQ(frames, 3u);  // 64K + 64K + remainder
+  EXPECT_EQ(reassembled, pcm);
+}
+
 // The two directory records are what make the wave visible and assignable.
 // Byte-exact against the same capture protocol_test pins them from.
 TEST_F(SpdsxDeviceTest, UploadWaveRegistersTheDirectoryRecordsForThatIndex) {
