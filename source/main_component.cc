@@ -300,6 +300,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kImportKit,
                 commands::kLoadDeviceState,
                 commands::kDownloadKitSamples,
+                commands::kSaveToDevice,
                 commands::kToggleBrowser,
                 commands::kToggleAutoplay});
 }
@@ -351,6 +352,20 @@ void MainComponent::getCommandInfo(juce::CommandID id,
           0);
       info.setActive(!device_fetching_ && DeviceConnected());
       break;
+    case commands::kSaveToDevice: {
+      const int dirty = static_cast<int>(document_.DirtyKits().size());
+      info.setInfo(dirty > 1 ? "Save Changes to Device (" + juce::String(dirty)
+                           + " kits)"
+                             : juce::String("Save Changes to Device"),
+                   "Push this document's edits to the connected device",
+                   "File",
+                   0);
+      // The document autosaves locally, so plain Save is free and means
+      // the one save that matters here: committing edits to the hardware.
+      info.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
+      info.setActive(dirty > 0 && !device_fetching_ && DeviceConnected());
+      break;
+    }
     case commands::kDownloadKitSamples:
       info.setInfo("Download Kit Samples",
                    "Fetch this kit's device waves into the local cache so they "
@@ -462,6 +477,9 @@ bool MainComponent::perform(const InvocationInfo& info) {
       return true;
     case commands::kDownloadKitSamples:
       DownloadKitSamples();
+      return true;
+    case commands::kSaveToDevice:
+      SaveChangesToDevice();
       return true;
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);

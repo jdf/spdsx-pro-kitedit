@@ -27,8 +27,10 @@ public:
       menu.addCommandItem(&commands_, commands::kFileSaveAs);
       menu.addSeparator();
       menu.addCommandItem(&commands_, commands::kImportKit);
+      menu.addSeparator();
       menu.addCommandItem(&commands_, commands::kLoadDeviceState);
       menu.addCommandItem(&commands_, commands::kDownloadKitSamples);
+      menu.addCommandItem(&commands_, commands::kSaveToDevice);
     } else if (name == "Edit") {
       menu.addCommandItem(&commands_, commands::kUndo);
       menu.addCommandItem(&commands_, commands::kRedo);
