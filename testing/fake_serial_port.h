@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <deque>
 #include <vector>
 
 #include "device/serial_port.h"
@@ -27,12 +28,26 @@ public:
     readable_.insert(readable_.end(), raw.begin(), raw.end());
   }
 
-  void Write(const Bytes& data) override { writes_.push_back(data); }
+  // Marks the stream idle here: reads stop at this point — a drain-until-
+  // quiet loop sees a timeout — until the next Write, which is when a real
+  // device would have something new to say.
+  void QueueIdle() { idle_marks_.push_back(readable_.size()); }
+
+  void Write(const Bytes& data) override {
+    writes_.push_back(data);
+    if (!idle_marks_.empty() && idle_marks_.front() <= read_pos_) {
+      idle_marks_.pop_front();
+    }
+  }
 
   // Hands back what is queued, up to n. Running dry stands in for the read
   // timing out, which is what a silent device looks like.
   Bytes ReadExact(size_t n, double /*timeout_seconds*/) override {
-    const size_t take = std::min(n, readable_.size() - read_pos_);
+    size_t limit = readable_.size();
+    if (!idle_marks_.empty()) {
+      limit = std::min(limit, idle_marks_.front());
+    }
+    const size_t take = std::min(n, limit - read_pos_);
     const auto begin = readable_.begin() + static_cast<long>(read_pos_);
     Bytes out(begin, begin + static_cast<long>(take));
     read_pos_ += take;
@@ -58,6 +73,7 @@ public:
 private:
   std::vector<Bytes> writes_;
   Bytes readable_;
+  std::deque<size_t> idle_marks_;
   size_t read_pos_ = 0;
 };
 
