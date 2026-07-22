@@ -38,6 +38,10 @@ juce::String FmtInt(int v) {
   return juce::String(v);
 }
 
+juce::String FmtDb(int db10) {
+  return juce::String(db10 / 10.0, 1) + " dB";
+}
+
 juce::String FmtBool(bool v) {
   return v ? "on" : "off";
 }
@@ -102,6 +106,15 @@ KitData KitDataFromDevice(const device::KitRecord& rec) {
         juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_fade_in));
     p.params.hi_hat_decay =
         juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_decay));
+    const auto mix = [](const device::PadDeviceParams::LayerMix& m) {
+      PadParams::LayerMix out;
+      out.volume_db10 = m.volume_db10;  // s16 comes over as-is
+      out.fade_in = juce::jlimit(0, 127, static_cast<int>(m.fade_in));
+      out.decay = juce::jlimit(0, 127, static_cast<int>(m.decay));
+      return out;
+    };
+    p.params.mix_top = mix(dp.mix_top);
+    p.params.mix_bottom = mix(dp.mix_bottom);
     p.samples.first =
         dp.wave_top > 0 ? LayerSample::DeviceWave(dp.wave_top) : LayerSample();
     p.samples.second = dp.wave_bottom > 0
@@ -124,6 +137,15 @@ device::PadDeviceParams DeviceParamsFromPad(const Pad& pad) {
   dp.hi_hat_volume = static_cast<uint8_t>(pp.hi_hat_volume);
   dp.hi_hat_fade_in = static_cast<uint8_t>(pp.hi_hat_fade_in);
   dp.hi_hat_decay = static_cast<uint8_t>(pp.hi_hat_decay);
+  const auto mix = [](const PadParams::LayerMix& m) {
+    device::PadDeviceParams::LayerMix out;
+    out.volume_db10 = static_cast<int16_t>(m.volume_db10);
+    out.fade_in = static_cast<uint8_t>(m.fade_in);
+    out.decay = static_cast<uint8_t>(m.decay);
+    return out;
+  };
+  dp.mix_top = mix(pp.mix_top);
+  dp.mix_bottom = mix(pp.mix_bottom);
   const auto wave = [](const LayerSample& s) {
     return s.is_device() ? static_cast<uint16_t>(s.device_index) : uint16_t {0};
   };
@@ -177,6 +199,40 @@ Pad MergePad(const Pad& current,
                            FmtInt);
   p.hi_hat_decay = merge(
       "hi-hat decay", c.hi_hat_decay, b.hi_hat_decay, t.hi_hat_decay, FmtInt);
+  const auto merge_mix = [&](const char* layer,
+                             PadParams::LayerMix PadParams::* field) {
+    const auto& cm = c.*field;
+    const auto& bm = b.*field;
+    const auto& tm = t.*field;
+    PadParams::LayerMix out;
+    const auto name = [layer](const char* what) {
+      return juce::String(layer) + " " + what;
+    };
+    out.volume_db10 = Merge3(name("volume").toRawUTF8(),
+                             cm.volume_db10,
+                             bm.volume_db10,
+                             tm.volume_db10,
+                             mine_wins,
+                             conflicts,
+                             FmtDb);
+    out.fade_in = Merge3(name("fade in").toRawUTF8(),
+                         cm.fade_in,
+                         bm.fade_in,
+                         tm.fade_in,
+                         mine_wins,
+                         conflicts,
+                         FmtInt);
+    out.decay = Merge3(name("decay").toRawUTF8(),
+                       cm.decay,
+                       bm.decay,
+                       tm.decay,
+                       mine_wins,
+                       conflicts,
+                       FmtInt);
+    return out;
+  };
+  p.mix_top = merge_mix("layer A", &PadParams::mix_top);
+  p.mix_bottom = merge_mix("layer B", &PadParams::mix_bottom);
   m.samples.first = merge("top sample",
                           current.samples.first,
                           base.samples.first,
@@ -442,6 +498,19 @@ bool ExecutePush(device::SpdsxDevice& dev,
                                .pad = pw.pad,
                                .params = pw.dp,
                                .pace_seconds = pace_seconds});
+        // The per-layer mixes live in a different page than the pad
+        // params; they ride the same "params changed" flag.
+        for (const auto& [slot, mix] :
+             {std::pair {device::PadSlot::kTop, pw.dp.mix_top},
+              std::pair {device::PadSlot::kBottom, pw.dp.mix_bottom}}) {
+          dev.SetPadLayerMix({.kit = kw.kit,
+                              .pad = pw.pad,
+                              .slot = slot,
+                              .volume_db10 = mix.volume_db10,
+                              .fade_in = mix.fade_in,
+                              .decay = mix.decay,
+                              .pace_seconds = pace_seconds});
+        }
         wrote = true;
       }
     }

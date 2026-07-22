@@ -181,6 +181,28 @@ TEST(DeviceSyncMerge, AConflictResolvesTowardTheChosenSide) {
   EXPECT_EQ(MergePad(current, base, theirs, false).params.fade_point, 100);
 }
 
+// The layer mixes merge field-wise like everything else, and a volume
+// conflict reads in dB (what the dialog shows), not raw 0.1 dB steps.
+TEST(DeviceSyncMerge, MergesTheLayerMixesFieldWise) {
+  const Pad base = SyncBase().pads[0];
+  Pad current = base;
+  current.params.mix_top.volume_db10 = -35;  // mine: -3.5 dB
+  current.params.mix_bottom.decay = 40;  // only mine changed: taken
+  Pad theirs = base;
+  theirs.params.mix_top.volume_db10 = -60;  // theirs: -6.0 dB — conflict
+  theirs.params.mix_top.fade_in = 12;  // only theirs changed: taken
+
+  juce::StringArray conflicts;
+  const Pad merged = MergePad(current, base, theirs, true, &conflicts);
+
+  EXPECT_EQ(merged.params.mix_top.volume_db10, -35);  // mine wins
+  EXPECT_EQ(merged.params.mix_top.fade_in, 12);
+  EXPECT_EQ(merged.params.mix_bottom.decay, 40);
+  ASSERT_EQ(conflicts.size(), 1);
+  EXPECT_EQ(conflicts[0],
+            juce::String("layer A volume (yours -3.5 dB, device -6.0 dB)"));
+}
+
 // The conflict line carries both values — it IS the dialog text.
 TEST(DeviceSyncMerge, DescribesAConflictWithBothValues) {
   const Pad base = SyncBase().pads[0];
@@ -513,8 +535,9 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   EXPECT_TRUE(ExecutePush(dev, {}, {kw}, IgnoreUpload, 0.0));
 
   const std::vector<Bytes> sent = port.payloads();
-  // 16 name chars + wave + enable + focus + 10 params + begin + poll.
-  ASSERT_EQ(sent.size(), 31u);
+  // 16 name chars + wave + enable + focus + 10 params + the two layer
+  // mixes (3 writes each) + begin + poll.
+  ASSERT_EQ(sent.size(), 37u);
   using namespace device;
   EXPECT_EQ(sent[0], Dt1(KitNameAddr(199, 0), {'M'}));
   EXPECT_EQ(sent[15], Dt1(KitNameAddr(199, 15), {' '}));  // space-padded
@@ -531,8 +554,18 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
             Dt1(PadParamAddr({.kit = 199, .pad = 7}, 0x00), {0x00}));  // mode
   EXPECT_EQ(sent[20],
             Dt1(PadParamAddr({.kit = 199, .pad = 7}, 0x01), {50}));  // fade pt
-  EXPECT_EQ(sent[29][4], 0x21);  // one commit at the very end
-  EXPECT_EQ(sent[30][4], 0x22);
+  // The layer mixes ride the same params flag: volume/fade-in/decay for
+  // layer A then layer B (defaults here: 0.0 dB, 0, 127).
+  const PadLayerRef top {.kit = 199, .pad = 7, .slot = PadSlot::kTop};
+  const PadLayerRef bottom {.kit = 199, .pad = 7, .slot = PadSlot::kBottom};
+  EXPECT_EQ(sent[29],
+            Dt1(PadLayerAddr(top, kLayerVolumeOffset), NibbleEncode(0)));
+  EXPECT_EQ(sent[30], Dt1(PadLayerAddr(top, kLayerFadeInOffset), {0}));
+  EXPECT_EQ(sent[31], Dt1(PadLayerAddr(top, kLayerDecayOffset), {127}));
+  EXPECT_EQ(sent[32],
+            Dt1(PadLayerAddr(bottom, kLayerVolumeOffset), NibbleEncode(0)));
+  EXPECT_EQ(sent[35][4], 0x21);  // one commit at the very end
+  EXPECT_EQ(sent[36][4], 0x22);
 }
 
 TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {

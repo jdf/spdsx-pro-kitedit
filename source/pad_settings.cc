@@ -1,5 +1,7 @@
 #include "pad_settings.h"
 
+#include <cmath>
+
 #include "layers.h"
 
 namespace spdsx {
@@ -21,9 +23,21 @@ constexpr int kAlignInset = 4;
 // the slider bounds.
 constexpr int kV4RotaryMargin = 10;
 
-constexpr int kBaseHeight =
-    kPadding * 2 + kRowHeight * 3 + kRowGap * 3 + kKnobHeight;
+// The mix triples use small knobs so Layer A and B fit side by side.
+constexpr int kMixLabelHeight = 16;
+constexpr int kMixKnobSize = 48;
+constexpr int kMixKnobHeight = kMixKnobSize + kKnobTextHeight;
+
+constexpr int kMixHeight =
+    2 * (kRowGap + kRowHeight + kMixLabelHeight + kMixKnobHeight);
+constexpr int kBaseHeight = kPadding * 2 + kRowHeight * 3 + kRowGap * 3
+    + kKnobHeight + kMixHeight;
 constexpr int kPedalHeight = kRowGap + kRowHeight + (kRowGap + kKnobHeight) * 3;
+
+// The dB range the volume knob offers; the device stores 0.1 dB steps in
+// a signed 16-bit, so this is a UI choice, not a protocol limit.
+constexpr double kMinVolumeDb = -60.0;
+constexpr double kMaxVolumeDb = 12.0;
 
 }  // namespace
 
@@ -63,6 +77,35 @@ PadSettingsPanel::PadSettingsPanel() {
   trigger_reserve_.onClick = [this] { Push(); };
   addAndMakeVisible(trigger_reserve_);
 
+  const char* mix_headings[2] = {"Layer A", "Layer B"};
+  for (size_t l = 0; l < mix_.size(); ++l) {
+    MixControls& m = mix_[l];
+    m.heading.setText(mix_headings[l], juce::dontSendNotification);
+    m.heading.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+    addAndMakeVisible(m.heading);
+    auto init_mix_knob =
+        [this](juce::Slider& knob, juce::Label& label, bool db) {
+          knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+          if (db) {
+            knob.setRange(kMinVolumeDb, kMaxVolumeDb, 0.1);
+            knob.setNumDecimalPlacesToDisplay(1);
+          } else {
+            knob.setRange(0, 127, 1);
+          }
+          knob.setTextBoxStyle(
+              juce::Slider::TextBoxBelow, false, kMixKnobSize, kKnobTextHeight);
+          knob.setTextBoxIsEditable(true);
+          knob.onValueChange = [this] { Push(); };
+          label.setJustificationType(juce::Justification::centred);
+          label.setFont(juce::FontOptions(12.0f));
+          addAndMakeVisible(label);
+          addAndMakeVisible(knob);
+        };
+    init_mix_knob(m.volume, m.volume_label, /*db=*/true);
+    init_mix_knob(m.fade_in, m.fade_label, /*db=*/false);
+    init_mix_knob(m.decay, m.decay_label, /*db=*/false);
+  }
+
   pedal_heading_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
   addAndMakeVisible(pedal_heading_);
   init_knob(volume_, volume_label_, 0);
@@ -79,6 +122,13 @@ void PadSettingsPanel::SetParams(const PadParams& params) {
   velocity_.setValue(params.fixed_velocity, juce::dontSendNotification);
   trigger_reserve_.setToggleState(params.trigger_reserve,
                                   juce::dontSendNotification);
+  const PadParams::LayerMix* mixes[2] = {&params.mix_top, &params.mix_bottom};
+  for (size_t l = 0; l < mix_.size(); ++l) {
+    mix_[l].volume.setValue(mixes[l]->volume_db10 / 10.0,
+                            juce::dontSendNotification);
+    mix_[l].fade_in.setValue(mixes[l]->fade_in, juce::dontSendNotification);
+    mix_[l].decay.setValue(mixes[l]->decay, juce::dontSendNotification);
+  }
   volume_.setValue(params.hi_hat_volume, juce::dontSendNotification);
   fade_in_.setValue(params.hi_hat_fade_in, juce::dontSendNotification);
   decay_.setValue(params.hi_hat_decay, juce::dontSendNotification);
@@ -127,6 +177,26 @@ void PadSettingsPanel::resized() {
   area.removeFromTop(kRowGap);
   knob_row(area, velocity_, velocity_label_);
   trigger_reserve_.setBounds(area.removeFromTop(kRowHeight));
+
+  // The two layer-mix triples: heading, then three knobs abreast with
+  // their small labels above.
+  for (MixControls& m : mix_) {
+    area.removeFromTop(kRowGap);
+    m.heading.setBounds(area.removeFromTop(kRowHeight));
+    auto labels = area.removeFromTop(kMixLabelHeight);
+    auto knobs = area.removeFromTop(kMixKnobHeight);
+    const int third = knobs.getWidth() / 3;
+    juce::Slider* sliders[3] = {&m.volume, &m.fade_in, &m.decay};
+    juce::Label* names[3] = {&m.volume_label, &m.fade_label, &m.decay_label};
+    for (int i = 0; i < 3; ++i) {
+      const auto cell_label = labels.removeFromLeft(third);
+      auto cell = knobs.removeFromLeft(third);
+      names[i]->setBounds(cell_label);
+      sliders[i]->setBounds(cell.withWidth(kMixKnobSize).withX(
+          cell.getCentreX() - kMixKnobSize / 2));
+    }
+  }
+
   if (!show_pedal_) {
     return;
   }
@@ -150,6 +220,13 @@ void PadSettingsPanel::Push() {
   params.hi_hat_volume = static_cast<int>(volume_.getValue());
   params.hi_hat_fade_in = static_cast<int>(fade_in_.getValue());
   params.hi_hat_decay = static_cast<int>(decay_.getValue());
+  PadParams::LayerMix* mixes[2] = {&params.mix_top, &params.mix_bottom};
+  for (size_t l = 0; l < mix_.size(); ++l) {
+    mixes[l]->volume_db10 =
+        static_cast<int>(std::lround(mix_[l].volume.getValue() * 10.0));
+    mixes[l]->fade_in = static_cast<int>(mix_[l].fade_in.getValue());
+    mixes[l]->decay = static_cast<int>(mix_[l].decay.getValue());
+  }
   on_change(params);
 }
 

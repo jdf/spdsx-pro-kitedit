@@ -33,6 +33,8 @@ DeviceModel EditedModel() {
   pad.params.hi_hat_volume = 10;
   pad.params.hi_hat_fade_in = 20;
   pad.params.hi_hat_decay = 30;
+  pad.params.mix_top = {.volume_db10 = -123, .fade_in = 45, .decay = 67};
+  pad.params.mix_bottom = {.volume_db10 = 34, .fade_in = 89, .decay = 101};
   // Both halves of the dual identity, so neither read path is missed.
   pad.samples.first = LayerSample::DeviceWave(1590);
   pad.samples.second = LayerSample(juce::File("/tmp/snare.wav"));
@@ -122,6 +124,62 @@ TEST_F(DeviceDbTest, OpenNeverRestampsTheSchemaVersion) {
   auto reopened = DeviceDb::Open(path(), error);
   ASSERT_NE(reopened, nullptr) << error;
   EXPECT_EQ(reopened->SchemaVersion(), 99);
+}
+
+// An older document is never upgraded in place: opening it migrates the
+// data into a NEW document stamped at the current version, and keeps the
+// original beside it as a .bak. This plants a real v1 file (the v1 pads
+// table had no per-layer mix columns) and opens it.
+TEST_F(DeviceDbTest, OpenMigratesAnOlderDocumentIntoANewOne) {
+  const juce::File old_doc = temp.file("old.spdsx");
+  ExecSql(old_doc, R"SQL(
+CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE kits(
+  snapshot TEXT NOT NULL, idx INTEGER NOT NULL, name TEXT NOT NULL,
+  PRIMARY KEY(snapshot, idx));
+CREATE TABLE pads(
+  snapshot TEXT NOT NULL, kit_idx INTEGER NOT NULL, pad_idx INTEGER NOT NULL,
+  mode INTEGER, fade_point INTEGER, fade_end INTEGER, dynamics INTEGER,
+  curve INTEGER, fixed_velocity INTEGER, hihat_vol INTEGER,
+  hihat_fadein INTEGER, hihat_decay INTEGER, trigger_reserve INTEGER,
+  top_device INTEGER, top_local TEXT, bottom_device INTEGER, bottom_local TEXT,
+  PRIMARY KEY(snapshot, kit_idx, pad_idx));
+CREATE TABLE samples(
+  idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
+  category INTEGER, content_hash INTEGER, audio BLOB);
+INSERT INTO meta(key, value) VALUES
+  ('schema_version', '1'), ('app', 'spdsx-patchedit'),
+  ('created_utc', '2026-07-14T00:00:00Z'), ('current_kit', '7');
+INSERT INTO kits(snapshot, idx, name) VALUES('current', 7, 'VINTAGE');
+INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, fade_end,
+  dynamics, curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay,
+  trigger_reserve, top_device, top_local, bottom_device, bottom_local)
+  VALUES('current', 7, 2, 1, 40, 90, 0, 2, 64, 10, 20, 30, 1,
+         1590, '', 0, '/tmp/snare.wav');
+INSERT INTO samples(idx, wavename, filename, frames, category)
+  VALUES(1590, 'kick', 'kick.wav', 4096, 0);
+)SQL");
+
+  juce::String error;
+  auto migrated = DeviceDb::Open(old_doc, error);
+  ASSERT_NE(migrated, nullptr) << error;
+
+  // The new document is stamped at the current version; the data made it
+  // across, with the v2 additions at their defaults.
+  EXPECT_EQ(migrated->SchemaVersion(), DeviceDb::kCurrentSchemaVersion);
+  DeviceModel model;
+  migrated->ReadKits(model);
+  EXPECT_EQ(model.kit(7).name, juce::String("VINTAGE"));
+  EXPECT_EQ(model.current_kit(), 7);
+  const Pad& pad = model.kit(7).pads[2];
+  EXPECT_EQ(pad.params.fade_point, 40);
+  EXPECT_EQ(pad.params.hi_hat_decay, 30);
+  EXPECT_EQ(pad.samples.first, LayerSample::DeviceWave(1590));
+  EXPECT_EQ(pad.params.mix_top, PadParams::LayerMix {});
+  EXPECT_EQ(pad.params.mix_top.decay, kDefaultLayerDecay);
+
+  // The original v1 file survives beside the new document.
+  EXPECT_TRUE(temp.file("old.spdsx.v1.bak").existsAsFile());
 }
 
 TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase) {

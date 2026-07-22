@@ -9,9 +9,13 @@ namespace spdsx {
 
 namespace {
 
-// Bump when the schema changes. Stamped into a document's meta table (and
-// PRAGMA user_version) when it is created, and never rewritten after.
-constexpr int kSchemaVersion = 1;
+// Stamped into a document's meta table (and PRAGMA user_version) when it
+// is created, and never rewritten after. An OLDER document is never
+// upgraded in place: opening one migrates it into a NEW document at the
+// current version (MigrateOlderDocument), keeping the original beside it
+// as a .bak. The version itself lives on the class so the loader's
+// refuse-newer check can't drift from the schema.
+constexpr int kSchemaVersion = DeviceDb::kCurrentSchemaVersion;
 
 const char* kSchemaSql = R"SQL(
 CREATE TABLE IF NOT EXISTS meta(
@@ -25,11 +29,22 @@ CREATE TABLE IF NOT EXISTS pads(
   curve INTEGER, fixed_velocity INTEGER, hihat_vol INTEGER,
   hihat_fadein INTEGER, hihat_decay INTEGER, trigger_reserve INTEGER,
   top_device INTEGER, top_local TEXT, bottom_device INTEGER, bottom_local TEXT,
+  top_volume INTEGER DEFAULT 0, top_fadein INTEGER DEFAULT 0,
+  top_decay INTEGER DEFAULT 127,
+  bottom_volume INTEGER DEFAULT 0, bottom_fadein INTEGER DEFAULT 0,
+  bottom_decay INTEGER DEFAULT 127,
   PRIMARY KEY(snapshot, kit_idx, pad_idx));
 CREATE TABLE IF NOT EXISTS samples(
   idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
   category INTEGER, content_hash INTEGER, audio BLOB);
 )SQL";
+
+// The v1 pad columns, in v1's order — what a migration copies across (the
+// v2 additions take their schema DEFAULTs).
+const char* kV1PadColumns =
+    "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
+    "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
+    "trigger_reserve, top_device, top_local, bottom_device, bottom_local";
 
 const char* SnapshotName(Snapshot s) {
   return s == Snapshot::kBase ? "base" : "current";
@@ -130,6 +145,112 @@ LayerSample LayerFrom(int device_idx, const juce::String& local) {
   return LayerSample();
 }
 
+// Reads the schema_version a document was stamped with (0 if unreadable),
+// and checkpoints its WAL so the main file is whole for a following copy.
+int StampedVersion(const juce::File& path) {
+  sqlite3* db = nullptr;
+  if (sqlite3_open(path.getFullPathName().toRawUTF8(), &db) != SQLITE_OK) {
+    sqlite3_close(db);
+    return 0;
+  }
+  int version = 0;
+  try {
+    {
+      Stmt v(db, "SELECT value FROM meta WHERE key='schema_version';");
+      if (v.Step()) {
+        version = v.ColText(0).getIntValue();
+      }
+    }
+    Exec(db, "PRAGMA wal_checkpoint(TRUNCATE);");
+  } catch (const std::exception&) {
+    version = 0;
+  }
+  sqlite3_close(db);
+  return version;
+}
+
+// SQLite string literal: single quotes doubled.
+std::string SqlQuoted(const juce::String& s) {
+  std::string out = "'";
+  for (const char c : s.toStdString()) {
+    out += c;
+    if (c == '\'') {
+      out += '\'';
+    }
+  }
+  out += "'";
+  return out;
+}
+
+// A document's version is stamped once, at creation, and never rewritten —
+// so an older document is never upgraded in place. This migrates it the
+// only allowed way: CREATE a new document at the current version, copy the
+// data across (new columns take their schema defaults), swap it into
+// place, and keep the original beside it as ".v<N>.bak".
+bool MigrateOlderDocument(const juce::File& path,
+                          int from_version,
+                          juce::String& error) {
+  const juce::File tmp = path.getSiblingFile(path.getFileName() + ".migrating");
+  tmp.deleteFile();
+  sqlite3* db = nullptr;
+  if (sqlite3_open(tmp.getFullPathName().toRawUTF8(), &db) != SQLITE_OK) {
+    error = juce::String("migration: couldn't create ")
+        + tmp.getFullPathName() + ": " + sqlite3_errmsg(db);
+    sqlite3_close(db);
+    return false;
+  }
+  try {
+    Exec(db, kSchemaSql);
+    Exec(db,
+         ("PRAGMA user_version=" + std::to_string(kSchemaVersion)).c_str());
+    Exec(db,
+         ("INSERT INTO meta(key,value) VALUES"
+          "('schema_version','"
+          + std::to_string(kSchemaVersion)
+          + "'),"
+            "('app','spdsx-patchedit'),"
+            "('created_utc', strftime('%Y-%m-%dT%H:%M:%SZ','now'));")
+             .c_str());
+    Exec(db,
+         ("ATTACH DATABASE " + SqlQuoted(path.getFullPathName()) + " AS old;")
+             .c_str());
+    Exec(db, "BEGIN;");
+    Exec(db, "INSERT INTO kits SELECT * FROM old.kits;");
+    Exec(db,
+         (std::string("INSERT INTO pads(") + kV1PadColumns + ") SELECT "
+          + kV1PadColumns + " FROM old.pads;")
+             .c_str());
+    Exec(db, "INSERT INTO samples SELECT * FROM old.samples;");
+    Exec(db,
+         "INSERT OR REPLACE INTO meta(key,value) "
+         "SELECT key, value FROM old.meta "
+         "WHERE key NOT IN ('schema_version','app','created_utc');");
+    Exec(db, "COMMIT;");
+    Exec(db, "DETACH DATABASE old;");
+  } catch (const std::exception& e) {
+    error = juce::String("migration failed: ") + e.what();
+    sqlite3_close(db);
+    tmp.deleteFile();
+    return false;
+  }
+  sqlite3_close(db);
+
+  const juce::File bak = path.getSiblingFile(
+      path.getFileName() + ".v" + juce::String(from_version) + ".bak");
+  bak.deleteFile();
+  if (!path.moveFileTo(bak)) {
+    error = "migration: couldn't set aside " + path.getFullPathName();
+    tmp.deleteFile();
+    return false;
+  }
+  if (!tmp.moveFileTo(path)) {
+    bak.moveFileTo(path);  // put the original back; nothing was lost
+    error = "migration: couldn't move the new document into place";
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 DeviceDb::~DeviceDb() {
@@ -140,6 +261,16 @@ std::unique_ptr<DeviceDb> DeviceDb::Open(const juce::File& path,
                                          juce::String& error) {
   // The one moment the version may be stamped (see below).
   const bool creating = !path.existsAsFile();
+  if (!creating) {
+    // A document from an older build gets migrated into a NEW document at
+    // the current version first (never upgraded in place); a NEWER one is
+    // left untouched here and refused by the loader's version check.
+    const int stamped = StampedVersion(path);
+    if (stamped > 0 && stamped < kSchemaVersion
+        && !MigrateOlderDocument(path, stamped, error)) {
+      return nullptr;
+    }
+  }
   sqlite3* db = nullptr;
   if (sqlite3_open(path.getFullPathName().toRawUTF8(), &db) != SQLITE_OK) {
     error = juce::String("couldn't open ") + path.getFullPathName() + ": "
@@ -196,8 +327,10 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         "INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, "
         "fade_end, dynamics, curve, fixed_velocity, hihat_vol, hihat_fadein, "
         "hihat_decay, trigger_reserve, top_device, top_local, bottom_device, "
-        "bottom_local) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,"
-        "?15,?16,?17);");
+        "bottom_local, top_volume, top_fadein, top_decay, bottom_volume, "
+        "bottom_fadein, bottom_decay) "
+        "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,"
+        "?15,?16,?17,?18,?19,?20,?21,?22,?23);");
     for (int k = 0; k < DeviceModel::kKitCount; ++k) {
       const KitData& kd = model.kit(k);
       kit.Text(1, snap);
@@ -224,6 +357,12 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         pad.Text(15, LayerLocal(pd.samples.first));
         pad.Int(16, LayerDevice(pd.samples.second));
         pad.Text(17, LayerLocal(pd.samples.second));
+        pad.Int(18, pp.mix_top.volume_db10);
+        pad.Int(19, pp.mix_top.fade_in);
+        pad.Int(20, pp.mix_top.decay);
+        pad.Int(21, pp.mix_bottom.volume_db10);
+        pad.Int(22, pp.mix_bottom.fade_in);
+        pad.Int(23, pp.mix_bottom.decay);
         pad.RunOnce();
       }
     }
@@ -262,7 +401,9 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
         db_,
         "SELECT kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
         "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
-        "trigger_reserve, top_device, top_local, bottom_device, bottom_local "
+        "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
+        "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
+        "bottom_decay "
         "FROM pads WHERE snapshot=?1;");
     pad.Text(1, snap);
     while (pad.Step()) {
@@ -289,6 +430,16 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
       pp.trigger_reserve = pad.ColInt(11) != 0;
       pd.samples.first = LayerFrom(pad.ColInt(12), pad.ColText(13));
       pd.samples.second = LayerFrom(pad.ColInt(14), pad.ColText(15));
+      const auto mix = [&pad](int col) {
+        PadParams::LayerMix m;
+        m.volume_db10 =
+            juce::jlimit(-32768, 32767, pad.ColInt(col));  // s16 on the wire
+        m.fade_in = juce::jlimit(0, 127, pad.ColInt(col + 1));
+        m.decay = juce::jlimit(0, 127, pad.ColInt(col + 2));
+        return m;
+      };
+      pp.mix_top = mix(16);
+      pp.mix_bottom = mix(19);
     }
   }
   if (snapshot == Snapshot::kCurrent) {
@@ -386,7 +537,9 @@ void DeviceDb::CaptureBase() {
          "INSERT INTO pads SELECT 'base', kit_idx, pad_idx, mode, "
          "fade_point, fade_end, dynamics, curve, fixed_velocity, "
          "hihat_vol, hihat_fadein, hihat_decay, trigger_reserve, "
-         "top_device, top_local, bottom_device, bottom_local "
+         "top_device, top_local, bottom_device, bottom_local, "
+         "top_volume, top_fadein, top_decay, "
+         "bottom_volume, bottom_fadein, bottom_decay "
          "FROM pads WHERE snapshot='current';");
   } catch (...) {
     Exec(db_, "ROLLBACK;");

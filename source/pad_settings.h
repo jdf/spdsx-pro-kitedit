@@ -7,6 +7,7 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_PAD_SETTINGS_H_
 #define SPDSX_PATCHEDIT_SOURCE_PAD_SETTINGS_H_
 
+#include <array>
 #include <functional>
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -21,8 +22,8 @@ public:
 
   // Fires on every edit with the panel's own fields filled in; the
   // other PadParams fields are defaults, so take only what this panel
-  // owns (dynamics, curve, fixed_velocity, trigger_reserve, and the
-  // hi_hat_* trio).
+  // owns (dynamics, curve, fixed_velocity, trigger_reserve, the
+  // hi_hat_* trio, and the two per-layer mixes).
   std::function<void(const PadParams&)> on_change;
 
   // Updates the controls without firing on_change (initial state, and
@@ -45,6 +46,18 @@ private:
   juce::Label velocity_label_ {{}, "Fixed Velocity"};
   juce::Slider velocity_;
   juce::ToggleButton trigger_reserve_ {"Trigger Reserve"};
+  // Per-layer mix (Layer A on top, Layer B below): three small knobs
+  // side by side under a heading — volume in dB, fade-in, decay.
+  struct MixControls {
+    juce::Label heading;
+    juce::Label volume_label {{}, "Vol"};
+    juce::Slider volume;
+    juce::Label fade_label {{}, "Fade"};
+    juce::Slider fade_in;
+    juce::Label decay_label {{}, "Decay"};
+    juce::Slider decay;
+  };
+  std::array<MixControls, 2> mix_;  // [0] = layer A/top, [1] = layer B
   // HI-HAT only: closed-pedal volume/attack/decay knobs.
   juce::Label pedal_heading_ {{}, "Closed Pedal"};
   juce::Label volume_label_ {{}, "Volume"};

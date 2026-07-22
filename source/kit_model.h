@@ -38,6 +38,19 @@ struct PadParams {
   int hi_hat_volume = kDefaultHiHatVolume;
   int hi_hat_fade_in = kDefaultHiHatFadeIn;
   int hi_hat_decay = kDefaultHiHatDecay;
+  // Per-layer mix (top = layer A, bottom = layer B): volume in 0.1 dB
+  // steps (0 = 0.0 dB, negative = quieter), fade-in 0..127, decay 0..127
+  // (127 = none). Read/write for the device; not yet emulated in the
+  // preview engine.
+  struct LayerMix {
+    int volume_db10 = kDefaultLayerVolumeDb10;
+    int fade_in = kDefaultLayerFadeIn;
+    int decay = kDefaultLayerDecay;
+
+    bool operator==(const LayerMix&) const = default;
+  };
+  LayerMix mix_top;
+  LayerMix mix_bottom;
 
   bool operator==(const PadParams&) const = default;
 };

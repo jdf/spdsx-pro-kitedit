@@ -55,8 +55,11 @@ public:
   void PutAudio(int sample_index, const void* data, size_t bytes);
 
   // The schema/document version stored in the meta table (0 if absent).
-  // The loader can refuse to open a file newer than kCurrentSchemaVersion.
-  static constexpr int kCurrentSchemaVersion = 1;
+  // The loader refuses a file newer than kCurrentSchemaVersion; an older
+  // one is migrated on open into a new document at the current version
+  // (the original is kept beside it as a .bak).
+  // v2 (2026-07-22): per-layer mix columns on pads.
+  static constexpr int kCurrentSchemaVersion = 2;
   int SchemaVersion();
 
   // Copies the current snapshot onto the base snapshot — the clean point

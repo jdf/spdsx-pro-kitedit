@@ -37,6 +37,12 @@ inline constexpr int kDefaultHiHatVolume = 80;
 inline constexpr int kDefaultHiHatFadeIn = 0;
 inline constexpr int kDefaultHiHatDecay = 25;
 
+// Per-layer mix defaults, matching the official app's layer editor:
+// volume 0.0 dB (stored in 0.1 dB steps), no fade-in, decay 127 = none.
+inline constexpr int kDefaultLayerVolumeDb10 = 0;
+inline constexpr int kDefaultLayerFadeIn = 0;
+inline constexpr int kDefaultLayerDecay = 127;
+
 // Velocity -> loudness transfer functions (the pad's Dynamics Curve).
 // The manual only says LOUD1-3 make loud output "more readily produced"
 // from softer strikes; the shapes here are power-curve approximations

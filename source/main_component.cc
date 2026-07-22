@@ -1758,8 +1758,8 @@ void MainComponent::ShowPadSettings(int pad) {
   auto panel = std::make_unique<PadSettingsPanel>();
   panel->SetParams(model_.params(pad));
   panel->on_change = [this, pad](const PadParams& edited) {
-    // The panel only owns these four fields; the pad's mode and fade
-    // values may be edited in the header while the panel is open.
+    // Only the fields the panel owns; the pad's mode and fade values
+    // may be edited in the header while the panel is open.
     PadParams changed = model_.params(pad);
     changed.dynamics = edited.dynamics;
     changed.curve = edited.curve;
@@ -1768,6 +1768,8 @@ void MainComponent::ShowPadSettings(int pad) {
     changed.hi_hat_volume = edited.hi_hat_volume;
     changed.hi_hat_fade_in = edited.hi_hat_fade_in;
     changed.hi_hat_decay = edited.hi_hat_decay;
+    changed.mix_top = edited.mix_top;
+    changed.mix_bottom = edited.mix_bottom;
     if (changed == model_.params(pad)) {
       return;
     }
