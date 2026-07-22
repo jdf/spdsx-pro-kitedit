@@ -149,6 +149,10 @@ int Usage() {
       "              directory only — the dump carries no audio)\n"
       "  readwave <N> read wave N's audio off the device (--out FILE:\n"
       "              .wav = converted, else raw .SMP)\n"
+      "  setlayer [K] --pad P.S [--volume dB] [--fadein N] [--decay N]\n"
+      "                  write one layer's volume (dB, e.g. -3.5), fade-in\n"
+      "                  (0-127) and decay (0-127, 127 = none); --commit\n"
+      "                  to persist\n"
       "  selectkit <N>   switch the device's playback kit (1-200)\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
@@ -269,24 +273,31 @@ Bytes ReadFile(const std::string& path) {
   return data;
 }
 
-int RunDump(const std::string& port_arg,
-            const std::vector<uint8_t>& banks,
-            const std::string& out_path,
-            const std::string& verify_path) {
+// Command argument structs: every Run* with more than a port-and-one-value
+// signature takes one of these, filled with designated initializers at the
+// dispatch site, so positional argument mixups cannot happen silently.
+struct DumpArgs {
+  std::string port;
+  std::vector<uint8_t> banks;
+  std::string out_path;
+  std::string verify_path;
+};
+
+int RunDump(const DumpArgs& args) {
   // Offline: just report an existing image's structure.
-  if (!verify_path.empty()) {
-    ReportBlocks(ReadFile(verify_path));
+  if (!args.verify_path.empty()) {
+    ReportBlocks(ReadFile(args.verify_path));
     return 0;
   }
 
-  const std::string port = ResolvePort(port_arg);
+  const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s\n", port.c_str());
 
   Bytes image;
-  for (uint8_t bank : banks) {
+  for (uint8_t bank : args.banks) {
     std::printf("streaming bank 0x%02x (%s)... ", bank, BankName(bank));
     std::fflush(stdout);
     int blocks = 0;
@@ -305,12 +316,12 @@ int RunDump(const std::string& port_arg,
 
   std::printf("\n");
   ReportBlocks(image);
-  if (!out_path.empty()) {
-    if (!WriteFile(out_path, image)) {
-      std::fprintf(stderr, "error: couldn't write %s\n", out_path.c_str());
+  if (!args.out_path.empty()) {
+    if (!WriteFile(args.out_path, image)) {
+      std::fprintf(stderr, "error: couldn't write %s\n", args.out_path.c_str());
       return 1;
     }
-    std::printf("wrote %s\n", out_path.c_str());
+    std::printf("wrote %s\n", args.out_path.c_str());
   }
   return image.empty() ? 1 : 0;
 }
@@ -339,21 +350,26 @@ int RunKits(const std::string& port_arg, const std::string& from_path) {
   return kits.empty() ? 1 : 0;
 }
 
-int RunReadWave(const std::string& port_arg,
-                int index,
-                const std::string& out_path) {
-  const std::string port = ResolvePort(port_arg);
+struct ReadWaveArgs {
+  std::string port;
+  int index = 0;
+  std::string out_path;
+};
+
+int RunReadWave(const ReadWaveArgs& args) {
+  const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s, reading wave %d (%s)...\n",
               port.c_str(),
-              index,
-              spdsx::device::RemoteWavePath(index).c_str());
-  const Bytes smp = dev.ReadRemoteWave(index, [](size_t done, size_t total) {
-    std::printf("\r  %zu / %zu bytes", done, total);
-    std::fflush(stdout);
-  });
+              args.index,
+              spdsx::device::RemoteWavePath(args.index).c_str());
+  const Bytes smp =
+      dev.ReadRemoteWave(args.index, [](size_t done, size_t total) {
+        std::printf("\r  %zu / %zu bytes", done, total);
+        std::fflush(stdout);
+      });
   std::printf("\n%zu bytes read\n", smp.size());
   const auto hdr = spdsx::device::ParseRfwvHeader(smp);
   const size_t pcm = smp.size() > spdsx::device::kRfwvHeaderSize
@@ -368,17 +384,17 @@ int RunReadWave(const std::string& port_arg,
       hdr.bits_per_sample,
       pcm,
       hdr.channels ? pcm / 2.0 / hdr.channels / 48000.0 : 0.0);
-  if (!out_path.empty()) {
+  if (!args.out_path.empty()) {
     // A .wav path gets the converted WAV; anything else the raw .SMP.
-    const bool as_wav = out_path.size() > 4
-        && out_path.compare(out_path.size() - 4, 4, ".wav") == 0;
+    const std::string& out = args.out_path;
+    const bool as_wav =
+        out.size() > 4 && out.compare(out.size() - 4, 4, ".wav") == 0;
     const Bytes data = as_wav ? spdsx::device::RfwvToWav(smp) : smp;
-    if (data.empty() || !WriteFile(out_path, data)) {
-      std::fprintf(stderr, "couldn't write %s\n", out_path.c_str());
+    if (data.empty() || !WriteFile(out, data)) {
+      std::fprintf(stderr, "couldn't write %s\n", out.c_str());
       return 1;
     }
-    std::printf(
-        "wrote %s (%s)\n", out_path.c_str(), as_wav ? "wav" : "raw smp");
+    std::printf("wrote %s (%s)\n", out.c_str(), as_wav ? "wav" : "raw smp");
   }
   return smp.empty() ? 1 : 0;
 }
@@ -409,10 +425,15 @@ std::pair<std::string, std::string> DeriveWaveNames(
 // `index`, all over a SINGLE device connection — mirroring how the GUI
 // sync pushes a whole kit's samples at once. --name applies only when
 // there is a single file; otherwise each name comes from its own basename.
-int RunSendWave(const std::string& port_arg,
-                int index,
-                const std::vector<std::string>& from_paths,
-                const std::string& name_arg) {
+struct SendWaveArgs {
+  std::string port;
+  int index = 0;
+  std::vector<std::string> from_paths;
+  std::string name;  // filename override, single-file only
+};
+
+int RunSendWave(const SendWaveArgs& args) {
+  const std::vector<std::string>& from_paths = args.from_paths;
   if (from_paths.empty()) {
     std::fprintf(stderr, "sendwave needs --from <file.smp> (repeatable)\n");
     return 2;
@@ -431,14 +452,14 @@ int RunSendWave(const std::string& port_arg,
     smps.push_back(smp);
   }
 
-  const std::string port = ResolvePort(port_arg);
+  const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s: uploading %zu file(s) from index %d...\n",
               port.c_str(),
               from_paths.size(),
-              index);
+              args.index);
 
   // Phase 1: upload every file on the one connection (as the GUI sync
   // does), all into working state, then ONE flash commit — the official
@@ -446,9 +467,9 @@ int RunSendWave(const std::string& port_arg,
   // its own commit can miss before the flash settles.
   dev.PrepareUploadBatch();
   for (size_t i = 0; i < from_paths.size(); ++i) {
-    const int idx = index + static_cast<int>(i);
+    const int idx = args.index + static_cast<int>(i);
     const auto [wavename, filename] = DeriveWaveNames(
-        from_paths[i], from_paths.size() == 1 ? name_arg : std::string());
+        from_paths[i], from_paths.size() == 1 ? args.name : std::string());
     std::printf("  [%zu/%zu] index %d <- %zu bytes as \"%s\" / \"%s\"\n",
                 i + 1,
                 from_paths.size(),
@@ -472,7 +493,7 @@ int RunSendWave(const std::string& port_arg,
   std::printf("verifying...\n");
   int failures = 0;
   for (size_t i = 0; i < from_paths.size(); ++i) {
-    const int idx = index + static_cast<int>(i);
+    const int idx = args.index + static_cast<int>(i);
     std::printf("  index %d: ", idx);
     try {
       const Bytes back = dev.ReadRemoteWave(idx);
@@ -510,12 +531,16 @@ bool ParsePadSpec(const std::string& spec, int* pad, PadSlot* slot) {
   return true;
 }
 
-int RunAssign(const std::string& port_arg,
-              int kit,
-              int sample,
-              const std::string& pad_spec,
-              bool commit) {
-  if (sample < 0 || pad_spec.empty()) {
+struct AssignArgs {
+  std::string port;
+  int kit = 1;
+  int sample = -1;
+  std::string pad_spec;
+  bool commit = false;
+};
+
+int RunAssign(const AssignArgs& args) {
+  if (args.sample < 0 || args.pad_spec.empty()) {
     std::fprintf(stderr,
                  "assign needs --sample <index> and --pad <P.S> "
                  "(e.g. --pad 2.1 = pad 2 bottom slot)\n");
@@ -523,26 +548,27 @@ int RunAssign(const std::string& port_arg,
   }
   int pad = 0;
   PadSlot slot = PadSlot::kTop;
-  if (!ParsePadSpec(pad_spec, &pad, &slot)) {
+  if (!ParsePadSpec(args.pad_spec, &pad, &slot)) {
     std::fprintf(stderr,
                  "bad --pad \"%s\"; want P.S with P 1-9, S 0(top)"
                  "/1(bottom)\n",
-                 pad_spec.c_str());
+                 args.pad_spec.c_str());
     return 2;
   }
-  const std::string port = ResolvePort(port_arg);
+  const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s: kit %d pad %d %s <- sample %d%s\n",
               port.c_str(),
-              kit,
+              args.kit,
               pad,
               slot == PadSlot::kTop ? "top" : "bottom",
-              sample,
-              commit ? " (committing)" : " (working state)");
-  dev.SetPadWave(kit, pad, slot, sample);
-  if (commit) {
+              args.sample,
+              args.commit ? " (committing)" : " (working state)");
+  dev.SetPadWave(
+      {.kit = args.kit, .pad = pad, .slot = slot, .sample = args.sample});
+  if (args.commit) {
     dev.Commit();
   }
   std::printf("done\n");
@@ -581,23 +607,27 @@ bool ParseParamList(const std::string& spec,
   return true;
 }
 
-int RunSetParams(const std::string& port_arg,
-                 int kit,
-                 int pad,
-                 const std::string& params_spec,
-                 bool commit) {
-  if (pad < 1 || pad > 9 || params_spec.empty()) {
+struct SetParamsArgs {
+  std::string port;
+  int kit = 1;
+  int pad = 0;
+  std::string params_spec;
+  bool commit = false;
+};
+
+int RunSetParams(const SetParamsArgs& args) {
+  if (args.pad < 1 || args.pad > 9 || args.params_spec.empty()) {
     std::fprintf(stderr,
                  "setparams needs --pad <1-9> and --params "
                  "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,trig\n");
     return 2;
   }
   spdsx::device::PadDeviceParams p;
-  if (!ParseParamList(params_spec, &p)) {
+  if (!ParseParamList(args.params_spec, &p)) {
     std::fprintf(stderr, "--params needs 10 comma-separated values\n");
     return 2;
   }
-  const std::string port = ResolvePort(port_arg);
+  const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
@@ -605,8 +635,8 @@ int RunSetParams(const std::string& port_arg,
       "opened %s: kit %d pad %d params <- mode=%d fp=%d fe=%d "
       "dyn=%d curve=%d fixvel=%d hh(%d,%d,%d) trig=%d%s\n",
       port.c_str(),
-      kit,
-      pad,
+      args.kit,
+      args.pad,
       p.layer_mode,
       p.fade_point,
       p.fade_end,
@@ -617,35 +647,94 @@ int RunSetParams(const std::string& port_arg,
       p.hi_hat_fade_in,
       p.hi_hat_decay,
       p.trigger_reserve,
-      commit ? " (committing)" : "");
-  dev.SetPadLayerParams(kit, pad, p);
-  if (commit) {
+      args.commit ? " (committing)" : "");
+  dev.SetPadLayerParams({.kit = args.kit, .pad = args.pad, .params = p});
+  if (args.commit) {
     dev.Commit();
   }
   std::printf("done\n");
   return 0;
 }
 
-int RunSetName(const std::string& port_arg,
-               int kit,
-               const std::string& name,
-               bool commit) {
-  if (name.empty()) {
+struct SetNameArgs {
+  std::string port;
+  int kit = 1;
+  std::string name;
+  bool commit = false;
+};
+
+int RunSetName(const SetNameArgs& args) {
+  if (args.name.empty()) {
     std::fprintf(stderr, "setname needs --name <text>\n");
     return 2;
   }
-  const std::string port = ResolvePort(port_arg);
+  const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
   std::printf("opened %s: kit %d name <- \"%s\"%s\n",
               port.c_str(),
-              kit,
-              name.c_str(),
-              commit ? " (committing)" : " (working state)");
-  dev.SetKitName(kit, name);
-  if (commit) {
+              args.kit,
+              args.name.c_str(),
+              args.commit ? " (committing)" : " (working state)");
+  dev.SetKitName(args.kit, args.name);
+  if (args.commit) {
     dev.Commit();
+  }
+  std::printf("done\n");
+  return 0;
+}
+
+struct SetLayerArgs {
+  std::string port;
+  int kit = 1;
+  std::string pad_spec;
+  double volume_db = 0.0;
+  int fade_in = 0;
+  int decay = 127;
+  bool commit = false;
+};
+
+int RunSetLayer(const SetLayerArgs& args) {
+  int pad = 0;
+  PadSlot slot = PadSlot::kTop;
+  if (args.pad_spec.empty() || !ParsePadSpec(args.pad_spec, &pad, &slot)) {
+    std::fprintf(stderr,
+                 "setlayer needs --pad <P.S> (P 1-9, S 0 top/1 bottom)\n");
+    return 2;
+  }
+  if (args.fade_in < 0 || args.fade_in > 127 || args.decay < 0
+      || args.decay > 127) {
+    std::fprintf(stderr, "--fadein and --decay want 0-127\n");
+    return 2;
+  }
+  // The device stores volume as a signed 16-bit in 0.1 dB units.
+  const int volume_db10 = static_cast<int>(std::lround(args.volume_db * 10.0));
+  const std::string port = ResolvePort(args.port);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
+  std::printf(
+      "opened %s: kit %d pad %d %s <- volume %.1f dB, fade-in %d, "
+      "decay %d%s\n",
+      port.c_str(),
+      args.kit,
+      pad,
+      slot == PadSlot::kTop ? "top" : "bottom",
+      volume_db10 / 10.0,
+      args.fade_in,
+      args.decay,
+      args.commit ? " (committing)" : " (working state)");
+  dev.SetPadLayerMix({.kit = args.kit,
+                      .pad = pad,
+                      .slot = slot,
+                      .volume_db10 = volume_db10,
+                      .fade_in = args.fade_in,
+                      .decay = args.decay});
+  if (args.commit) {
+    dev.Commit();
+  } else {
+    dev.Ping();  // delivery barrier: fire-and-forget writes vs port close
   }
   std::printf("done\n");
   return 0;
@@ -728,16 +817,23 @@ const char* kModeNames[] = {"MIX",
 const char* kCurveNames[] = {"LINEAR", "LOUD1", "LOUD2", "LOUD3"};
 
 // Prints one kit's pads with the mapped params decoded.
-int RunKit(const std::string& port_arg, const std::string& from_path, int kit) {
+struct KitShowArgs {
+  std::string port;
+  std::string from_path;
+  int kit = 0;
+};
+
+int RunKit(const KitShowArgs& args) {
+  const int kit = args.kit;
   if (kit < 1 || kit > spdsx::device::kBankKitCount) {
     std::fprintf(stderr, "kit must be 1-%d\n", spdsx::device::kBankKitCount);
     return 2;
   }
   Bytes raw;
-  if (!from_path.empty()) {
-    raw = ReadFile(from_path);
+  if (!args.from_path.empty()) {
+    raw = ReadFile(args.from_path);
   } else {
-    const std::string port = ResolvePort(port_arg);
+    const std::string port = ResolvePort(args.port);
     const std::unique_ptr<spdsx::device::SerialPort> serial =
         spdsx::device::PlatformPorts().Open(port);
     spdsx::device::SpdsxDevice dev(serial.get());
@@ -779,12 +875,21 @@ int RunKit(const std::string& port_arg, const std::string& from_path, int kit) {
   return 0;
 }
 
-int RunPadLink(const std::string& port_arg,
-               int group,
-               const std::vector<std::pair<ObjectKind, int>>& objects,
-               std::vector<KitRange> ranges,
-               bool dry_run,
-               bool verbose) {
+struct PadLinkArgs {
+  std::string port;
+  int group = 0;
+  std::vector<std::pair<ObjectKind, int>> objects;
+  std::vector<KitRange> ranges;
+  bool dry_run = false;
+  bool verbose = false;
+};
+
+int RunPadLink(const PadLinkArgs& args) {
+  const int group = args.group;
+  const auto& objects = args.objects;
+  const bool dry_run = args.dry_run;
+  const bool verbose = args.verbose;
+  std::vector<KitRange> ranges = args.ranges;
   if (ranges.empty()) {
     ranges.push_back({1, 200});
   }
@@ -794,7 +899,7 @@ int RunPadLink(const std::string& port_arg,
   spdsx::device::SpdsxDevice* dev = nullptr;
   std::unique_ptr<spdsx::device::SpdsxDevice> owned;
   if (!dry_run) {
-    const std::string port = ResolvePort(port_arg);
+    const std::string port = ResolvePort(args.port);
     std::printf("About to WRITE to %s (group %d):", port.c_str(), group);
     for (const auto& [kind, index] : objects) {
       std::printf(" %s%d", KindName(kind), index);
@@ -850,7 +955,8 @@ int RunPadLink(const std::string& port_arg,
             spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
                                {spdsx::device::SelectValue(kind, index)});
         const Bytes wr =
-            spdsx::device::Dt1(spdsx::device::PadLinkAddr(kind, index, kit),
+            spdsx::device::Dt1(spdsx::device::PadLinkAddr(
+                                   {.kind = kind, .index = index, .kit = kit}),
                                {static_cast<uint8_t>(group & 0x7F)});
         std::printf("        focus %s%d : %s\n",
                     KindName(kind),
@@ -898,6 +1004,10 @@ int main(int argc, char** argv) {
   int sample_arg = -1;
   int pad_num = 0;
   int kit_arg = 0;
+  double volume_arg = 0.0;
+  bool have_volume = false;
+  int fadein_arg = 0;
+  int decay_arg = 127;
   bool commit_flag = false;
   bool dry_run = false;
   bool verbose = false;
@@ -950,6 +1060,13 @@ int main(int argc, char** argv) {
         sample_arg = std::atoi(next().c_str());
       } else if (arg == "--params") {
         params_spec = next();
+      } else if (arg == "--volume") {
+        volume_arg = std::atof(next().c_str());
+        have_volume = true;
+      } else if (arg == "--fadein") {
+        fadein_arg = std::atoi(next().c_str());
+      } else if (arg == "--decay") {
+        decay_arg = std::atoi(next().c_str());
       } else if (arg == "--commit") {
         commit_flag = true;
       } else if (arg == "--dry-run") {
@@ -976,7 +1093,10 @@ int main(int argc, char** argv) {
       if (verify_path.empty() && banks.empty()) {
         banks = {spdsx::device::kBankKits};  // the useful default
       }
-      return RunDump(port, banks, out_path, verify_path);
+      return RunDump({.port = port,
+                      .banks = banks,
+                      .out_path = out_path,
+                      .verify_path = verify_path});
     }
     if (command == "kits") {
       return RunKits(port, from_path);
@@ -985,14 +1105,25 @@ int main(int argc, char** argv) {
       return RunSamples(port, from_path);
     }
     if (command == "kit") {
-      return RunKit(port, from_path, kit_arg);
+      return RunKit({.port = port, .from_path = from_path, .kit = kit_arg});
     }
     if (command == "readwave") {
       if (kit_arg <= 0) {
         std::fprintf(stderr, "readwave needs a sample index\n");
         return 2;
       }
-      return RunReadWave(port, kit_arg, out_path);
+      return RunReadWave(
+          {.port = port, .index = kit_arg, .out_path = out_path});
+    }
+    if (command == "setlayer") {
+      (void)have_volume;  // all three fields always write; defaults apply
+      return RunSetLayer({.port = port,
+                          .kit = kit_arg > 0 ? kit_arg : 1,
+                          .pad_spec = pad_spec,
+                          .volume_db = volume_arg,
+                          .fade_in = fadein_arg,
+                          .decay = decay_arg,
+                          .commit = commit_flag});
     }
     if (command == "selectkit") {
       if (kit_arg <= 0) {
@@ -1013,18 +1144,30 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "sendwave needs a target index\n");
         return 2;
       }
-      return RunSendWave(port, kit_arg, from_paths, name_arg);
+      return RunSendWave({.port = port,
+                          .index = kit_arg,
+                          .from_paths = from_paths,
+                          .name = name_arg});
     }
     if (command == "assign") {
-      return RunAssign(
-          port, kit_arg > 0 ? kit_arg : 1, sample_arg, pad_spec, commit_flag);
+      return RunAssign({.port = port,
+                        .kit = kit_arg > 0 ? kit_arg : 1,
+                        .sample = sample_arg,
+                        .pad_spec = pad_spec,
+                        .commit = commit_flag});
     }
     if (command == "setname") {
-      return RunSetName(port, kit_arg > 0 ? kit_arg : 1, name_arg, commit_flag);
+      return RunSetName({.port = port,
+                         .kit = kit_arg > 0 ? kit_arg : 1,
+                         .name = name_arg,
+                         .commit = commit_flag});
     }
     if (command == "setparams") {
-      return RunSetParams(
-          port, kit_arg > 0 ? kit_arg : 1, pad_num, params_spec, commit_flag);
+      return RunSetParams({.port = port,
+                           .kit = kit_arg > 0 ? kit_arg : 1,
+                           .pad = pad_num,
+                           .params_spec = params_spec,
+                           .commit = commit_flag});
     }
     if (command == "padlink") {
       if (group < 0) {
@@ -1035,7 +1178,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "padlink needs at least one --trigger or --pad\n");
         return 2;
       }
-      return RunPadLink(port, group, objects, ranges, dry_run, verbose);
+      return RunPadLink({.port = port,
+                         .group = group,
+                         .objects = objects,
+                         .ranges = ranges,
+                         .dry_run = dry_run,
+                         .verbose = verbose});
     }
     return Usage();
   } catch (const std::exception& e) {

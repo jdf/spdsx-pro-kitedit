@@ -246,24 +246,60 @@ TEST_F(SpdsxDeviceTest, SetKitNameAlwaysWritesTheWholeField) {
 }
 
 TEST_F(SpdsxDeviceTest, SetPadWaveWritesTheWaveThenTheEnableFlag) {
-  dev.SetPadWave(129, 7, PadSlot::kTop, 127, 0.0);
+  dev.SetPadWave({.kit = 129,
+                  .pad = 7,
+                  .slot = PadSlot::kTop,
+                  .sample = 127,
+                  .pace_seconds = 0.0});
 
   const std::vector<Bytes> sent = port.payloads();
   ASSERT_EQ(sent.size(), 2u);
   EXPECT_EQ(sent[0],
-            Dt1(PadWaveAddr(129, 7, PadSlot::kTop), NibbleEncode(127)));
+            Dt1(PadWaveAddr({.kit = 129, .pad = 7, .slot = PadSlot::kTop}),
+                NibbleEncode(127)));
   // Without the companion flag the slot stays unused.
-  EXPECT_EQ(sent[1], Dt1(PadWaveEnableAddr(129, 7, PadSlot::kTop), {0x01}));
+  EXPECT_EQ(
+      sent[1],
+      Dt1(PadWaveEnableAddr({.kit = 129, .pad = 7, .slot = PadSlot::kTop}),
+          {0x01}));
+}
+
+// The mix trio goes to the layer page's captured offsets: volume as a
+// two's-complement s16 in nibbles (0.1 dB units), fade-in and decay as
+// single bytes. All fire-and-forget — DT1s never ack.
+TEST_F(SpdsxDeviceTest, SetPadLayerMixWritesVolumeFadeInAndDecay) {
+  dev.SetPadLayerMix({.kit = 199,
+                      .pad = 1,
+                      .slot = PadSlot::kTop,
+                      .volume_db10 = -35,  // -3.5 dB
+                      .fade_in = 10,
+                      .decay = 100,
+                      .pace_seconds = 0.0});
+
+  const PadLayerRef layer {.kit = 199, .pad = 1, .slot = PadSlot::kTop};
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 3u);
+  EXPECT_EQ(sent[0],
+            Dt1(PadLayerAddr(layer, kLayerVolumeOffset),
+                NibbleEncode(-35 & 0xFFFF)));
+  EXPECT_EQ(sent[1], Dt1(PadLayerAddr(layer, kLayerFadeInOffset), {10}));
+  EXPECT_EQ(sent[2], Dt1(PadLayerAddr(layer, kLayerDecayOffset), {100}));
 }
 
 TEST_F(SpdsxDeviceTest, SetPadLinkFocusesTheObjectThenWritesTheGroup) {
-  dev.SetPadLink(200, ObjectKind::kPad, 7, 11, 0.0);
+  dev.SetPadLink({.kit = 200,
+                  .kind = ObjectKind::kPad,
+                  .index = 7,
+                  .group = 11,
+                  .pace_seconds = 0.0});
 
   const std::vector<Bytes> sent = port.payloads();
   ASSERT_EQ(sent.size(), 2u);
   EXPECT_EQ(sent[0],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 7)}));
-  EXPECT_EQ(sent[1], Dt1(PadLinkAddr(ObjectKind::kPad, 7, 200), {0x0b}));
+  EXPECT_EQ(sent[1],
+            Dt1(PadLinkAddr({.kind = ObjectKind::kPad, .index = 7, .kit = 200}),
+                {0x0b}));
 }
 
 // One DT1 per field, at the param indices the kit record stores them at --
@@ -281,7 +317,8 @@ TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
   params.hi_hat_decay = 25;
   params.trigger_reserve = 1;
 
-  dev.SetPadLayerParams(200, 9, params, 0.0);
+  dev.SetPadLayerParams(
+      {.kit = 200, .pad = 9, .params = params, .pace_seconds = 0.0});
 
   const std::vector<Bytes> sent = port.payloads();
   ASSERT_EQ(sent.size(), 11u);  // the focus, then ten fields
@@ -304,7 +341,8 @@ TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
 
   for (size_t i = 0; i < std::size(fields); ++i) {
     EXPECT_EQ(sent[i + 1],
-              Dt1(PadParamAddr(200, 9, fields[i].param), {fields[i].value}))
+              Dt1(PadParamAddr({.kit = 200, .pad = 9}, fields[i].param),
+                  {fields[i].value}))
         << "param " << fields[i].param;
   }
 }
@@ -407,7 +445,9 @@ TEST_F(SpdsxDeviceTest, DeleteWaveDrainsTheUnsolicitedNotifications) {
     port.QueueReply({0x7a});
   }
   port.QueueReply(Dt1(kKitSelectAddr, EncodeKit(129)));
-  port.QueueReply(Dt1(PadWaveEnableAddr(129, 1, PadSlot::kTop), {0x00}));
+  port.QueueReply(
+      Dt1(PadWaveEnableAddr({.kit = 129, .pad = 1, .slot = PadSlot::kTop}),
+          {0x00}));
   port.QueueIdle();  // then the device goes quiet
   for (int i = 0; i < 4; ++i) {
     port.QueueReply({0x7a});

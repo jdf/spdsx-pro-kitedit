@@ -253,13 +253,12 @@ void SpdsxDevice::SelectObject(ObjectKind kind, int index) {
   Send(Dt1(kObjectSelectAddr, {SelectValue(kind, index)}));
 }
 
-void SpdsxDevice::SetPadLink(
-    int kit, ObjectKind kind, int index, int group, double pace_seconds) {
-  SelectObject(kind, index);  // focus; fire-and-forget like every DT1
-  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
-  Send(
-      Dt1(PadLinkAddr(kind, index, kit), {static_cast<uint8_t>(group & 0x7F)}));
-  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+void SpdsxDevice::SetPadLink(const PadLinkWrite& w) {
+  SelectObject(w.kind, w.index);  // focus; fire-and-forget like every DT1
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
+  Send(Dt1(PadLinkAddr({.kind = w.kind, .index = w.index, .kit = w.kit}),
+           {static_cast<uint8_t>(w.group & 0x7F)}));
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
 }
 
 void SpdsxDevice::SetKitName(int kit,
@@ -276,39 +275,55 @@ void SpdsxDevice::SetKitName(int kit,
   }
 }
 
-void SpdsxDevice::SetPadWave(
-    int kit, int pad, PadSlot slot, int sample, double pace_seconds) {
+void SpdsxDevice::SetPadLayerMix(const PadLayerMixWrite& w) {
+  // Kit, pad and layer are all encoded in the address; no select needed.
+  // Volume is a signed 16-bit written as four nibbles (two's complement);
+  // fade-in and decay are single bytes.
+  const PadLayerRef layer {.kit = w.kit, .pad = w.pad, .slot = w.slot};
+  auto pace = [&] {
+    std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
+  };
+  Send(Dt1(PadLayerAddr(layer, kLayerVolumeOffset),
+           NibbleEncode(w.volume_db10 & 0xFFFF)));
+  pace();
+  Send(Dt1(PadLayerAddr(layer, kLayerFadeInOffset),
+           {static_cast<uint8_t>(w.fade_in & 0x7F)}));
+  pace();
+  Send(Dt1(PadLayerAddr(layer, kLayerDecayOffset),
+           {static_cast<uint8_t>(w.decay & 0x7F)}));
+  pace();
+}
+
+void SpdsxDevice::SetPadWave(const PadWaveWrite& w) {
   // Kit and pad+layer are both encoded in the address, so no kit select
   // or pad focus is needed (the app assigns waves without either). Write
   // the wave number, then the companion "slot in use" flag.
-  Send(Dt1(PadWaveAddr(kit, pad, slot), NibbleEncode(sample)));
-  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
-  Send(Dt1(PadWaveEnableAddr(kit, pad, slot), {0x01}));
-  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+  const PadLayerRef layer {.kit = w.kit, .pad = w.pad, .slot = w.slot};
+  Send(Dt1(PadWaveAddr(layer), NibbleEncode(w.sample)));
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
+  Send(Dt1(PadWaveEnableAddr(layer), {0x01}));
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
 }
 
-void SpdsxDevice::SetPadLayerParams(int kit,
-                                    int pad,
-                                    const PadDeviceParams& params,
-                                    double pace_seconds) {
+void SpdsxDevice::SetPadLayerParams(const PadParamsWrite& w) {
   // Kit and pad are both encoded in the write address, so no kit select
   // is needed; focus the pad object (the app does before param edits).
-  SelectObject(ObjectKind::kPad, pad);  // focus; fire-and-forget
-  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+  SelectObject(ObjectKind::kPad, w.pad);  // focus; fire-and-forget
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
   auto write = [&](int param, uint8_t value) {
-    Send(Dt1(PadParamAddr(kit, pad, param), {value}));
-    std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
+    Send(Dt1(PadParamAddr({.kit = w.kit, .pad = w.pad}, param), {value}));
+    std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
   };
-  write(0x00, params.layer_mode);
-  write(0x01, params.fade_point);
-  write(0x02, params.fade_end);
-  write(0x03, params.dynamics);
-  write(0x04, params.dynamics_curve);
-  write(0x05, params.fixed_velocity);
-  write(0x07, params.hi_hat_volume);
-  write(0x08, params.hi_hat_fade_in);
-  write(0x09, params.hi_hat_decay);
-  write(0x13, params.trigger_reserve);
+  write(0x00, w.params.layer_mode);
+  write(0x01, w.params.fade_point);
+  write(0x02, w.params.fade_end);
+  write(0x03, w.params.dynamics);
+  write(0x04, w.params.dynamics_curve);
+  write(0x05, w.params.fixed_velocity);
+  write(0x07, w.params.hi_hat_volume);
+  write(0x08, w.params.hi_hat_fade_in);
+  write(0x09, w.params.hi_hat_decay);
+  write(0x13, w.params.trigger_reserve);
 }
 
 Bytes SpdsxDevice::ReadBulkFrame(double idle_timeout, double body_timeout) {

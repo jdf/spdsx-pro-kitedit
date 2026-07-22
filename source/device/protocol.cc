@@ -64,19 +64,19 @@ Bytes PadLinkPrefix(int kit) {
           static_cast<uint8_t>(flat & 0x7F)};
 }
 
-Bytes PadLinkAddr(ObjectKind kind, int index, int kit) {
-  Bytes addr = PadLinkPrefix(kit);
-  if (kind == ObjectKind::kPad) {
-    if (index < 1 || index > 9) {
+Bytes PadLinkAddr(PadLinkTarget target) {
+  Bytes addr = PadLinkPrefix(target.kit);
+  if (target.kind == ObjectKind::kPad) {
+    if (target.index < 1 || target.index > 9) {
       throw std::out_of_range("pad 1-9");
     }
-    addr.push_back(static_cast<uint8_t>(0x1F + index));
+    addr.push_back(static_cast<uint8_t>(0x1F + target.index));
     addr.push_back(0x0D);
   } else {
-    if (index < 1 || index > 8) {
+    if (target.index < 1 || target.index > 8) {
       throw std::out_of_range("trigger 1-8");
     }
-    addr.push_back(static_cast<uint8_t>(0x28 + index));
+    addr.push_back(static_cast<uint8_t>(0x28 + target.index));
     addr.push_back(0x0C);
   }
   return addr;
@@ -113,23 +113,27 @@ uint8_t PadSlotByte(int pad, PadSlot slot) {
 }
 }  // namespace
 
-Bytes PadWaveAddr(int kit, int pad, PadSlot slot) {
-  Bytes addr = PadLinkPrefix(kit);  // kit-encoded prefix
-  addr.push_back(PadSlotByte(pad, slot));
-  addr.push_back(0x01);
+Bytes PadLayerAddr(PadLayerRef layer, int offset) {
+  if (offset < 0 || offset > 0x7F) {
+    throw std::out_of_range("layer-page offset 0-0x7f");
+  }
+  Bytes addr = PadLinkPrefix(layer.kit);  // kit-encoded prefix
+  addr.push_back(PadSlotByte(layer.pad, layer.slot));
+  addr.push_back(static_cast<uint8_t>(offset));
   return addr;
 }
 
-Bytes PadWaveEnableAddr(int kit, int pad, PadSlot slot) {
-  Bytes addr = PadLinkPrefix(kit);
-  addr.push_back(PadSlotByte(pad, slot));
-  addr.push_back(0x00);
-  return addr;
+Bytes PadWaveAddr(PadLayerRef layer) {
+  return PadLayerAddr(layer, kLayerWaveOffset);
 }
 
-Bytes PadParamAddr(int kit, int pad, int param) {
-  Bytes addr = PadLinkPrefix(kit);  // kit-encoded prefix
-  addr.push_back(static_cast<uint8_t>(0x1F + pad));
+Bytes PadWaveEnableAddr(PadLayerRef layer) {
+  return PadLayerAddr(layer, kLayerEnableOffset);
+}
+
+Bytes PadParamAddr(PadRef pad, int param) {
+  Bytes addr = PadLinkPrefix(pad.kit);  // kit-encoded prefix
+  addr.push_back(static_cast<uint8_t>(0x1F + pad.pad));
   addr.push_back(static_cast<uint8_t>(param));
   return addr;
 }

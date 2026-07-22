@@ -57,8 +57,15 @@ uint8_t SelectValue(ObjectKind kind, int index);
 // two 7-bit bytes (hi = flat >> 7, lo = flat & 0x7F).
 Bytes PadLinkPrefix(int kit);
 
-// Full pad-link parameter address for (kind, index) within a specific kit.
-Bytes PadLinkAddr(ObjectKind kind, int index, int kit);
+// Names a trigger/pad object within a specific kit (index is 1-based).
+struct PadLinkTarget {
+  ObjectKind kind = ObjectKind::kPad;
+  int index = 0;
+  int kit = 0;
+};
+
+// Full pad-link parameter address for the object within its kit.
+Bytes PadLinkAddr(PadLinkTarget target);
 
 // Nibble-encodes a value into 4 bytes, one nibble each (big-endian). Roland
 // uses this for values that exceed 0x7F, since SysEx data bytes must stay
@@ -69,14 +76,43 @@ Bytes NibbleEncode(int value);
 // kit first).
 Bytes KitNameAddr(int kit, int i);
 
-// Wave-assignment address for a pad's slot, current-kit relative (select
-// the kit first). The slot byte is pad+layer encoded: 0x40 + 2*(pad-1) +
-// layer (pad 1-based; top layer 0, bottom 1) — pad 1 top 0x40 .. pad 9
-// bottom 0x51 (mapped live 2026-07-13 across all 18 slots). The trailing
-// 0x01 selects the wave-number field; PadWaveEnableAddr's trailing 0x00
-// is the companion "slot in use" flag the app sets to 1 alongside.
-Bytes PadWaveAddr(int kit, int pad, PadSlot slot);
-Bytes PadWaveEnableAddr(int kit, int pad, PadSlot slot);
+// Per-layer parameter page: <kit prefix> <slot byte> <offset>. The slot
+// byte is pad+layer encoded: 0x40 + 2*(pad-1) + layer (pad 1-based; top
+// layer 0, bottom 1) — pad 1 top 0x40 .. pad 9 bottom 0x51 (mapped live
+// 2026-07-13 across all 18 slots). The offsets below were mapped live
+// 2026-07-22 by capturing the official app's layer-editor writes
+// (layerparams-1.log), one control at a time.
+inline constexpr int kLayerEnableOffset = 0x00;  // "Layer Sw", 1 byte
+inline constexpr int kLayerWaveOffset = 0x01;  // wave number, 4 nibbles
+inline constexpr int kLayerVolumeOffset = 0x05;  // s16 nibbles, 0.1 dB units
+inline constexpr int kLayerPanOffset = 0x09;  // s8 nibbles, 0 = center
+inline constexpr int kLayerPitchCoarseOffset = 0x0b;  // s8 nibbles
+inline constexpr int kLayerPitchFineOffset = 0x0d;  // s8 nibbles
+inline constexpr int kLayerDelaySyncOffset = 0x10;  // 1 byte bool
+inline constexpr int kLayerDelayTimeOffset = 0x12;  // u16 nibbles, ms
+inline constexpr int kLayerPolyMonoOffset = 0x16;  // 1 byte
+inline constexpr int kLayerFadeInOffset = 0x17;  // 1 byte, 0-127
+inline constexpr int kLayerDecayOffset = 0x18;  // 1 byte, 0-127 (127 = off)
+inline constexpr int kLayerLoopOffset = 0x19;  // 1 byte
+inline constexpr int kLayerTriggerTypeOffset = 0x1a;  // 1 byte
+inline constexpr int kLayerModeOffset = 0x41;  // 1 byte (0 = PITCH)
+
+// Names one layer of a pad on a kit (pad is 1-based). Address builders
+// take this by value with designated initializers at the call site, so
+// the kit/pad numbers can never swap silently.
+struct PadLayerRef {
+  int kit = 0;
+  int pad = 0;
+  PadSlot slot = PadSlot::kTop;
+};
+
+// Address of one field in a pad layer's parameter page.
+Bytes PadLayerAddr(PadLayerRef layer, int offset);
+
+// The wave-number field (kLayerWaveOffset) and its companion "slot in
+// use" flag (kLayerEnableOffset), which the app sets to 1 alongside.
+Bytes PadWaveAddr(PadLayerRef layer);
+Bytes PadWaveEnableAddr(PadLayerRef layer);
 
 // Address of a pad's layer parameter, current-kit + focused-pad relative
 // (select the kit and focus the pad first). pad is 1-based (pad 1 ->
@@ -84,7 +120,13 @@ Bytes PadWaveEnableAddr(int kit, int pad, PadSlot slot);
 // byte offset within the pad's kit-record block: 0x00 layer mode, 0x01
 // fade point, 0x02 fade end, 0x03 dynamics, 0x04 dynamics curve, 0x05
 // fixed velocity, 0x13 trigger reserve.
-Bytes PadParamAddr(int kit, int pad, int param);
+// Names a pad on a kit (pad is 1-based), for the per-pad parameter page.
+struct PadRef {
+  int kit = 0;
+  int pad = 0;
+};
+
+Bytes PadParamAddr(PadRef pad, int param);
 
 // ---- Sample-pool registration (upload directory records) ----
 //

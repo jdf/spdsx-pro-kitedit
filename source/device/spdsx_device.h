@@ -111,33 +111,63 @@ public:
   // in-flight write, and tcdrain does not save it (live, 2026-07-22).
   void SelectKit(int kit);
   void SelectObject(ObjectKind kind, int index);
-  // Focus the object, then write the pad-link group for a specific kit;
-  // pace_seconds paces the no-ack writes.
-  void SetPadLink(int kit,
-                  ObjectKind kind,
-                  int index,
-                  int group,
-                  double pace_seconds = 0.02);
+
+  // The write ops below take an argument struct, filled with designated
+  // initializers at the call site — several same-typed numbers in a row
+  // (kit, pad, sample, ...) must never be swappable silently.
+
+  // Focus the object, then write its pad-link group; pace_seconds paces
+  // the no-ack writes.
+  struct PadLinkWrite {
+    int kit = 0;
+    ObjectKind kind = ObjectKind::kPad;
+    int index = 0;  // 1-based pad/trigger number
+    int group = 0;
+    double pace_seconds = 0.02;
+  };
+  void SetPadLink(const PadLinkWrite& w);
 
   // Selects the kit, then writes its 16-char name (space-padded/truncated).
   void SetKitName(int kit, const std::string& name, double pace_seconds = 0.02);
 
-  // Selects the kit, focuses the pad, then assigns a wave (sample number) to
-  // one of its slots. NOTE: message bytes match captures, but the full
-  // sequence has not yet been driven against hardware.
-  void SetPadWave(
-      int kit, int pad, PadSlot slot, int sample, double pace_seconds = 0.02);
+  // Writes one layer's mix trio — volume (s16, 0.1 dB units, 0 = 0.0 dB),
+  // fade-in (0-127) and decay (0-127, 127 = none) — to the pad layer's
+  // parameter page (offsets mapped live 2026-07-22; see protocol.h for
+  // the full page). Kit, pad and layer are all encoded in the address.
+  struct PadLayerMixWrite {
+    int kit = 0;
+    int pad = 0;  // 1-based
+    PadSlot slot = PadSlot::kTop;
+    int volume_db10 = 0;
+    int fade_in = 0;
+    int decay = 127;
+    double pace_seconds = 0.02;
+  };
+  void SetPadLayerMix(const PadLayerMixWrite& w);
 
-  // Selects the kit, focuses the pad, then writes its hit-response layer
-  // params (mode, fades, dynamics, curve, fixed velocity, hi-hat
-  // closed-pedal volume/fade-in/decay, trigger reserve) as one DT1 per
-  // field. pad is 1-based. Changes hit working state; persist with
-  // Commit(). NOTE: message bytes match captures, not yet driven end-to-
-  // end against hardware.
-  void SetPadLayerParams(int kit,
-                         int pad,
-                         const PadDeviceParams& params,
-                         double pace_seconds = 0.02);
+  // Assigns a wave (sample number) to one of a pad's slots, and sets the
+  // companion slot-in-use flag. Kit, pad and layer are all encoded in the
+  // address (live-verified across all 18 slots).
+  struct PadWaveWrite {
+    int kit = 0;
+    int pad = 0;  // 1-based
+    PadSlot slot = PadSlot::kTop;
+    int sample = 0;  // pool index; 0 clears the layer
+    double pace_seconds = 0.02;
+  };
+  void SetPadWave(const PadWaveWrite& w);
+
+  // Focuses the pad, then writes its hit-response params (mode, fades,
+  // dynamics, curve, fixed velocity, hi-hat closed-pedal
+  // volume/fade-in/decay, trigger reserve) as one DT1 per field. Changes
+  // hit working state; persist with Commit().
+  struct PadParamsWrite {
+    int kit = 0;
+    int pad = 0;  // 1-based
+    PadDeviceParams params;
+    double pace_seconds = 0.02;
+  };
+  void SetPadLayerParams(const PadParamsWrite& w);
 
   using ProgressCallback = std::function<void(size_t done, size_t total)>;
 

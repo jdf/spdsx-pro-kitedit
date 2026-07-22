@@ -212,23 +212,30 @@ TEST(PadLinkAddr, MatchesTheCapturedPadLinkMessages) {
   };
 
   for (const auto& c : cases) {
-    const Bytes built = Dt1(PadLinkAddr(c.kind, c.index, c.kit),
-                            {static_cast<uint8_t>(c.group)});
+    const Bytes built =
+        Dt1(PadLinkAddr({.kind = c.kind, .index = c.index, .kit = c.kit}),
+            {static_cast<uint8_t>(c.group)});
     EXPECT_EQ(built, FromHex(c.hex)) << "kit " << c.kit;
   }
 }
 
 TEST(PadLinkAddr, PutsTheKitPrefixAheadOfTheObject) {
-  const Bytes pad = PadLinkAddr(ObjectKind::kPad, 1, 129);
+  const Bytes pad =
+      PadLinkAddr({.kind = ObjectKind::kPad, .index = 1, .kit = 129});
   EXPECT_EQ(pad, Bytes({0x06, 0x00, 0x20, 0x0D}));  // 0x1F + 1
 
-  const Bytes trig = PadLinkAddr(ObjectKind::kTrig, 1, 129);
+  const Bytes trig =
+      PadLinkAddr({.kind = ObjectKind::kTrig, .index = 1, .kit = 129});
   EXPECT_EQ(trig, Bytes({0x06, 0x00, 0x29, 0x0C}));  // 0x28 + 1
 }
 
 TEST(PadLinkAddr, RefusesAnObjectTheDeviceDoesNotHave) {
-  EXPECT_THROW((void)PadLinkAddr(ObjectKind::kPad, 10, 1), std::out_of_range);
-  EXPECT_THROW((void)PadLinkAddr(ObjectKind::kTrig, 9, 1), std::out_of_range);
+  EXPECT_THROW(
+      (void)PadLinkAddr({.kind = ObjectKind::kPad, .index = 10, .kit = 1}),
+      std::out_of_range);
+  EXPECT_THROW(
+      (void)PadLinkAddr({.kind = ObjectKind::kTrig, .index = 9, .kit = 1}),
+      std::out_of_range);
 }
 
 // ---- NibbleEncode ----
@@ -279,20 +286,25 @@ TEST(KitNameAddr, RefusesACharacterOutsideTheNameField) {
 // ---- Wave slots ----
 
 TEST(PadWaveAddr, MatchesTheCapturedSlotAddresses) {
-  EXPECT_EQ(PadWaveAddr(129, 1, PadSlot::kTop), FromHex("06 00 40 01"));
-  EXPECT_EQ(PadWaveEnableAddr(129, 1, PadSlot::kTop), FromHex("06 00 40 00"));
+  EXPECT_EQ(PadWaveAddr({.kit = 129, .pad = 1, .slot = PadSlot::kTop}),
+            FromHex("06 00 40 01"));
+  EXPECT_EQ(PadWaveEnableAddr({.kit = 129, .pad = 1, .slot = PadSlot::kTop}),
+            FromHex("06 00 40 00"));
   // Pad 9's bottom slot is the far end of the range, verified live.
-  EXPECT_EQ(PadWaveAddr(129, 9, PadSlot::kBottom), FromHex("06 00 51 01"));
+  EXPECT_EQ(PadWaveAddr({.kit = 129, .pad = 9, .slot = PadSlot::kBottom}),
+            FromHex("06 00 51 01"));
 }
 
 // The whole assignment message for pad 7, both slots: the wave travels
 // nibble-encoded because 127 and 203 will not fit in a 7-bit data byte.
 TEST(PadWaveAddr, MatchesTheCapturedWaveAssignments) {
   EXPECT_EQ(
-      Dt1(PadWaveAddr(129, 7, PadSlot::kTop), NibbleEncode(127)),
+      Dt1(PadWaveAddr({.kit = 129, .pad = 7, .slot = PadSlot::kTop}),
+          NibbleEncode(127)),
       FromHex("f0 41 10 00 00 00 00 16 12 06 00 4c 01 00 00 07 0f 17 f7"));
   EXPECT_EQ(
-      Dt1(PadWaveAddr(129, 7, PadSlot::kBottom), NibbleEncode(203)),
+      Dt1(PadWaveAddr({.kit = 129, .pad = 7, .slot = PadSlot::kBottom}),
+          NibbleEncode(203)),
       FromHex("f0 41 10 00 00 00 00 16 12 06 00 4d 01 00 00 0c 0b 15 f7"));
 }
 
@@ -310,7 +322,7 @@ TEST(PadWaveAddr, GivesTheEighteenSlotsContiguousAddresses) {
   std::vector<uint8_t> slot_bytes;
   for (int pad = 1; pad <= 9; ++pad) {
     for (const PadSlot slot : {PadSlot::kTop, PadSlot::kBottom}) {
-      const Bytes addr = PadWaveAddr(129, pad, slot);
+      const Bytes addr = PadWaveAddr({.kit = 129, .pad = pad, .slot = slot});
       ASSERT_EQ(addr.size(), 4u);
       slot_bytes.push_back(addr[2]);
     }
@@ -327,8 +339,9 @@ TEST(PadWaveAddr, GivesTheEighteenSlotsContiguousAddresses) {
 TEST(PadWaveEnableAddr, DiffersFromTheWaveAddressOnlyInTheField) {
   for (int pad = 1; pad <= 9; ++pad) {
     for (const PadSlot slot : {PadSlot::kTop, PadSlot::kBottom}) {
-      Bytes wave = PadWaveAddr(129, pad, slot);
-      const Bytes enable = PadWaveEnableAddr(129, pad, slot);
+      Bytes wave = PadWaveAddr({.kit = 129, .pad = pad, .slot = slot});
+      const Bytes enable =
+          PadWaveEnableAddr({.kit = 129, .pad = pad, .slot = slot});
       EXPECT_EQ(wave.back(), 0x01);
       EXPECT_EQ(enable.back(), 0x00);
       wave.back() = 0x00;
@@ -337,14 +350,55 @@ TEST(PadWaveEnableAddr, DiffersFromTheWaveAddressOnlyInTheField) {
   }
 }
 
+// ---- PadLayerAddr ----
+
+// Byte-exact against the layer-editor capture (layerparams-1.log,
+// 2026-07-22): kit 199's prefix is 07 0c, pad 1 layer A is slot byte 0x40,
+// and the whole volume write for -0.5 dB (s16 -5 as nibbles) was captured
+// as-is. Layer B is the same page one slot byte up.
+TEST(PadLayerAddr, MatchesTheCapturedLayerEditorWrites) {
+  EXPECT_EQ(
+      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                   kLayerVolumeOffset),
+      FromHex("07 0c 40 05"));
+  EXPECT_EQ(
+      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kBottom},
+                   kLayerVolumeOffset),
+      FromHex("07 0c 41 05"));
+  EXPECT_EQ(
+      Dt1(PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                       kLayerVolumeOffset),
+          NibbleEncode(-5 & 0xFFFF)),
+      FromHex("f0 41 10 00 00 00 00 16 12 07 0c 40 05 0f 0f 0f 0b 70 f7"));
+  // Fade-in and decay are the single-byte fields either side of 0x17/0x18.
+  EXPECT_EQ(
+      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                   kLayerFadeInOffset),
+      FromHex("07 0c 40 17"));
+  EXPECT_EQ(
+      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                   kLayerDecayOffset),
+      FromHex("07 0c 40 18"));
+}
+
+// The wave/enable addresses are the same page's 0x01/0x00 fields.
+TEST(PadLayerAddr, IsThePageBehindTheWaveAndEnableAddresses) {
+  const PadLayerRef layer {.kit = 129, .pad = 7, .slot = PadSlot::kTop};
+  EXPECT_EQ(PadLayerAddr(layer, kLayerWaveOffset), PadWaveAddr(layer));
+  EXPECT_EQ(PadLayerAddr(layer, kLayerEnableOffset), PadWaveEnableAddr(layer));
+}
+
 // ---- PadParamAddr ----
 
 // The param index doubles as the byte offset in the kit record's pad block,
 // which is why a stored value and a written one use the same number.
 TEST(PadParamAddr, IsTheKitPrefixThenThePadThenTheParamIndex) {
-  EXPECT_EQ(PadParamAddr(129, 1, 0x00), Bytes({0x06, 0x00, 0x20, 0x00}));
-  EXPECT_EQ(PadParamAddr(129, 9, 0x13), Bytes({0x06, 0x00, 0x28, 0x13}));
-  EXPECT_EQ(PadParamAddr(200, 1, 0x05), Bytes({0x07, 0x0e, 0x20, 0x05}));
+  EXPECT_EQ(PadParamAddr({.kit = 129, .pad = 1}, 0x00),
+            Bytes({0x06, 0x00, 0x20, 0x00}));
+  EXPECT_EQ(PadParamAddr({.kit = 129, .pad = 9}, 0x13),
+            Bytes({0x06, 0x00, 0x28, 0x13}));
+  EXPECT_EQ(PadParamAddr({.kit = 200, .pad = 1}, 0x05),
+            Bytes({0x07, 0x0e, 0x20, 0x05}));
 }
 
 // Byte-exact against the paramlog-padparams capture: the writes the sync push
@@ -367,7 +421,8 @@ TEST(PadParamAddr, MatchesTheCapturedPadParamWrites) {
   };
 
   for (const auto& c : cases) {
-    EXPECT_EQ(Dt1(PadParamAddr(129, c.pad, c.param), {c.value}), FromHex(c.hex))
+    EXPECT_EQ(Dt1(PadParamAddr({.kit = 129, .pad = c.pad}, c.param), {c.value}),
+              FromHex(c.hex))
         << "pad " << c.pad << " param " << c.param;
   }
 }

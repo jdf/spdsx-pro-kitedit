@@ -519,12 +519,18 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   EXPECT_EQ(sent[0], Dt1(KitNameAddr(199, 0), {'M'}));
   EXPECT_EQ(sent[15], Dt1(KitNameAddr(199, 15), {' '}));  // space-padded
   EXPECT_EQ(sent[16],
-            Dt1(PadWaveAddr(199, 7, PadSlot::kTop), NibbleEncode(42)));
-  EXPECT_EQ(sent[17], Dt1(PadWaveEnableAddr(199, 7, PadSlot::kTop), {0x01}));
+            Dt1(PadWaveAddr({.kit = 199, .pad = 7, .slot = PadSlot::kTop}),
+                NibbleEncode(42)));
+  EXPECT_EQ(
+      sent[17],
+      Dt1(PadWaveEnableAddr({.kit = 199, .pad = 7, .slot = PadSlot::kTop}),
+          {0x01}));
   EXPECT_EQ(sent[18],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 7)}));
-  EXPECT_EQ(sent[19], Dt1(PadParamAddr(199, 7, 0x00), {0x00}));  // layer mode
-  EXPECT_EQ(sent[20], Dt1(PadParamAddr(199, 7, 0x01), {50}));  // fade point
+  EXPECT_EQ(sent[19],
+            Dt1(PadParamAddr({.kit = 199, .pad = 7}, 0x00), {0x00}));  // mode
+  EXPECT_EQ(sent[20],
+            Dt1(PadParamAddr({.kit = 199, .pad = 7}, 0x01), {50}));  // fade pt
   EXPECT_EQ(sent[29][4], 0x21);  // one commit at the very end
   EXPECT_EQ(sent[30][4], 0x22);
 }
@@ -629,8 +635,13 @@ TEST(DeviceSyncPush, EndToEndFromPlanToWire) {
   using namespace device;
   const std::vector<Bytes> sent = port.payloads();
   ASSERT_EQ(sent.size(), 4u);  // wave + enable + commit begin + poll
-  EXPECT_EQ(sent[0], Dt1(PadWaveAddr(5, 1, PadSlot::kBottom), NibbleEncode(3)));
-  EXPECT_EQ(sent[1], Dt1(PadWaveEnableAddr(5, 1, PadSlot::kBottom), {0x01}));
+  EXPECT_EQ(sent[0],
+            Dt1(PadWaveAddr({.kit = 5, .pad = 1, .slot = PadSlot::kBottom}),
+                NibbleEncode(3)));
+  EXPECT_EQ(
+      sent[1],
+      Dt1(PadWaveEnableAddr({.kit = 5, .pad = 1, .slot = PadSlot::kBottom}),
+          {0x01}));
 }
 
 }  // namespace

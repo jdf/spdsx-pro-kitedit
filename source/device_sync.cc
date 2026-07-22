@@ -422,23 +422,26 @@ bool ExecutePush(device::SpdsxDevice& dev,
     }
     for (const PadWrite& pw : kw.pads) {
       if (pw.wave[0]) {
-        dev.SetPadWave(kw.kit,
-                       pw.pad,
-                       device::PadSlot::kTop,
-                       pw.dp.wave_top,
-                       pace_seconds);
+        dev.SetPadWave({.kit = kw.kit,
+                        .pad = pw.pad,
+                        .slot = device::PadSlot::kTop,
+                        .sample = pw.dp.wave_top,
+                        .pace_seconds = pace_seconds});
         wrote = true;
       }
       if (pw.wave[1]) {
-        dev.SetPadWave(kw.kit,
-                       pw.pad,
-                       device::PadSlot::kBottom,
-                       pw.dp.wave_bottom,
-                       pace_seconds);
+        dev.SetPadWave({.kit = kw.kit,
+                        .pad = pw.pad,
+                        .slot = device::PadSlot::kBottom,
+                        .sample = pw.dp.wave_bottom,
+                        .pace_seconds = pace_seconds});
         wrote = true;
       }
       if (pw.params) {
-        dev.SetPadLayerParams(kw.kit, pw.pad, pw.dp, pace_seconds);
+        dev.SetPadLayerParams({.kit = kw.kit,
+                               .pad = pw.pad,
+                               .params = pw.dp,
+                               .pace_seconds = pace_seconds});
         wrote = true;
       }
     }
