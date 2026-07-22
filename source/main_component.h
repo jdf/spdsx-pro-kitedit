@@ -316,6 +316,18 @@ private:
     std::vector<std::pair<int, KitSyncPlan>> plans;
     std::vector<UploadPlan> uploads;
     bool pulled = false;  // device-side changes landed locally
+
+    // Uploads that reached the device this push, held until the batch
+    // flash commit CONFIRMS. Recording them (pool entry, cached audio)
+    // only on a confirmed commit is what lets a failed sync re-upload
+    // instead of trusting a sample that may be partial on the device.
+    struct Landed {
+      UploadPlan plan;
+      juce::MemoryBlock wav;
+      int frames = 0;
+    };
+
+    std::vector<Landed> landed;
   };
 
   std::unique_ptr<SyncSession> sync_;

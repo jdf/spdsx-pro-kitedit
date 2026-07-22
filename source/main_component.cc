@@ -1113,19 +1113,13 @@ void MainComponent::CancelSync() {
 void MainComponent::OnWaveUploaded(UploadPlan plan,
                                    juce::MemoryBlock wav,
                                    int frames) {
-  device::SampleRecord record;
-  record.index = plan.index;
-  record.wavename = plan.wavename;
-  record.filename = plan.filename;
-  record.frames = static_cast<uint32_t>(frames);
-  document_.AddPoolRecord(record);
-  document_.StoreWaveAudio(plan.index, wav);
-  // The file has become a device wave everywhere it was assigned; the
-  // active kit's slots follow through the model listeners.
-  document_.ReplaceFileLayers(plan.file, plan.index);
+  // Hold the result until the batch commit confirms — do NOT touch the
+  // document yet. If the commit fails, none of this is recorded, so the
+  // retry re-uploads rather than trusting a possibly-partial sample.
+  if (sync_ != nullptr) {
+    sync_->landed.push_back({std::move(plan), std::move(wav), frames});
+  }
   ++sync_pushed_;  // advances the progress bar's "X of N" line
-  MarkEdited();
-  RefreshDeviceSamples();
 }
 
 void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
@@ -1143,11 +1137,24 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
         error.isNotEmpty()
             ? error
             : juce::String("the device did not confirm the flash commit"));
-    // Nothing advanced: the kits stay dirty and the next sync re-diffs
-    // against a fresh device read. Completed uploads were recorded as
-    // they landed, so a retry won't re-send them.
+    // Nothing advanced: the kits stay dirty (with their local files still
+    // local, since nothing was recorded), so the next sync re-diffs against
+    // a fresh device read and re-uploads. Any samples that did reach the
+    // device are left as orphans rather than trusted.
     CancelSync();
     return;
+  }
+  // The commit confirmed: now record every landed upload (pool entry +
+  // cached audio) and advance the kits. ApplySyncedKit installs the
+  // device-wave layers the plan already substituted.
+  for (const auto& l : sync_->landed) {
+    device::SampleRecord record;
+    record.index = l.plan.index;
+    record.wavename = l.plan.wavename;
+    record.filename = l.plan.filename;
+    record.frames = static_cast<uint32_t>(l.frames);
+    document_.AddPoolRecord(record);
+    document_.StoreWaveAudio(l.plan.index, l.wav);
   }
   for (const auto& [kit, plan] : sync_->plans) {
     document_.ApplySyncedKit(kit, plan.new_current, plan.new_base);
