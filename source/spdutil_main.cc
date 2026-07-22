@@ -19,6 +19,7 @@
 // unit up before a padlink run.
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -129,6 +130,50 @@ KitRange ParseRange(const std::string& s) {
     throw std::runtime_error("bad --range '" + s + "' (kits are 1-200)");
   }
   return r;
+}
+
+// Plain edit distance, for did-you-mean on a mistyped command.
+size_t EditDistance(const std::string& a, const std::string& b) {
+  std::vector<size_t> row(b.size() + 1);
+  for (size_t j = 0; j <= b.size(); ++j) {
+    row[j] = j;
+  }
+  for (size_t i = 1; i <= a.size(); ++i) {
+    size_t diag = row[0];
+    row[0] = i;
+    for (size_t j = 1; j <= b.size(); ++j) {
+      const size_t next = std::min(
+          {row[j] + 1, row[j - 1] + 1, diag + (a[i - 1] == b[j - 1] ? 0 : 1)});
+      diag = row[j];
+      row[j] = next;
+    }
+  }
+  return row[b.size()];
+}
+
+// Every command the dispatcher understands, for the unknown-command path.
+constexpr std::array<std::string_view, 17> kCommands = {
+    "ping",      "info",       "dump",     "kits",       "kit",
+    "samples",   "readwave",   "setlayer", "selectkit",  "currentkit",
+    "setmode",   "deletewave", "sendwave", "assign",     "setname",
+    "setparams", "padlink"};
+
+int UnknownCommand(const std::string& command) {
+  std::fprintf(stderr, "unknown command \"%s\"", command.c_str());
+  std::string best;
+  size_t best_d = 3;  // suggest only a plausible slip, not a stretch
+  for (const std::string_view c : kCommands) {
+    const size_t d = EditDistance(command, std::string(c));
+    if (d < best_d) {
+      best_d = d;
+      best = c;
+    }
+  }
+  if (!best.empty()) {
+    std::fprintf(stderr, " — did you mean \"%s\"?", best.c_str());
+  }
+  std::fprintf(stderr, "\n(run spdutil with no command for the full usage)\n");
+  return 2;
 }
 
 int Usage() {
@@ -1352,7 +1397,7 @@ int main(int argc, char** argv) {
                          .dry_run = dry_run,
                          .verbose = verbose});
     }
-    return Usage();
+    return command.empty() ? Usage() : UnknownCommand(command);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
     return 1;
