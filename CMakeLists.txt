@@ -55,6 +55,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/main.cc
     source/main_component.cc
     source/pad_settings.cc
+    source/progress_dialog.cc
     source/sample_browser.cc
     source/sample_slot.cc
     source/sample_upload.cc
@@ -146,6 +147,7 @@ if(SPDSX_TESTS)
         source/layers.cc
         source/main_component.cc
         source/pad_settings.cc
+        source/progress_dialog.cc
         source/sample_browser.cc
         source/sample_slot.cc
         source/sample_upload.cc

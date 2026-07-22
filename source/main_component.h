@@ -19,6 +19,7 @@
 #include "kit_chooser.h"
 #include "kit_model.h"
 #include "pad_settings.h"
+#include "progress_dialog.h"
 #include "sample_browser.h"
 #include "sample_slot.h"
 
@@ -152,6 +153,9 @@ private:
   // back on the message thread.
   void LoadDeviceState();
   void StartDeviceStateFetch();
+  // Opens/closes the modal progress dialog for a long device operation.
+  void ShowProgress(const juce::String& title, const juce::String& message);
+  void HideProgress();
   void FinishDeviceFetch(std::vector<device::KitRecord> kits,
                          std::vector<device::SampleRecord> pool,
                          const juce::String& error);
@@ -310,6 +314,10 @@ private:
   // shared with the worker thread for the progress line.
   std::atomic<bool> device_fetching_ {false};
   std::shared_ptr<std::atomic<int>> fetch_blocks_;
+  // Modal progress dialog for the long serial operations (Load Device
+  // State). SafePointers so a programmatic close can't dangle.
+  juce::Component::SafePointer<juce::DialogWindow> progress_win_;
+  juce::Component::SafePointer<ProgressDialog> progress_dialog_;
   // Kit-sample download: the pool indices this run covers, plus the
   // wave currently transferring and its permille (published by the
   // worker, read by the timer to animate slot indicators).

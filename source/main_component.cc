@@ -232,6 +232,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
 }
 
 MainComponent::~MainComponent() {
+  HideProgress();  // don't leave a modal window behind on quit
   model_.RemoveListener(this);
 }
 
@@ -523,6 +524,24 @@ void MainComponent::LoadDeviceState() {
       });
 }
 
+void MainComponent::ShowProgress(const juce::String& title,
+                                 const juce::String& message) {
+  HideProgress();  // never stack two
+  ProgressDialog* dialog = nullptr;
+  progress_win_ = ProgressDialog::Show(title, message, &dialog);
+  progress_dialog_ = dialog;
+}
+
+void MainComponent::HideProgress() {
+  if (progress_win_ != nullptr) {
+    // Exiting the modal state closes and deletes the window (and its
+    // owned ProgressDialog); the SafePointers then read null.
+    progress_win_->exitModalState(0);
+  }
+  progress_win_ = nullptr;
+  progress_dialog_ = nullptr;
+}
+
 void MainComponent::StartDeviceStateFetch() {
   if (device_fetching_.exchange(true)) {
     return;  // a fetch is already running
@@ -530,7 +549,8 @@ void MainComponent::StartDeviceStateFetch() {
   commands_.commandStatusChanged();  // grey the menu item
   auto blocks = std::make_shared<std::atomic<int>>(0);
   fetch_blocks_ = blocks;
-  device_samples_.SetStatus(juce::String::fromUTF8("connecting\xe2\x80\xa6"));
+  ShowProgress("Load Device State",
+               juce::String::fromUTF8("Connecting\xe2\x80\xa6"));
   // The dumps are megabytes over a serial link; a detached worker owns
   // the port and reports back through the message thread. It shares
   // only the counter (by shared_ptr) and a SafePointer checked on the
@@ -573,7 +593,7 @@ void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
                                       const juce::String& error) {
   device_fetching_ = false;
   fetch_blocks_.reset();
-  device_samples_.SetStatus({});
+  HideProgress();
   commands_.commandStatusChanged();
   if (error.isNotEmpty()) {
     juce::AlertWindow::showMessageBoxAsync(
@@ -1733,11 +1753,13 @@ void MainComponent::timerCallback() {
 
   PollConnection();
 
-  // Progress line while a device fetch streams blocks.
-  if (device_fetching_ && fetch_blocks_ != nullptr) {
-    device_samples_.SetStatus(
-        juce::String::fromUTF8("loading from device\xe2\x80\xa6\n")
-        + juce::String(fetch_blocks_->load()) + " blocks");
+  // Live detail in the progress dialog while a device fetch streams blocks.
+  if (device_fetching_ && fetch_blocks_ != nullptr
+      && progress_dialog_ != nullptr) {
+    const int n = fetch_blocks_->load();
+    progress_dialog_->SetMessage(
+        juce::String::fromUTF8("Reading device state\xe2\x80\xa6\n")
+        + juce::String(n) + (n == 1 ? " block" : " blocks"));
   }
   // Animate the per-slot download throbbers/rings while fetching waves.
   UpdateDownloadIndicators();
