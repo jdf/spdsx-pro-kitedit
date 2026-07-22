@@ -40,8 +40,10 @@ device::Bytes SmpFromAudioFile(const juce::File& file, juce::String& error) {
     return {};
   }
 
-  // Resample to the one rate the device plays. The Lagrange interpolator
-  // is JUCE's standard offline choice; each channel converts alone.
+  // Resample to the one rate the device plays. A windowed-sinc (200-tap)
+  // interpolator keeps the high end flat to near Nyquist; the 5-tap
+  // Lagrange we used first audibly rolled off the treble. Each channel
+  // converts with its own interpolator (they carry filter state).
   juce::AudioBuffer<float> out;
   if (static_cast<uint32_t>(reader->sampleRate) == kDeviceSampleRate) {
     out.makeCopyOf(in);
@@ -51,7 +53,7 @@ device::Bytes SmpFromAudioFile(const juce::File& file, juce::String& error) {
         std::max(1, static_cast<int>(std::floor(in_frames / ratio)));
     out.setSize(channels, out_frames);
     for (int ch = 0; ch < channels; ++ch) {
-      juce::LagrangeInterpolator interpolator;
+      juce::WindowedSincInterpolator interpolator;
       interpolator.process(
           ratio, in.getReadPointer(ch), out.getWritePointer(ch), out_frames);
     }
