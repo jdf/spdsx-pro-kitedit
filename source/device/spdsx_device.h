@@ -4,8 +4,9 @@
 // Every payload goes on the wire wrapped in the app's transport frame:
 //   0d 60 e0 <ch> <8 junk bytes> 01 00 00 00 <len LE32> <payload>
 // ch 0x07 = DT1 parameter writes, 0x08 = bulk data, 0x09 = control/status.
-// Focus/select commands reply and must be drained; parameter writes don't
-// ack.
+// DT1 writes — parameters, kit/object selects, directory records — are
+// NEVER acked (no capture shows a device frame on the DT1 channel except
+// unsolicited notifications); control, bulk and file commands all reply.
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_SPDSX_DEVICE_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_SPDSX_DEVICE_H_
 
@@ -68,7 +69,15 @@ public:
   // official app's WRITE button uses.
   bool Commit(absl::FunctionRef<bool()> should_abort = NeverAbort);
 
-  // Deletes a sample from the device pool by index, then commits. The
+  // The commit that ends an upload batch. Same begin/poll as Commit, plus
+  // the two control messages (6a 0c arg 1, 6a 02) the official app sends
+  // between them after every import (synthupload-1.log, import-multi-1.log)
+  // — and only after imports; a plain WRITE or a delete commits without.
+  bool CommitUploadBatch(absl::FunctionRef<bool()> should_abort = NeverAbort);
+
+  // Deletes a sample from the device pool by index, then commits — the
+  // official app's full sequence: slot + last-index queries, the delete in
+  // a session bracket, the post-delete status queries, then the commit. The
   // slot becomes empty; kits referencing it show no wave. Destructive
   // and not undoable on the device.
   void DeleteWave(int sample_index);
@@ -86,17 +95,21 @@ public:
                   const std::string& wavename,
                   const std::string& filename);
 
-  // Primes the remote working directory before a run of UploadWave calls
-  // (call once). UploadWave leaves everything in working state; a single
-  // Commit() after the whole batch flushes it to flash. Committing per
-  // file wedges the device after a few uploads — the official app commits
-  // the batch once (import-multi-1.log).
+  // Opens an upload batch (call once before a run of UploadWave calls): the
+  // official app's one 6a 0d last-registered-index query (import-multi-1.log
+  // preamble; we pick indices from the bulk image, so the answer is
+  // drained and dropped). UploadWave leaves everything in working state; a
+  // single CommitUploadBatch() after the whole batch flushes it to flash.
+  // Committing per file wedges the device after a few uploads — the
+  // official app commits the batch once.
   void PrepareUploadBatch();
 
-  Bytes SelectKit(int kit);
-  Bytes SelectObject(ObjectKind kind, int index);
-  // Focus (replies; drains) then write the pad-link group (fire-and-forget)
-  // for a specific kit; pace_seconds paces the no-ack write.
+  // Kit/object selects are DT1 writes like any other: fire-and-forget, no
+  // ack to wait for (waiting for one was a hidden 0.4s stall per call).
+  void SelectKit(int kit);
+  void SelectObject(ObjectKind kind, int index);
+  // Focus the object, then write the pad-link group for a specific kit;
+  // pace_seconds paces the no-ack writes.
   void SetPadLink(int kit,
                   ObjectKind kind,
                   int index,
@@ -126,12 +139,13 @@ public:
   using ProgressCallback = std::function<void(size_t done, size_t total)>;
 
   // Reads a user wave's `.SMP` file off the device over the remote-file
-  // protocol (family f0 41 7a, channel 0x06 — see
-  // re-cache/captures/WAVE-EXPORT-PROTOCOL.md): OPEN the derived path,
-  // STAT for the size, then loop READ (the device caps each reply at
-  // ~512KB) until the whole file is in hand, then CLOSE. Returns the
-  // raw `.SMP` bytes (RFWV header + PCM). Throws on protocol failure.
-  // Preload waves aren't exportable; only user waves resolve.
+  // protocol (family f0 41 7a, channel 0x06), in the official app's exact
+  // order (waveexport-1/2.log): session open (6a 09/0a), OPEN the derived
+  // path, read the 512-byte RFWV header, STAT for the size, then read the
+  // remainder in exact-size requests of at most 512 KiB, CLOSE, session
+  // close (6a 09 arg 0). Returns the raw `.SMP` bytes (header + PCM).
+  // Throws on protocol failure. Preload waves aren't exportable; only user
+  // waves resolve.
   Bytes ReadRemoteWave(int sample_index,
                        const ProgressCallback& on_progress = {},
                        double idle_timeout = 1.0);
@@ -158,12 +172,17 @@ private:
   // written-but-unregistered file is invisible to every UI).
   // WriteRemoteFile replicates the official app's channel-0x06 file write
   // (live-verified byte-exact); RegisterWave writes the two DT1 directory
-  // records at 0x2000000 + N*256 and flash-commits.
+  // records at 0x2000000 + N*256 around the session close. Neither
+  // flash-commits: the batch commits once, in CommitUploadBatch.
   void WriteRemoteFile(int sample_index, const Bytes& smp);
   void RegisterWave(int sample_index,
                     int frames,
                     const std::string& wavename,
                     const std::string& filename);
+
+  // The shared tail of Commit/CommitUploadBatch: poll 6a 03 22 until the
+  // status word reads done, with no time limit.
+  bool PollCommitted(absl::FunctionRef<bool()> should_abort);
 
   SerialPort* port_;  // borrowed; outlives this
 };

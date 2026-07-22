@@ -202,21 +202,25 @@ TEST_F(SpdsxDeviceTest, FirmwareFieldIsEmptyWithoutAnAnswerItUnderstands) {
 
 // ---- Select ----
 
-TEST_F(SpdsxDeviceTest, SelectKitWritesTheKitSelectParameter) {
-  port.QueueReply({0x01});
+// The selects are DT1 writes, and DT1s are never acked: waiting for a
+// reply here stalled every caller for the full read timeout.
+TEST_F(SpdsxDeviceTest, SelectKitWritesTheKitSelectParameterWithoutWaiting) {
+  port.QueueReply({0x01});  // anything queued must be left alone
   dev.SelectKit(129);
 
   ASSERT_EQ(port.payloads().size(), 1u);
   EXPECT_EQ(port.payloads()[0], Dt1(kKitSelectAddr, EncodeKit(129)));
+  EXPECT_GT(port.unread(), 0u);  // fire-and-forget: nothing was read
 }
 
-TEST_F(SpdsxDeviceTest, SelectObjectFocusesTheObject) {
+TEST_F(SpdsxDeviceTest, SelectObjectFocusesTheObjectWithoutWaiting) {
   port.QueueReply({0x01});
   dev.SelectObject(ObjectKind::kPad, 7);
 
   ASSERT_EQ(port.payloads().size(), 1u);
   EXPECT_EQ(port.payloads()[0],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 7)}));
+  EXPECT_GT(port.unread(), 0u);
 }
 
 // ---- The writes that target a kit ----
@@ -253,7 +257,6 @@ TEST_F(SpdsxDeviceTest, SetPadWaveWritesTheWaveThenTheEnableFlag) {
 }
 
 TEST_F(SpdsxDeviceTest, SetPadLinkFocusesTheObjectThenWritesTheGroup) {
-  port.QueueReply({0x01});  // the focus reply, which is drained
   dev.SetPadLink(200, ObjectKind::kPad, 7, 11, 0.0);
 
   const std::vector<Bytes> sent = port.payloads();
@@ -266,7 +269,6 @@ TEST_F(SpdsxDeviceTest, SetPadLinkFocusesTheObjectThenWritesTheGroup) {
 // One DT1 per field, at the param indices the kit record stores them at --
 // including the hi-hat trio at 0x07/08/09.
 TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
-  port.QueueReply({0x01});  // the pad focus
   PadDeviceParams params;
   params.layer_mode = 3;
   params.fade_point = 100;
@@ -337,9 +339,76 @@ TEST_F(SpdsxDeviceTest, CommitStopsWhenAskedToAbort) {
   EXPECT_FALSE(dev.Commit([] { return true; }));
 }
 
+// The commit that ends an import batch adds the 6a 0c arg-1 and 6a 02
+// messages between begin and the poll — official app, every import capture.
+TEST_F(SpdsxDeviceTest, CommitUploadBatchAddsTheImportEpilogue) {
+  port.QueueReply({0x7a});  // begin ack
+  port.QueueReply({0x7a});  // 0c reply
+  port.QueueReply({0x7a});  // 02 reply
+  port.QueueReply(CommitPoll(0x01));
+
+  EXPECT_TRUE(dev.CommitUploadBatch());
+
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 4u);
+  EXPECT_EQ(sent[0][4], 0x21);  // begin
+  EXPECT_EQ(sent[1][4], 0x0C);
+  EXPECT_EQ(sent[1][15], 0x01);  // arg 1
+  EXPECT_EQ(sent[2][4], 0x02);
+  EXPECT_EQ(sent[3][4], 0x22);  // poll
+}
+
+TEST_F(SpdsxDeviceTest, CommitUploadBatchStopsWhenAskedToAbort) {
+  EXPECT_FALSE(dev.CommitUploadBatch([] { return true; }));
+}
+
 // ---- DeleteWave ----
 
-TEST_F(SpdsxDeviceTest, DeleteWaveBracketsTheDeleteInASessionAndCommits) {
+// The official app's delete (fileops-1.log): slot + last-index queries,
+// the delete in a session bracket with the 18/23 status queries after it,
+// then a plain commit.
+TEST_F(SpdsxDeviceTest, DeleteWaveFollowsTheOfficialSequenceAndCommits) {
+  for (int i = 0; i < 4; ++i) {
+    port.QueueReply({0x7a});  // 0c, 0d, session begin, delete
+  }
+  port.QueueIdle();  // nothing unsolicited follows this delete
+  for (int i = 0; i < 4; ++i) {
+    port.QueueReply({0x7a});  // 18, 23, session end, commit begin
+  }
+  port.QueueReply(CommitPoll(0x01));
+
+  dev.DeleteWave(1590);
+
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 9u);
+  EXPECT_EQ(sent[0][4], 0x0C);  // slot query, carrying the index
+  EXPECT_EQ(sent[0][15], 1590 & 0xFF);
+  EXPECT_EQ(sent[0][16], (1590 >> 8) & 0xFF);
+  EXPECT_EQ(sent[1][4], 0x0D);  // last-index query
+  EXPECT_EQ(sent[2][4], 0x09);  // session begin
+  EXPECT_EQ(sent[2][15], 0x01);
+  EXPECT_EQ(sent[3][4], 0x1D);  // the delete itself
+  EXPECT_EQ(sent[3][15], 1590 & 0xFF);
+  EXPECT_EQ(sent[3][16], (1590 >> 8) & 0xFF);
+  EXPECT_EQ(sent[4][4], 0x18);  // post-delete status queries
+  EXPECT_EQ(sent[5][4], 0x23);
+  EXPECT_EQ(sent[6][4], 0x09);  // session end
+  EXPECT_EQ(sent[6][15], 0x00);
+  EXPECT_EQ(sent[7][4], 0x21);  // commit begin
+  EXPECT_EQ(sent[8][4], 0x22);  // commit poll
+}
+
+// Deleting an assigned wave makes the device push unsolicited DT1
+// notifications (a kit-select echo, the assignments clearing) right after
+// the delete's ack. They must be drained — read one as a later command's
+// ack and the whole stream shifts by a frame.
+TEST_F(SpdsxDeviceTest, DeleteWaveDrainsTheUnsolicitedNotifications) {
+  for (int i = 0; i < 4; ++i) {
+    port.QueueReply({0x7a});
+  }
+  port.QueueReply(Dt1(kKitSelectAddr, EncodeKit(129)));
+  port.QueueReply(Dt1(PadWaveEnableAddr(129, 1, PadSlot::kTop), {0x00}));
+  port.QueueIdle();  // then the device goes quiet
   for (int i = 0; i < 4; ++i) {
     port.QueueReply({0x7a});
   }
@@ -347,19 +416,10 @@ TEST_F(SpdsxDeviceTest, DeleteWaveBracketsTheDeleteInASessionAndCommits) {
 
   dev.DeleteWave(1590);
 
-  const std::vector<Bytes> sent = port.payloads();
-  ASSERT_EQ(sent.size(), 5u);
-  EXPECT_EQ(sent[0][4], 0x09);  // session begin
-  EXPECT_EQ(sent[0][15], 0x01);
-  EXPECT_EQ(sent[1][4], 0x1D);  // the delete itself
-  EXPECT_EQ(sent[2][4], 0x09);  // session end
-  EXPECT_EQ(sent[2][15], 0x00);
-  EXPECT_EQ(sent[3][4], 0x21);  // commit begin
-  EXPECT_EQ(sent[4][4], 0x22);  // commit poll
-
-  // The sample index rides in the argument at byte 15, little-endian.
-  EXPECT_EQ(sent[1][15], 1590 & 0xFF);
-  EXPECT_EQ(sent[1][16], (1590 >> 8) & 0xFF);
+  // Same nine commands — the notifications didn't shift anything — and
+  // every queued reply was consumed by the command it belonged to.
+  EXPECT_EQ(port.payloads().size(), 9u);
+  EXPECT_EQ(port.unread(), 0u);
 }
 
 // ---- UploadWave ----
@@ -369,35 +429,53 @@ TEST_F(SpdsxDeviceTest, DeleteWaveBracketsTheDeleteInASessionAndCommits) {
 // the device has no opinion about a step arriving out of order until it
 // desyncs. Nothing below is reachable without a port to watch.
 
-// Replies for the 25 commands one UploadWave sends (no flash commit — the
-// batch commits once, in the caller). The two dir listings carry the
-// handle; the free-space query's reply is a raw 16-byte off-format frame
-// read outside the transport framing.
-void QueueUploadReplies(FakeSerialPort& port, const Bytes& dir_reply) {
-  port.QueueReply({0x7a});  // 0  stat tmp
-  port.QueueReply({0x7a});  // 1  create
-  port.QueueReply(dir_reply);  // 2  dir D0NN (handle)
-  port.QueueReply({0x7a});  // 3  dir DATA
-  port.QueueReply({0x7a});  // 4  dir 0d
-  port.QueueReply({0x7a});  // 5  dir D0NN
-  port.QueueReply({0x7a});  // 6  mkdir D0NN
-  port.QueueReply(dir_reply);  // 7  dir D0NN (handle)
-  port.QueueReply({0x7a});  // 8  dir 0d
-  port.QueueReply({0x7a});  // 9  open write
-  port.QueueReply({0x7a});  // 10 seek
-  port.QueueRaw(Bytes(16, 0x00));  // 11 free-space reply (raw 16-byte read)
-  port.QueueReply({0x7a});  // 12 write pcm ack
-  port.QueueReply({0x7a});  // 13 seek 0
-  port.QueueReply({0x7a});  // 14 write hdr ack
-  port.QueueReply({0x7a});  // 15 close
-  for (int i = 0; i < 9; ++i) {
-    port.QueueReply({0x7a});  // 16..24 finalize/register/status/name/finalize
-  }
+// A directory listing reply carrying a recognisable handle at bytes 4..8 —
+// what an existing directory answers.
+Bytes DirReply() {
+  return {0xF0, 0x41, 0x7A, 0x7A, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xF7};
 }
 
-// A directory reply carrying a recognisable handle at bytes 4..8.
-Bytes DirReply() {
-  return {0xF0, 0x41, 0x7A, 0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xF7};
+// A listing of a directory that does not exist: the handle bytes all zero.
+Bytes MissingDirReply() {
+  return {0xF0, 0x41, 0x7A, 0x7A, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7};
+}
+
+// Replies for the commands one UploadWave sends (no flash commit — the
+// batch commits once, in the caller): the per-file session open, the file
+// write, then the register. When the D0NN directory exists its listing
+// answers with a handle and the upload is 19 commands; a missing one takes
+// the mkdir walk (five more). The free-space query answers with 16 raw
+// off-format bytes AND a normal ack frame, both of which must come off.
+void QueueUploadReplies(FakeSerialPort& port, bool dir_exists) {
+  port.QueueReply({0x7a});  // session open 09
+  port.QueueReply({0x7a});  // session open 0a
+  port.QueueReply({0x7a});  // stat tmp
+  port.QueueReply({0x7a});  // create
+  if (dir_exists) {
+    port.QueueReply(DirReply());  // dir D0NN -> handle
+  } else {
+    port.QueueReply(MissingDirReply());  // dir D0NN -> no handle
+    port.QueueReply(DirReply());  // dir DATA -> the parent's handle
+    port.QueueReply({0x7a});  // dir 0d
+    port.QueueReply(MissingDirReply());  // dir D0NN, still missing
+    port.QueueReply({0x7a});  // mkdir D0NN
+    port.QueueReply(DirReply());  // dir D0NN -> now a handle
+  }
+  port.QueueReply({0x7a});  // dir 0d
+  port.QueueReply({0x7a});  // open write
+  port.QueueReply({0x7a});  // seek
+  port.QueueRaw(Bytes(16, 0x00));  // free-space: the off-format fragment...
+  port.QueueReply({0x7a});  // ...then its normal ack frame
+  port.QueueReply({0x7a});  // write pcm ack
+  port.QueueReply({0x7a});  // seek 0
+  port.QueueReply({0x7a});  // write hdr ack
+  port.QueueReply({0x7a});  // close
+  port.QueueReply({0x7a});  // finalize tmp (stat)
+  port.QueueReply({0x7a});  // register 0b
+  port.QueueReply({0x7a});  // register 0c
+  // (base record: a DT1, never acked)
+  port.QueueReply({0x7a});  // session close 09/0
+  // (name record: a DT1, never acked)
 }
 
 // The wave from the capture: 8192 bytes of PCM is 4096 mono 16-bit frames.
@@ -414,63 +492,111 @@ TEST_F(SpdsxDeviceTest, UploadWaveRefusesAnSmpWithNoPcm) {
   EXPECT_TRUE(port.writes().empty());  // nothing went out
 }
 
-// The faithful sequence (import-multi-1.log): stat, create, the directory
-// walk that mkdir's the D0NN folder, open, write, close, then register —
-// and crucially NO per-file flash commit (that wedged the device; the batch
-// commits once in the caller).
+// The faithful sequence for a fresh directory (import-multi-1.log, first
+// file into D016): session open, stat, create, the walk that mkdir's the
+// D0NN folder, open, write, close, then register — and crucially NO
+// per-file flash commit (that wedged the device; the batch commits once in
+// the caller).
 TEST_F(SpdsxDeviceTest,
        UploadWaveWritesTheFileThenRegistersItWithoutCommitting) {
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/false);
 
   dev.UploadWave(1587, CapturedSmp(), "B_noise_4096", "B_noise_4096.wav");
 
   const std::vector<Bytes> sent = port.payloads();
-  ASSERT_EQ(sent.size(), 25u);
+  ASSERT_EQ(sent.size(), 24u);
 
-  // The file write, in the capture's order — including the dir dance.
-  EXPECT_EQ(sent[0][4], 0x0A);  // stat tmp
-  EXPECT_EQ(sent[1][4], 0x18);  // create (two paths)
-  EXPECT_EQ(sent[2][4], 0x0C);  // dir D0NN
-  EXPECT_EQ(sent[3][4], 0x0C);  // dir DATA (parent)
-  EXPECT_EQ(sent[4][4], 0x0D);  // dir handle
-  EXPECT_EQ(sent[5][4], 0x0C);  // dir D0NN
-  EXPECT_EQ(sent[6][4], 0x09);  // mkdir D0NN
+  // The per-file session open on the control family.
+  EXPECT_EQ(sent[0][4], 0x09);
+  EXPECT_EQ(sent[0][15], 0x01);
+  EXPECT_EQ(sent[1][4], 0x0A);
+
+  // The file write, in the capture's order — including the mkdir walk.
+  EXPECT_EQ(sent[2][4], 0x0A);  // stat tmp
+  EXPECT_EQ(sent[3][4], 0x18);  // create (two paths)
+  EXPECT_EQ(sent[4][4], 0x0C);  // dir D0NN (missing)
+  EXPECT_EQ(sent[5][4], 0x0C);  // dir DATA (parent)
+  EXPECT_EQ(sent[6][4], 0x0D);  // dir handle (the parent's)
   EXPECT_EQ(sent[7][4], 0x0C);  // dir D0NN
-  EXPECT_EQ(sent[8][4], 0x0D);  // dir handle
-  EXPECT_EQ(sent[9][4], 0x00);  // open for write
-  EXPECT_EQ(sent[10][4], 0x07);  // seek
-  EXPECT_EQ(sent[11][4], 0x19);  // free-space query
-  EXPECT_EQ(sent[12][4], 0x06);  // write pcm
-  EXPECT_EQ(sent[13][4], 0x07);  // seek back
-  EXPECT_EQ(sent[14][4], 0x06);  // write header
-  EXPECT_EQ(sent[15][4], 0x03);  // close
+  EXPECT_EQ(sent[8][4], 0x09);  // mkdir D0NN
+  EXPECT_EQ(sent[9][4], 0x0C);  // dir D0NN
+  EXPECT_EQ(sent[10][4], 0x0D);  // dir handle
+  EXPECT_EQ(sent[11][4], 0x00);  // open for write
+  EXPECT_EQ(sent[12][4], 0x07);  // seek
+  EXPECT_EQ(sent[13][4], 0x19);  // free-space query
+  EXPECT_EQ(sent[14][4], 0x06);  // write pcm
+  EXPECT_EQ(sent[15][4], 0x07);  // seek back
+  EXPECT_EQ(sent[16][4], 0x06);  // write header
+  EXPECT_EQ(sent[17][4], 0x03);  // close
 
-  // Then the registration + light finalize, ending on 09/0a, never 21/22.
-  EXPECT_EQ(sent[16][4], 0x0A);  // finalize tmp
-  EXPECT_EQ(sent[17][4], 0x0B);  // register
-  EXPECT_EQ(sent[18][4], 0x0C);
-  EXPECT_EQ(sent[20][4], 0x15);  // status handshake between the DT1 records
-  EXPECT_EQ(sent[21][4], 0x16);
-  EXPECT_EQ(sent[23][4], 0x09);  // light session finalize (not a flash commit)
-  EXPECT_EQ(sent[24][4], 0x0A);
+  // Then the registration: the base record between the register queries and
+  // the session close, the name record after — and never a 21/22.
+  EXPECT_EQ(sent[18][4], 0x0A);  // finalize tmp
+  EXPECT_EQ(sent[19][4], 0x0B);  // register
+  EXPECT_EQ(sent[20][4], 0x0C);
+  EXPECT_EQ(sent[21][2], 0x10);  // the base record, a DT1
+  EXPECT_EQ(sent[22][2], 0x6A);  // session close 09 arg 0
+  EXPECT_EQ(sent[22][4], 0x09);
+  EXPECT_EQ(sent[22][15], 0x00);
+  EXPECT_EQ(sent[23][2], 0x10);  // the name record, a DT1
   for (const Bytes& p : sent) {
-    EXPECT_NE(p[4], 0x21) << "UploadWave must not flash-commit per file";
+    if (p[2] == 0x6A) {
+      EXPECT_NE(p[4], 0x21) << "UploadWave must not flash-commit per file";
+    }
   }
 
   // The file ops go on the remote-file channel, control on 0x09.
-  EXPECT_EQ(port.writes()[12][3], 0x06);  // write pcm
-  EXPECT_EQ(port.writes()[17][3], 0x09);  // register (control family)
+  EXPECT_EQ(port.writes()[14][3], 0x06);  // write pcm
+  EXPECT_EQ(port.writes()[19][3], 0x09);  // register (control family)
+
+  // Every queued reply — including the free-space ack frame — was consumed
+  // by the command it belonged to: the ack stream stayed aligned.
+  EXPECT_EQ(port.unread(), 0u);
+}
+
+// An existing directory answers the listing with a handle, and the official
+// app then skips the whole walk: no parent listing, no mkdir.
+TEST_F(SpdsxDeviceTest, UploadWaveSkipsTheMkdirWalkWhenTheDirectoryExists) {
+  QueueUploadReplies(port, /*dir_exists=*/true);
+
+  dev.UploadWave(1587, CapturedSmp(), "n", "n.wav");
+
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 19u);
+  EXPECT_EQ(sent[4][4], 0x0C);  // the one dir listing...
+  EXPECT_EQ(sent[5][4], 0x0D);  // ...echoes its handle...
+  EXPECT_EQ(sent[6][4], 0x00);  // ...and goes straight to open-for-write
+  for (const Bytes& p : sent) {
+    if (p[2] == 0x7A) {
+      EXPECT_NE(p[4], 0x09) << "no mkdir for a directory that exists";
+    }
+  }
+  EXPECT_EQ(port.unread(), 0u);
 }
 
 // The handle is the device's, not ours: it comes back in the dir listing and
 // has to go straight into the next request.
 TEST_F(SpdsxDeviceTest, UploadWaveCarriesTheDirHandleIntoTheNextRequest) {
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/true);
 
   dev.UploadWave(1587, CapturedSmp(), "n", "n.wav");
 
-  // The first dir handle (payload 4) echoes the handle from the dir reply.
-  const Bytes handle_req = port.payloads()[4];
+  const Bytes handle_req = port.payloads()[5];
+  ASSERT_GE(handle_req.size(), 10u);
+  EXPECT_EQ(handle_req[4], 0x0D);
+  EXPECT_EQ(Bytes(handle_req.begin() + 5, handle_req.begin() + 10),
+            Bytes({0xAA, 0xBB, 0xCC, 0xDD, 0xEE}));
+}
+
+// In the mkdir walk the missing directory has no handle to echo: the first
+// 0d carries the PARENT's (the official app's exact bytes; echoing the
+// missing directory's all-zero reply was the old shortcut).
+TEST_F(SpdsxDeviceTest, UploadWaveEchoesTheParentHandleWhenMkdirIsNeeded) {
+  QueueUploadReplies(port, /*dir_exists=*/false);
+
+  dev.UploadWave(1587, CapturedSmp(), "n", "n.wav");
+
+  const Bytes handle_req = port.payloads()[6];
   ASSERT_GE(handle_req.size(), 10u);
   EXPECT_EQ(handle_req[4], 0x0D);
   EXPECT_EQ(Bytes(handle_req.begin() + 5, handle_req.begin() + 10),
@@ -480,35 +606,35 @@ TEST_F(SpdsxDeviceTest, UploadWaveCarriesTheDirHandleIntoTheNextRequest) {
 // The PCM goes down first and the header last, seeking back for it.
 TEST_F(SpdsxDeviceTest, UploadWaveWritesThePcmThenSeeksBackForTheHeader) {
   const Bytes smp = CapturedSmp();
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/true);
 
   dev.UploadWave(1587, smp, "n", "n.wav");
 
   const std::vector<Bytes> sent = port.payloads();
   // A write body is 5 zeros, the 40 00 marker, three length septets, data.
-  const Bytes pcm_written(sent[12].begin() + 15, sent[12].end() - 1);
+  const Bytes pcm_written(sent[9].begin() + 15, sent[9].end() - 1);
   EXPECT_EQ(pcm_written, Bytes(smp.begin() + kRfwvHeaderSize, smp.end()));
 
-  const Bytes header_written(sent[14].begin() + 15, sent[14].end() - 1);
+  const Bytes header_written(sent[11].begin() + 15, sent[11].end() - 1);
   EXPECT_EQ(header_written, Bytes(smp.begin(), smp.begin() + kRfwvHeaderSize));
-  // The seek before the header (13) returns to the start of the file; the
-  // one before the PCM (10) positions past it. They are not the same seek.
-  EXPECT_EQ(Bytes(sent[13].begin() + 5, sent[13].end() - 1), Bytes(11, 0x00));
-  EXPECT_NE(sent[10], sent[13]);
+  // The seek before the header (10) returns to the start of the file; the
+  // one before the PCM (7) positions past it. They are not the same seek.
+  EXPECT_EQ(Bytes(sent[10].begin() + 5, sent[10].end() - 1), Bytes(11, 0x00));
+  EXPECT_NE(sent[7], sent[10]);
 }
 
 // Three big-endian base-128 septets, cracked with controlled uploads: 8192
 // is 00 40 00. Get it wrong and the device reads the wrong number of bytes
 // and hangs, so this is worth holding exactly.
 TEST_F(SpdsxDeviceTest, UploadWaveEncodesTheWriteLengthAsSeptets) {
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/true);
   dev.UploadWave(1587, CapturedSmp(), "n", "n.wav");
 
-  const Bytes pcm_write = port.payloads()[12];
+  const Bytes pcm_write = port.payloads()[9];
   EXPECT_EQ(Bytes(pcm_write.begin() + 12, pcm_write.begin() + 15),
             Bytes({0x00, 0x40, 0x00}));  // 8192
 
-  const Bytes hdr_write = port.payloads()[14];
+  const Bytes hdr_write = port.payloads()[11];
   EXPECT_EQ(Bytes(hdr_write.begin() + 12, hdr_write.begin() + 15),
             Bytes({0x00, 0x04, 0x00}));  // 512
 }
@@ -524,7 +650,7 @@ TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
     pcm[i] = static_cast<uint8_t>(i * 7 + 1);
   }
   Bytes smp = PcmToRfwv(pcm, 48000, 1, 16);
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/true);
 
   dev.UploadWave(1601, smp, "big", "big.wav");
 
@@ -567,27 +693,27 @@ TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
 // The two directory records are what make the wave visible and assignable.
 // Byte-exact against the same capture protocol_test pins them from.
 TEST_F(SpdsxDeviceTest, UploadWaveRegistersTheDirectoryRecordsForThatIndex) {
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/true);
 
   dev.UploadWave(1587, CapturedSmp(), "B_noise_4096", "B_noise_4096.wav");
 
   const std::vector<Bytes> sent = port.payloads();
   // frames = the PCM's 8192 bytes as 16-bit mono, which the size field wants.
-  EXPECT_EQ(sent[19],
+  EXPECT_EQ(sent[16],
             Dt1(SampleRecordAddr(1587, 0x00), SampleBaseRecord(4096)));
   // The hash field goes out as 0: the device stores it verbatim and ignores
   // it (see SAMPLE-RECORD-HASH.md).
-  EXPECT_EQ(sent[22],
+  EXPECT_EQ(sent[18],
             Dt1(SampleRecordAddr(1587, 0x1B),
                 SampleNameRecord("B_noise_4096", "B_noise_4096.wav", 0)));
 }
 
 TEST_F(SpdsxDeviceTest, UploadWaveSizesTheRecordFromThePcmLength) {
-  QueueUploadReplies(port, DirReply());
+  QueueUploadReplies(port, /*dir_exists=*/true);
   // 4096 PCM bytes is 2048 frames, half the captured wave.
   dev.UploadWave(1587, PcmToRfwv(Bytes(4096, 0), 48000, 1, 16), "n", "n.wav");
 
-  EXPECT_EQ(port.payloads()[19],
+  EXPECT_EQ(port.payloads()[16],
             Dt1(SampleRecordAddr(1587, 0x00), SampleBaseRecord(2048)));
 }
 
@@ -728,41 +854,80 @@ Bytes StatReply(uint32_t size) {
   return r;
 }
 
-// Some factory preloads have no exportable file: OPEN succeeds but the
-// device answers STAT with a 7a error reply (f0 41 7a 7a 7f...), not the
-// 02 data reply. That must be a clean throw, not a misread size — a
-// download batch skips such a wave and moves on (device 900, live).
+// The 512-byte RFWV header the export reads before it STATs.
+Bytes HeaderData() {
+  return Bytes(512, 0xAA);
+}
+
+// Queues the replies up to and including the STAT — the shared prefix of a
+// successful export: session open (2), OPEN, SEEK 0, the header data, STAT.
+void QueueExportPrefix(FakeSerialPort& port, uint32_t stat_size) {
+  port.QueueReply({0x7a});  // session open 09
+  port.QueueReply({0x7a});  // session open 0a
+  port.QueueReply(FileAck());  // OPEN
+  port.QueueReply(FileAck());  // SEEK 0
+  port.QueueReply(FileDataFrame(HeaderData()));
+  port.QueueReply(StatReply(stat_size));
+  port.QueueReply(FileAck());  // SEEK past the header
+}
+
+// The full official order (waveexport-1/2.log): session open, OPEN, read
+// the header, STAT, seek past the header, exact-size reads, CLOSE, session
+// close.
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveFollowsTheOfficialExportOrder) {
+  QueueExportPrefix(port, 516);
+  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+  port.QueueReply(FileAck());  // CLOSE
+  port.QueueReply({0x7a});  // session close
+
+  Bytes want = HeaderData();
+  want.insert(want.end(), {1, 2, 3, 4});
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), want);
+
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 10u);
+  EXPECT_EQ(sent[0][2], 0x6A);  // session open on the control family
+  EXPECT_EQ(sent[0][4], 0x09);
+  EXPECT_EQ(sent[0][15], 0x01);
+  EXPECT_EQ(sent[1][4], 0x0A);
+  EXPECT_EQ(sent[2][4], 0x00);  // OPEN
+  EXPECT_EQ(sent[3][4], 0x07);  // SEEK 0 (all-zero body)
+  EXPECT_EQ(Bytes(sent[3].begin() + 5, sent[3].end() - 1), Bytes(11, 0x00));
+  EXPECT_EQ(sent[4][4], 0x04);  // READ, asking exactly 512: septets 00 04 00
+  EXPECT_EQ(Bytes(sent[4].begin() + 12, sent[4].begin() + 15),
+            Bytes({0x00, 0x04, 0x00}));
+  EXPECT_EQ(sent[5][4], 0x13);  // STAT comes after the header, not before
+  EXPECT_EQ(sent[6][4], 0x07);  // SEEK 512
+  EXPECT_EQ(sent[6][13], 0x04);
+  EXPECT_EQ(sent[7][4], 0x04);  // READ, asking exactly the 4-byte remainder
+  EXPECT_EQ(Bytes(sent[7].begin() + 12, sent[7].begin() + 15),
+            Bytes({0x00, 0x00, 0x04}));
+  EXPECT_EQ(sent[8][4], 0x03);  // CLOSE
+  EXPECT_EQ(sent[9][2], 0x6A);  // session close
+  EXPECT_EQ(sent[9][4], 0x09);
+  EXPECT_EQ(sent[9][15], 0x00);
+}
+
+// Some factory preloads have no exportable file: the OPEN answers but
+// nothing answers the header read. That must be a clean throw — a download
+// batch skips such a wave and moves on (device 900, live).
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveRejectsAWaveWithNoExportableFile) {
+  port.QueueReply({0x7a});
+  port.QueueReply({0x7a});
   port.QueueReply(FileAck());  // OPEN succeeds
-  // The 7a STAT error the device sends for a non-exportable preload.
-  port.QueueReply({0xF0,
-                   0x41,
-                   0x7A,
-                   0x7A,
-                   0x7F,
-                   0x7F,
-                   0x7F,
-                   0x7F,
-                   0x7F,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x02,
-                   0xF7});
+  // The 7a error the device sends instead of data; the SEEK consumes it,
+  // and the header read then finds nothing.
+  port.QueueReply({0xF0, 0x41, 0x7A, 0x7A, 0x7F, 0x7F, 0x7F, 0x7F, 0xF7});
 
   EXPECT_THROW(dev.ReadRemoteWave(900, {}, 0.01), std::runtime_error);
 }
 
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveOpensTheWavesOwnPath) {
-  port.QueueReply(FileAck());  // open
-  port.QueueReply(StatReply(4));
-  port.QueueReply(FileAck());  // seek
-  port.QueueReply(FileDataFrame({1, 2, 3, 4}));
+  QueueExportPrefix(port, 512);
 
   dev.ReadRemoteWave(1554, {}, 0.01);
 
-  const Bytes open_req = port.payloads()[0];
+  const Bytes open_req = port.payloads()[2];
   const std::string path = RemoteWavePath(1554);
   EXPECT_NE(
       std::search(open_req.begin(), open_req.end(), path.begin(), path.end()),
@@ -770,36 +935,33 @@ TEST_F(SpdsxDeviceTest, ReadRemoteWaveOpensTheWavesOwnPath) {
       << "the OPEN does not carry " << path;
 }
 
-// The device caps each reply, so a file arrives across frames. Each carries
-// a 14-byte header and a trailing f7, and BOTH ends have to come off: an f7
-// left in shifts every later frame's sample alignment, which is audible as
-// alternating audio and noise.
+// The device caps each reply, so a chunk arrives across frames. Each
+// carries a 14-byte header and a trailing f7, and BOTH ends have to come
+// off: an f7 left in shifts every later frame's sample alignment, which is
+// audible as alternating audio and noise.
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveReassemblesTheFileAcrossFrames) {
-  port.QueueReply(FileAck());
-  port.QueueReply(StatReply(8));
-  port.QueueReply(FileAck());
+  QueueExportPrefix(port, 520);
   port.QueueReply(FileDataFrame({1, 2, 3, 4}));
   port.QueueReply(FileDataFrame({5, 6, 7, 8}));
 
-  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01),
-            Bytes({1, 2, 3, 4, 5, 6, 7, 8}));
+  Bytes want = HeaderData();
+  want.insert(want.end(), {1, 2, 3, 4, 5, 6, 7, 8});
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), want);
 }
 
 // A batch may overshoot the size the STAT gave; the file is what STAT said.
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveTrimsABatchThatOvershoots) {
-  port.QueueReply(FileAck());
-  port.QueueReply(StatReply(6));
-  port.QueueReply(FileAck());
+  QueueExportPrefix(port, 518);
   port.QueueReply(FileDataFrame({1, 2, 3, 4}));
   port.QueueReply(FileDataFrame({5, 6, 7, 8}));
 
-  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), Bytes({1, 2, 3, 4, 5, 6}));
+  Bytes want = HeaderData();
+  want.insert(want.end(), {1, 2, 3, 4, 5, 6});
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), want);
 }
 
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveReportsProgressAgainstTheStatSize) {
-  port.QueueReply(FileAck());
-  port.QueueReply(StatReply(8));
-  port.QueueReply(FileAck());
+  QueueExportPrefix(port, 520);
   port.QueueReply(FileDataFrame({1, 2, 3, 4}));
   port.QueueReply(FileDataFrame({5, 6, 7, 8}));
 
@@ -809,12 +971,17 @@ TEST_F(SpdsxDeviceTest, ReadRemoteWaveReportsProgressAgainstTheStatSize) {
       [&](size_t done, size_t total) { progress.emplace_back(done, total); },
       0.01);
 
+  // Once the STAT gives a total: the header already in hand, then each
+  // data frame as it lands.
   EXPECT_EQ(progress,
-            (std::vector<std::pair<size_t, size_t>> {{4, 8}, {8, 8}}));
+            (std::vector<std::pair<size_t, size_t>> {
+                {512, 520}, {516, 520}, {520, 520}}));
 }
 
 // Preload waves aren't exportable, so the OPEN is where that shows up.
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveThrowsWhenTheDeviceWillNotOpenIt) {
+  port.QueueReply({0x7a});
+  port.QueueReply({0x7a});
   port.QueueReply({0xF0, 0x41, 0x7A, 0x02, 0xF7});  // not an ack
 
   try {
@@ -827,7 +994,11 @@ TEST_F(SpdsxDeviceTest, ReadRemoteWaveThrowsWhenTheDeviceWillNotOpenIt) {
 }
 
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveThrowsOnAStatItCannotRead) {
-  port.QueueReply(FileAck());
+  port.QueueReply({0x7a});
+  port.QueueReply({0x7a});
+  port.QueueReply(FileAck());  // OPEN
+  port.QueueReply(FileAck());  // SEEK 0
+  port.QueueReply(FileDataFrame(HeaderData()));
   port.QueueReply({0xF0, 0x41, 0x7A, 0x02, 0xF7});  // too short to hold a size
 
   EXPECT_THROW((void)dev.ReadRemoteWave(1554, {}, 0.01), std::runtime_error);
@@ -835,13 +1006,18 @@ TEST_F(SpdsxDeviceTest, ReadRemoteWaveThrowsOnAStatItCannotRead) {
 
 // The device going quiet part-way has to end the read, not spin on it.
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveStopsWhenTheDeviceStopsSending) {
-  port.QueueReply(FileAck());
-  port.QueueReply(StatReply(1000));  // claims far more than it sends
-  port.QueueReply(FileAck());
+  QueueExportPrefix(port, 2000);  // claims far more than it sends
   port.QueueReply(FileDataFrame({1, 2, 3, 4}));
 
-  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), Bytes({1, 2, 3, 4}));
-  EXPECT_EQ(port.payloads().back()[4], 0x03);  // it still closed the file
+  Bytes want = HeaderData();
+  want.insert(want.end(), {1, 2, 3, 4});
+  EXPECT_EQ(dev.ReadRemoteWave(1554, {}, 0.01), want);
+  // It still closed the file and the session.
+  const std::vector<Bytes> sent = port.payloads();
+  EXPECT_EQ(sent[sent.size() - 2][4], 0x03);
+  EXPECT_EQ(sent.back()[2], 0x6A);
+  EXPECT_EQ(sent.back()[4], 0x09);
+  EXPECT_EQ(sent.back()[15], 0x00);
 }
 
 // ---- FindDevicePort ----

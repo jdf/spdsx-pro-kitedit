@@ -189,6 +189,21 @@ Bytes ShortControl(uint8_t sub) {
 
 bool SpdsxDevice::Commit(absl::FunctionRef<bool()> should_abort) {
   Command(ShortControl(0x21));  // begin; device acks 6a 7a
+  return PollCommitted(should_abort);
+}
+
+bool SpdsxDevice::CommitUploadBatch(absl::FunctionRef<bool()> should_abort) {
+  // The import commit carries two extra control messages between begin and
+  // the poll — 6a 0c arg 1 and 6a 02 — in every capture of the official
+  // app's import (synthupload-1.log, import-multi-1.log). A plain WRITE or
+  // a delete commits without them (writecmd-*, fileops-1.log).
+  Command(ShortControl(0x21));
+  Command(ControlFrame(0x0C, 1));
+  Command(ShortControl(0x02));
+  return PollCommitted(should_abort);
+}
+
+bool SpdsxDevice::PollCommitted(absl::FunctionRef<bool()> should_abort) {
   // Poll until the device reports the flash write done — no time limit. A
   // batch commit's duration scales with what was staged and can be many
   // seconds; a timeout that fired mid-commit both misreported success and
@@ -209,23 +224,39 @@ bool SpdsxDevice::Commit(absl::FunctionRef<bool()> should_abort) {
 }
 
 void SpdsxDevice::DeleteWave(int sample_index) {
+  // The official app's full delete (fileops-1.log): query the slot and the
+  // last registered index, delete inside a session bracket, then two status
+  // queries before the session close and the commit.
+  Command(ControlFrame(0x0C, static_cast<uint32_t>(sample_index)));
+  Command(ShortControl(0x0D));
   Command(ControlFrame(0x09, 1));  // begin session
   Command(ControlFrame(0x1D, static_cast<uint32_t>(sample_index)));
+  // When the deleted wave was assigned to pads, the device follows the ack
+  // with unsolicited DT1 notifications (a kit-select echo, the assignments
+  // being cleared). Drain until quiet, or the next command reads one as its
+  // own ack and the stream desyncs.
+  while (!ReadFrame(0.3).empty()) {
+  }
+  Command(ShortControl(0x18));
+  Command(ShortControl(0x23));
   Command(ControlFrame(0x09, 0));  // end session
   Commit();
 }
 
-Bytes SpdsxDevice::SelectKit(int kit) {
-  return Command(Dt1(kKitSelectAddr, EncodeKit(kit)));
+void SpdsxDevice::SelectKit(int kit) {
+  // A DT1 like any other: the device never acks it (no capture has a reply
+  // on the DT1 channel), so waiting would just stall the caller.
+  Send(Dt1(kKitSelectAddr, EncodeKit(kit)));
 }
 
-Bytes SpdsxDevice::SelectObject(ObjectKind kind, int index) {
-  return Command(Dt1(kObjectSelectAddr, {SelectValue(kind, index)}));
+void SpdsxDevice::SelectObject(ObjectKind kind, int index) {
+  Send(Dt1(kObjectSelectAddr, {SelectValue(kind, index)}));
 }
 
 void SpdsxDevice::SetPadLink(
     int kit, ObjectKind kind, int index, int group, double pace_seconds) {
-  SelectObject(kind, index);  // replies; drains
+  SelectObject(kind, index);  // focus; fire-and-forget like every DT1
+  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
   Send(
       Dt1(PadLinkAddr(kind, index, kit), {static_cast<uint8_t>(group & 0x7F)}));
   std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
@@ -262,7 +293,8 @@ void SpdsxDevice::SetPadLayerParams(int kit,
                                     double pace_seconds) {
   // Kit and pad are both encoded in the write address, so no kit select
   // is needed; focus the pad object (the app does before param edits).
-  SelectObject(ObjectKind::kPad, pad);  // focus; replies, drains
+  SelectObject(ObjectKind::kPad, pad);  // focus; fire-and-forget
+  std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
   auto write = [&](int param, uint8_t value) {
     Send(Dt1(PadParamAddr(kit, pad, param), {value}));
     std::this_thread::sleep_for(std::chrono::duration<double>(pace_seconds));
@@ -349,6 +381,17 @@ Bytes CreateBody(const std::string& smp_path, const std::string& tmp_path) {
   return b;
 }
 
+// A seek/read body (03/07, 03/04): the offset or byte count as three
+// big-endian base-128 septets at bytes 7..9 — 512 is 00 04 00, 524288 is
+// 20 00 00 (waveexport-1/2.log). Zero is the all-zero body.
+Bytes SeptetBody(uint32_t n) {
+  Bytes b(11, 0x00);
+  b[7] = static_cast<uint8_t>((n >> 14) & 0x7F);
+  b[8] = static_cast<uint8_t>((n >> 7) & 0x7F);
+  b[9] = static_cast<uint8_t>(n & 0x7F);
+  return b;
+}
+
 // A write-data frame body (03/06): 5 zero bytes, the 40 00 marker, the
 // data length as 3 big-endian base-128 (7-bit) septets, then the data.
 // The length encoding was cracked with controlled uploads (2026-07-13):
@@ -372,16 +415,56 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
                                   const ProgressCallback& on_progress,
                                   double idle_timeout) {
   const std::string path = RemoteWavePath(sample_index);
-  // OPEN: 9 zero bytes, then the path length INCLUDING its null, then
-  // the path and that null.
-  Bytes open_body(9, 0x00);
-  open_body.push_back(static_cast<uint8_t>(path.size() + 1));
-  open_body.insert(open_body.end(), path.begin(), path.end());
-  open_body.push_back(0x00);
-  const Bytes ack = Command(FileRequest(0x00, open_body));
+  // The remote-file session bracket: the official app opens a session
+  // (6a 09 arg 1 + 6a 0a) before EVERY export's OPEN and closes it
+  // (6a 09 arg 0) after the CLOSE (waveexport-1/2.log).
+  Command(ControlFrame(0x09, 1));
+  Command(ShortControl(0x0A));
+
+  const Bytes ack = Command(FileRequest(0x00, PathBody(path)));
   if (ack.size() < 4 || ack[3] != 0x7A) {
+    Command(ControlFrame(0x09, 0));
     throw std::runtime_error("device rejected OPEN of " + path
                              + " (preload wave, or not present?)");
+  }
+
+  Bytes smp;
+  size_t total = 0;  // known once STAT answers
+  // One READ request for exactly `want` bytes, collecting the data frames
+  // it produces. Each data frame is a 14-byte header, the payload, then a
+  // trailing 0xf7 (the SysEx terminator) — drop BOTH ends. Missing the f7
+  // leaves an odd byte per frame that shifts every following frame's
+  // sample alignment (audible as alternating audio/noise).
+  auto read_chunk = [&](uint32_t want) {
+    port_->Write(Wrap(FileRequest(0x04, SeptetBody(want))));
+    size_t got = 0;
+    while (got < want) {
+      const Bytes frame = ReadBulkFrame(idle_timeout, 5.0);
+      if (frame.size() <= kFileFrameHeader + 1 || frame[3] != 0x02) {
+        break;  // drained (idle) or a non-data frame
+      }
+      got += frame.size() - kFileFrameHeader - 1;
+      smp.insert(smp.end(), frame.begin() + kFileFrameHeader, frame.end() - 1);
+      if (on_progress && total > 0) {
+        on_progress(std::min(smp.size(), total), total);
+      }
+    }
+    return got;
+  };
+  auto abandon = [&](const std::string& why) {
+    Command(FileRequest(0x03, Bytes(11, 0x00)));  // CLOSE
+    Command(ControlFrame(0x09, 0));
+    throw std::runtime_error(why);
+  };
+
+  // The official app's order: read the 512-byte RFWV header first, THEN
+  // stat, then fetch the remainder in exact-size requests (at most 512 KiB
+  // each, the size the app asks for). Some factory preloads have no
+  // exportable file: nothing answers the header read.
+  Command(FileRequest(0x07, SeptetBody(0)));  // SEEK 0
+  if (read_chunk(kRfwvHeaderSize) == 0) {
+    abandon("wave " + std::to_string(sample_index)
+            + " has no exportable file (preload?): " + path);
   }
 
   // STAT: reply is f0 41 7a 02 .. 08 <u32 attr> <u32 size> f7; the file
@@ -397,54 +480,31 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
     std::fprintf(
         stderr, "  STAT reply (%zu bytes): %s\n", sr.size(), hex.c_str());
   }
-  // A data reply is f0 41 7a 02 ...; some factory preloads have no
-  // exportable file and answer STAT with a 7a error reply (f0 41 7a 7a
-  // 7f 7f 7f 7f 7f ...) instead, which is short and not readable.
   if (sr.size() < 22 || sr[3] != 0x02) {
-    throw std::runtime_error("wave " + std::to_string(sample_index)
-                             + " has no exportable file (preload?): " + path);
+    abandon("wave " + std::to_string(sample_index)
+            + " has no exportable file (preload?): " + path);
   }
-  const uint32_t size = static_cast<uint32_t>(sr[18])
-      | static_cast<uint32_t>(sr[19]) << 8 | static_cast<uint32_t>(sr[20]) << 16
+  total = static_cast<uint32_t>(sr[18]) | static_cast<uint32_t>(sr[19]) << 8
+      | static_cast<uint32_t>(sr[20]) << 16
       | static_cast<uint32_t>(sr[21]) << 24;
+  if (on_progress) {
+    on_progress(std::min(smp.size(), total), total);
+  }
 
-  // SEEK to 0 (all-zero body), then loop READ. Each READ asks for a big
-  // batch (0x200000 in the length field at body[7]); the device caps
-  // its reply, so re-request until we've collected `size` bytes.
-  Command(FileRequest(0x07, Bytes(11, 0x00)));
-  const Bytes read_body = {0, 0, 0, 0, 0, 0, 0, 0x20, 0, 0, 0};
-
-  Bytes smp;
-  smp.reserve(size);
-  while (smp.size() < size) {
-    port_->Write(Wrap(FileRequest(0x04, read_body)));
-    bool got_any = false;
-    for (;;) {
-      const Bytes frame = ReadBulkFrame(idle_timeout, 5.0);
-      // Each data frame is a 14-byte header, the payload, then a
-      // trailing 0xf7 (the SysEx terminator) — drop BOTH ends. Missing
-      // the f7 leaves an odd byte per frame that shifts every following
-      // frame's sample alignment (audible as alternating audio/noise).
-      if (frame.size() <= kFileFrameHeader + 1 || frame[3] != 0x02) {
-        break;  // batch drained (idle) or a non-data frame
-      }
-      smp.insert(smp.end(), frame.begin() + kFileFrameHeader, frame.end() - 1);
-      got_any = true;
-      if (on_progress) {
-        on_progress(smp.size(), size);
-      }
-      if (smp.size() >= size) {
-        break;
-      }
-    }
-    if (!got_any) {
+  constexpr uint32_t kReadChunk = 512 * 1024;
+  Command(FileRequest(0x07, SeptetBody(kRfwvHeaderSize)));  // SEEK past it
+  while (smp.size() < total) {
+    const uint32_t want = static_cast<uint32_t>(
+        std::min<size_t>(kReadChunk, total - smp.size()));
+    if (read_chunk(want) == 0) {
       break;  // device stopped sending; avoid an infinite loop
     }
   }
 
   Command(FileRequest(0x03, Bytes(11, 0x00)));  // CLOSE
-  if (smp.size() > size) {
-    smp.resize(size);  // trim a batch that overshot
+  Command(ControlFrame(0x09, 0));  // session close
+  if (smp.size() > total) {
+    smp.resize(total);  // trim a batch that overshot
   }
   return smp;
 }
@@ -499,12 +559,11 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
     trace_ack(label, ReadFrame(3.0));
   };
   // The directory of the .SMP (".../WAVE/DATA/D0NN") and its parent
-  // (".../WAVE/DATA"). The official app walks these and mkdir's the D0NN
-  // directory before opening the file, so a directory with no user waves
-  // yet (only preloads, which have no remote files) gets created.
+  // (".../WAVE/DATA").
   const std::string data_dir = dir.substr(0, dir.rfind('/'));
   // The handle the device returns in a dir (0c) reply, at payload bytes
-  // 4..8, that the following 0d must echo back.
+  // 4..8, that a following 0d must echo back. A listing of a directory
+  // that doesn't exist answers with the handle bytes all zero.
   auto handle_of = [](const Bytes& ack) {
     Bytes h(11, 0x00);
     if (ack.size() >= 9) {
@@ -512,29 +571,41 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
     }
     return h;
   };
+  auto has_handle = [](const Bytes& h) {
+    return std::any_of(
+        h.begin(), h.begin() + 5, [](uint8_t b) { return b != 0; });
+  };
 
   step("stat tmp", FileRequest(0x0A, PathBody(tmp_path)));
   step("create", FileRequest(0x18, CreateBody(smp_path, tmp_path)));
-  // Navigate + ensure the D0NN directory exists, exactly as the app does.
+  // Ensure the D0NN directory exists, exactly as the app does: list it,
+  // and when the answer carries a handle just echo it and open. Only a
+  // missing directory (all-zero handle) takes the mkdir walk — list the
+  // parent, echo THE PARENT's handle, mkdir, re-list (import-multi-1.log:
+  // first file into a fresh D016 vs the rest). Running the walk
+  // unconditionally, as this used to, echoed the missing directory's
+  // all-zero handle where the official app echoes the parent's.
   Bytes h = handle_of(step("dir D", FileRequest(0x0C, PathBody(dir))));
-  step("dir DATA", FileRequest(0x0C, PathBody(data_dir)));
-  step("dir 0d", FileRequest(0x0D, h));
-  step("dir D", FileRequest(0x0C, PathBody(dir)));
-  step("mkdir D", FileRequest(0x09, PathBody(dir)));
-  h = handle_of(step("dir D", FileRequest(0x0C, PathBody(dir))));
+  if (!has_handle(h)) {
+    h = handle_of(step("dir DATA", FileRequest(0x0C, PathBody(data_dir))));
+    step("dir 0d", FileRequest(0x0D, h));
+    step("dir D", FileRequest(0x0C, PathBody(dir)));  // still missing
+    step("mkdir D", FileRequest(0x09, PathBody(dir)));
+    h = handle_of(step("dir D", FileRequest(0x0C, PathBody(dir))));
+  }
   step("dir 0d", FileRequest(0x0D, h));
   step("open write", FileRequest(0x00, OpenWriteBody(smp_path)));
-  Bytes seek(11, 0x00);
-  seek[8] = 0x04;
-  step("seek", FileRequest(0x07, seek));
+  step("seek", FileRequest(0x07, SeptetBody(kRfwvHeaderSize)));
   // Free-space query on the remote root, exactly as the official app issues
   // before the data write (import-multi-1.log). It appears to stage the file
   // so the batch's single flash commit captures it — without it, uploads
-  // register metadata but their data never persists. Its reply is a short
-  // off-format frame (16 bytes, 0c-prefixed) our transport doesn't model, so
-  // read and discard exactly those bytes rather than framing them.
+  // register metadata but their data never persists. Its reply is TWO
+  // things: a 16-byte off-format fragment (0c-prefixed) our transport
+  // doesn't model, then a normal ack frame — both must come off the wire,
+  // or every later step reads the previous step's ack.
   port_->Write(Wrap(FileRequest(0x19, PathBody("/SPDSXREMOTE//"))));
   port_->ReadExact(16, 1.0);
+  trace_ack("free space", ReadFrame(3.0));
   write_data("write pcm", pcm);
   step("seek 0", FileRequest(0x07, Bytes(11, 0x00)));
   write_data("write hdr", header);  // 512 bytes: always one frame
@@ -545,13 +616,18 @@ void SpdsxDevice::RegisterWave(int sample_index,
                                int frames,
                                const std::string& wavename,
                                const std::string& filename) {
-  // Replays the official app's post-write register sequence (decoded from
-  // synthupload-1.log + import-multi-1.log): finalize the temp file, open a
-  // register slot for N, then write two DT1 directory records into the block
-  // at 0x2000000 + N*256, with a 15/16 status handshake between them, and a
-  // light 09/0a session finalize. Crucially it does NOT flash-commit here:
-  // the batch commits ONCE at the end (see UploadWave/the caller). The name
-  // record's 32-bit hash field is 0; the device ignores it.
+  // Replays the official app's post-write register sequence (synthupload-1
+  // + import-multi-1.log): finalize the temp file, open a register slot for
+  // N, write the base directory record, close the session (6a 09 arg 0),
+  // then write the name record. Crucially it does NOT flash-commit here:
+  // the batch commits ONCE at the end (CommitUploadBatch, in the caller).
+  //
+  // The two records are DT1s, which the device never acks — they go out
+  // fire-and-forget exactly as the official app sends them; the session
+  // close's ack doubles as the barrier after the base record. (An earlier
+  // decode put a 15/16 pair here instead of the 09: those frames were the
+  // official app's background status poll, interleaved by coincidence.)
+  // The name record's 32-bit hash field is 0; the device ignores it.
   const std::string smp_path = RemoteWavePath(sample_index);
   const std::string tmp_path = smp_path.substr(0, smp_path.size() - 4) + ".TMP";
 
@@ -571,25 +647,10 @@ void SpdsxDevice::RegisterWave(int sample_index,
   trace("finalize tmp", Command(FileRequest(0x0A, PathBody(tmp_path)), 3.0));
   trace("register 0b", Command(ControlFrame(0x0B, sample_index), 3.0));
   trace("register 0c", Command(ControlFrame(0x0C, sample_index), 3.0));
-  trace("base record",
-        Command(
-            Dt1(SampleRecordAddr(sample_index, 0x00), SampleBaseRecord(frames)),
-            3.0));
-  trace("status 15", Command(ShortControl(0x15), 3.0));
-  trace("status 16", Command(ShortControl(0x16), 3.0));
-  // The name record is a DT1 the device does NOT ack — the official app
-  // writes it and moves straight to the finalize (import-multi-1.log).
-  // Command-waiting 3s for a reply that never comes cost 3s PER FILE. A
-  // short timeout still drains any stray/delayed frame (keeping the stream
-  // aligned) without the long wait. (The base record above rides on a
-  // delayed frame from the register step, so it keeps its full Command.)
-  trace("name record",
-        Command(Dt1(SampleRecordAddr(sample_index, 0x1B),
-                    SampleNameRecord(wavename, filename, /*content_hash=*/0)),
-                0.3));
-  // Light per-file finalize into working state — NOT a flash commit.
-  trace("finalize 09", Command(ControlFrame(0x09, 1), 3.0));
-  trace("finalize 0a", Command(ShortControl(0x0A), 3.0));
+  Send(Dt1(SampleRecordAddr(sample_index, 0x00), SampleBaseRecord(frames)));
+  trace("session 09/0", Command(ControlFrame(0x09, 0), 3.0));
+  Send(Dt1(SampleRecordAddr(sample_index, 0x1B),
+           SampleNameRecord(wavename, filename, /*content_hash=*/0)));
 }
 
 void SpdsxDevice::UploadWave(int sample_index,
@@ -599,10 +660,10 @@ void SpdsxDevice::UploadWave(int sample_index,
   // Writes the wave file and registers it in the pool directory (writing
   // without registering leaves an orphan file no UI can see, so the two are
   // never done separately). Both land in WORKING state only — the caller
-  // must flash-commit once after the batch (see PrepareUploadBatch/Commit).
-  // Committing per file, as this used to, made the device wedge after a few
-  // uploads (import-multi-1.log: the official app commits the whole batch
-  // once). `frames` = the PER-CHANNEL frame count (the record's end point):
+  // must flash-commit once after the batch (CommitUploadBatch). Committing
+  // per file, as this used to, made the device wedge after a few uploads
+  // (import-multi-1.log: the official app commits the whole batch once).
+  // `frames` = the PER-CHANNEL frame count (the record's end point):
   // total PCM bytes / (2 bytes * channels). A mono assumption halved the
   // end point of stereo samples and cut their playback short.
   if (smp.size() <= kRfwvHeaderSize) {
@@ -613,16 +674,21 @@ void SpdsxDevice::UploadWave(int sample_index,
       header.valid && header.channels > 0 ? header.channels : 1;
   const int frames = static_cast<int>((smp.size() - kRfwvHeaderSize)
                                       / (2u * static_cast<unsigned>(channels)));
+  // The per-file session open (6a 09 arg 1 + 6a 0a), matched by the arg-0
+  // close RegisterWave sends after the base record — the official app
+  // brackets every file this way (import-multi-1.log).
+  Command(ControlFrame(0x09, 1));
+  Command(ShortControl(0x0A));
   WriteRemoteFile(sample_index, smp);
   RegisterWave(sample_index, frames, wavename, filename);
 }
 
 void SpdsxDevice::PrepareUploadBatch() {
-  // The session-sync the official app issues once before the first upload
-  // (import-multi-1.log preamble): 09/0a primes the remote working
-  // directory. Each RegisterWave repeats it as a per-file finalize.
-  Command(ControlFrame(0x09, 1));
-  Command(ShortControl(0x0A));
+  // The official app opens an import batch with one 6a 0d query — the last
+  // registered wave index, which it uses to pick slots (ours come from the
+  // bulk image, so the answer is drained and dropped). The per-file session
+  // open/close lives in UploadWave/RegisterWave.
+  Command(ShortControl(0x0D));
 }
 
 Bytes SpdsxDevice::DumpBank(uint8_t bank,
