@@ -480,23 +480,31 @@ TEST(SampleBaseRecord, MatchesTheCapturedBaseRecord) {
   EXPECT_EQ(SampleBaseRecord(4096).size(), 151u);
 }
 
-// The record is otherwise constant: only the size field carries the wave.
-TEST(SampleBaseRecord, VariesOnlyInTheSizeField) {
+// The record is otherwise constant: only the end-point field (0x0b..0x0f)
+// carries the wave's length.
+TEST(SampleBaseRecord, VariesOnlyInTheEndPointField) {
   const Bytes a = SampleBaseRecord(4096);
-  const Bytes b = SampleBaseRecord(8192 * 10);
+  const Bytes b = SampleBaseRecord(123456);
   ASSERT_EQ(a.size(), b.size());
   for (size_t i = 0; i < a.size(); ++i) {
-    if (i != 0x0c) {
+    if (i < 0x0b || i > 0x0f) {
       EXPECT_EQ(a[i], b[i]) << "byte " << i;
     }
   }
 }
 
-TEST(SampleBaseRecord, CountsTheSizeInBlocksOf4096Frames) {
-  EXPECT_EQ(SampleBaseRecord(0)[0x0c], 0);
-  EXPECT_EQ(SampleBaseRecord(4095)[0x0c], 0);
-  EXPECT_EQ(SampleBaseRecord(4096)[0x0c], 1);
-  EXPECT_EQ(SampleBaseRecord(4096 * 5)[0x0c], 5);
+// End point = the per-channel frame count as five big-endian nibbles at
+// 0x0b..0x0f. Live-decoded: 25417 -> 0 6 3 4 9, 13210 -> 0 3 3 9 a.
+TEST(SampleBaseRecord, EncodesTheEndPointAsFiveNibbles) {
+  const auto nibbles = [](const Bytes& r) {
+    return Bytes(r.begin() + 0x0b, r.begin() + 0x10);
+  };
+  EXPECT_EQ(nibbles(SampleBaseRecord(25417)), Bytes({0x0, 0x6, 0x3, 0x4, 0x9}));
+  EXPECT_EQ(nibbles(SampleBaseRecord(13210)), Bytes({0x0, 0x3, 0x3, 0x9, 0xa}));
+  EXPECT_EQ(nibbles(SampleBaseRecord(0)), Bytes({0, 0, 0, 0, 0}));
+  // A value that fills all five nibbles (0xABCDE).
+  EXPECT_EQ(nibbles(SampleBaseRecord(0xABCDE)),
+            Bytes({0xa, 0xb, 0xc, 0xd, 0xe}));
 }
 
 TEST(SampleNameRecord, MatchesTheCapturedNameRecord) {

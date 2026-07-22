@@ -222,7 +222,19 @@ Bytes SampleBaseRecord(int frames) {
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x04, 0x0b, 0x00};
   Bytes b(kTemplate, kTemplate + sizeof(kTemplate));
-  b[0x0c] = static_cast<uint8_t>(frames / 4096);
+  // The sample's END POINT — where the device stops playback — is the
+  // per-channel frame count as five big-endian nibbles at 0x0b..0x0f
+  // (0x0b = bits 19..16 down to 0x0f = bits 3..0). The start point
+  // (0x06..0x0a) stays 0. Decoded from import-multi-1.log across samples of
+  // known length: 25417 frames -> 0 6 3 4 9, 13210 -> 0 3 3 9 a. The old
+  // code wrote only 0x0c = frames/4096, correct only for the ~4096-frame
+  // template sample and short (truncated playback) for everything else.
+  const uint32_t f = static_cast<uint32_t>(frames);
+  b[0x0b] = static_cast<uint8_t>((f >> 16) & 0x0F);
+  b[0x0c] = static_cast<uint8_t>((f >> 12) & 0x0F);
+  b[0x0d] = static_cast<uint8_t>((f >> 8) & 0x0F);
+  b[0x0e] = static_cast<uint8_t>((f >> 4) & 0x0F);
+  b[0x0f] = static_cast<uint8_t>(f & 0x0F);
   return b;
 }
 

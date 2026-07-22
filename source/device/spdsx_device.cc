@@ -596,11 +596,17 @@ void SpdsxDevice::UploadWave(int sample_index,
   // must flash-commit once after the batch (see PrepareUploadBatch/Commit).
   // Committing per file, as this used to, made the device wedge after a few
   // uploads (import-multi-1.log: the official app commits the whole batch
-  // once). `frames` = 16-bit mono sample count for the size field.
+  // once). `frames` = the PER-CHANNEL frame count (the record's end point):
+  // total PCM bytes / (2 bytes * channels). A mono assumption halved the
+  // end point of stereo samples and cut their playback short.
   if (smp.size() <= kRfwvHeaderSize) {
     throw std::runtime_error("smp too small to have header + PCM");
   }
-  const int frames = static_cast<int>((smp.size() - kRfwvHeaderSize) / 2);
+  const RfwvHeader header = ParseRfwvHeader(smp);
+  const int channels =
+      header.valid && header.channels > 0 ? header.channels : 1;
+  const int frames = static_cast<int>((smp.size() - kRfwvHeaderSize)
+                                      / (2u * static_cast<unsigned>(channels)));
   WriteRemoteFile(sample_index, smp);
   RegisterWave(sample_index, frames, wavename, filename);
 }
