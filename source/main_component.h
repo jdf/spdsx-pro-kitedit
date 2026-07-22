@@ -179,7 +179,7 @@ private:
   // document, then refreshes the slots that use it.
   void OnWaveDownloaded(int sample_index, const device::Bytes& wav);
   void OnWaveCached(int sample_index);
-  void FinishKitSampleDownload(const juce::String& error, int done, int total);
+  void FinishKitSampleDownload(const juce::String& error, int done, int failed);
   // Pushes the current download progress into each affected slot's
   // indicator; called from the 30Hz timer while a fetch runs.
   void UpdateDownloadIndicators();

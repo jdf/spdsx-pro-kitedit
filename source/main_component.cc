@@ -660,6 +660,7 @@ void MainComponent::DownloadKitSamples() {
   std::thread([safe, want, current, permille] {
     juce::String error;
     int done = 0;
+    int failed = 0;
     try {
       const std::unique_ptr<device::SerialPort> serial =
           device::PlatformPorts().Open(device::FindDevicePort());
@@ -667,15 +668,26 @@ void MainComponent::DownloadKitSamples() {
       for (const int index : want) {
         permille->store(0);
         current->store(index);
-        const device::Bytes smp =
-            dev.ReadRemoteWave(index, [permille](size_t got, size_t total) {
-              permille->store(total > 0 ? static_cast<int>(got * 1000 / total)
-                                        : 0);
-            });
-        device::Bytes wav = device::RfwvToWav(smp);
+        // Each wave stands alone: one that can't be read (some factory
+        // preloads have no exportable file — the device 7a-errors the
+        // STAT) is skipped, not fatal to the rest of the kit.
+        device::Bytes wav;
+        try {
+          const device::Bytes smp =
+              dev.ReadRemoteWave(index, [permille](size_t got, size_t total) {
+                permille->store(total > 0 ? static_cast<int>(got * 1000 / total)
+                                          : 0);
+              });
+          wav = device::RfwvToWav(smp);
+        } catch (const std::exception&) {
+          ++failed;
+          current->store(0);
+          continue;
+        }
         current->store(0);
         if (wav.empty()) {
-          continue;  // skip a wave that didn't convert
+          ++failed;  // registered but didn't convert (bad/empty RFWV)
+          continue;
         }
         ++done;
         // Store the blob + refresh slots on the message thread (the DB is
@@ -687,11 +699,11 @@ void MainComponent::DownloadKitSamples() {
         });
       }
     } catch (const std::exception& e) {
-      error = e.what();
+      error = e.what();  // couldn't open the port at all — fatal to the batch
     }
-    juce::MessageManager::callAsync([safe, error, done, n = want.size()] {
+    juce::MessageManager::callAsync([safe, error, done, failed] {
       if (safe != nullptr) {
-        safe->FinishKitSampleDownload(error, done, static_cast<int>(n));
+        safe->FinishKitSampleDownload(error, done, failed);
       }
     });
   }).detach();
@@ -1176,7 +1188,7 @@ void MainComponent::OnWaveCached(int sample_index) {
 
 void MainComponent::FinishKitSampleDownload(const juce::String& error,
                                             int done,
-                                            int total) {
+                                            int failed) {
   device_fetching_ = false;
   device_samples_.SetStatus({});
   commands_.commandStatusChanged();
@@ -1193,12 +1205,26 @@ void MainComponent::FinishKitSampleDownload(const juce::String& error,
     }
   }
   UpdateTransferButton();
+  // Couldn't even open the port: nothing downloaded, so surface it.
   if (error.isNotEmpty() && done == 0) {
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon, "Download Kit Samples", error);
     return;
   }
-  (void)total;
+  // Some waves can't be read (factory preloads without an exportable
+  // file); note it quietly rather than alarming — the rest are cached.
+  if (failed > 0) {
+    const juce::String note = juce::String(failed)
+        + (failed == 1 ? " sample couldn't be downloaded"
+                       : " samples couldn't be downloaded");
+    device_samples_.SetStatus(note);
+    juce::Timer::callAfterDelay(
+        3000, [safe = juce::Component::SafePointer<MainComponent>(this)] {
+          if (safe != nullptr) {
+            safe->device_samples_.SetStatus({});
+          }
+        });
+  }
 }
 
 void MainComponent::RefreshDeviceSamples() {
