@@ -439,7 +439,27 @@ void SampleSlot::resized() {
   play_button_.setBounds(buttons.removeFromRight(kButtonSize));
 }
 
+void SampleSlot::mouseDown(const juce::MouseEvent& event) {
+  // Right-click (or ctrl-click): the slot's context menu. Only offers
+  // Clear when there is something to clear.
+  if (event.mods.isPopupMenu()) {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Clear layer", has_sample());
+    juce::Component::SafePointer<SampleSlot> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+                       [safe](int result) {
+                         if (result == 1 && safe != nullptr && safe->on_clear) {
+                           safe->on_clear(safe->index_);
+                         }
+                       });
+  }
+}
+
 void SampleSlot::mouseUp(const juce::MouseEvent& event) {
+  // A right-click was the context menu, not a pad hit.
+  if (event.mods.isPopupMenu()) {
+    return;
+  }
   // Clicks anywhere across the control strip's vertical band belong to
   // the transport, not to file browsing, even between the buttons. A
   // missing sample has no transport, so it stays fully browsable.

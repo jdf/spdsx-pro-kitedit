@@ -40,6 +40,9 @@ public:
   // The slot body was clicked; the parent triggers the whole pad, with
   // the cursor height as velocity.
   std::function<void(int)> on_click;
+  // "Clear layer" was chosen from the slot's right-click menu; the parent
+  // empties this layer as an undoable edit.
+  std::function<void(int)> on_clear;
   // A transport button was pressed.
   std::function<void(int, TransportAction)> on_transport;
   // A sample was dragged from slot `from` onto this slot. copy duplicates
@@ -107,6 +110,7 @@ public:
 
   void paint(juce::Graphics& g) override;
   void resized() override;
+  void mouseDown(const juce::MouseEvent& event) override;
   void mouseUp(const juce::MouseEvent& event) override;
   void mouseDrag(const juce::MouseEvent& event) override;
 

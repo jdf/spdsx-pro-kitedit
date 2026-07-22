@@ -87,6 +87,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       const auto pos = getMouseXYRelative();
       TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
     };
+    slot.on_clear = [this](int idx) {
+      undo().beginNewTransaction("Clear layer");
+      undo().perform(new SetSampleAction(model_,
+                                         idx / KitModel::kLayersPerPad,
+                                         idx % KitModel::kLayersPerPad,
+                                         LayerSample()));
+    };
     slot.on_transport = [this](int idx, TransportAction action) {
       ApplyTransportAction(idx, action);
     };
