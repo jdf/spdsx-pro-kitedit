@@ -60,10 +60,14 @@ PadSettingsPanel::PadSettingsPanel() {
   addAndMakeVisible(curve_);
 
   // A knob with a value box doubling as direct entry: click the
-  // number and type.
-  auto init_knob = [this](juce::Slider& knob, juce::Label& label, int min) {
+  // number and type. Double-click returns the knob to its default.
+  auto init_knob = [this](juce::Slider& knob,
+                          juce::Label& label,
+                          int min,
+                          int default_value) {
     knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     knob.setRange(min, 127, 1);
+    knob.setDoubleClickReturnValue(true, default_value);
     knob.setTextBoxStyle(
         juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
     knob.setTextBoxIsEditable(true);
@@ -72,7 +76,7 @@ PadSettingsPanel::PadSettingsPanel() {
     addAndMakeVisible(label);
     addAndMakeVisible(knob);
   };
-  init_knob(velocity_, velocity_label_, 1);
+  init_knob(velocity_, velocity_label_, 1, kDefaultFixedVelocity);
 
   trigger_reserve_.onClick = [this] { Push(); };
   addAndMakeVisible(trigger_reserve_);
@@ -83,34 +87,38 @@ PadSettingsPanel::PadSettingsPanel() {
     m.heading.setText(mix_headings[l], juce::dontSendNotification);
     m.heading.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
     addAndMakeVisible(m.heading);
-    auto init_mix_knob =
-        [this](juce::Slider& knob, juce::Label& label, bool db) {
-          knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-          if (db) {
-            knob.setRange(kMinVolumeDb, kMaxVolumeDb, 0.1);
-            knob.setNumDecimalPlacesToDisplay(1);
-          } else {
-            knob.setRange(0, 127, 1);
-          }
-          knob.setTextBoxStyle(
-              juce::Slider::TextBoxBelow, false, kMixKnobSize, kKnobTextHeight);
-          knob.setTextBoxIsEditable(true);
-          knob.onValueChange = [this] { Push(); };
-          label.setJustificationType(juce::Justification::centred);
-          label.setFont(juce::FontOptions(12.0f));
-          addAndMakeVisible(label);
-          addAndMakeVisible(knob);
-        };
-    init_mix_knob(m.volume, m.volume_label, /*db=*/true);
-    init_mix_knob(m.fade_in, m.fade_label, /*db=*/false);
-    init_mix_knob(m.decay, m.decay_label, /*db=*/false);
+    auto init_mix_knob = [this](juce::Slider& knob,
+                                juce::Label& label,
+                                bool db,
+                                double default_value) {
+      knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+      if (db) {
+        knob.setRange(kMinVolumeDb, kMaxVolumeDb, 0.1);
+        knob.setNumDecimalPlacesToDisplay(1);
+      } else {
+        knob.setRange(0, 127, 1);
+      }
+      knob.setDoubleClickReturnValue(true, default_value);
+      knob.setTextBoxStyle(
+          juce::Slider::TextBoxBelow, false, kMixKnobSize, kKnobTextHeight);
+      knob.setTextBoxIsEditable(true);
+      knob.onValueChange = [this] { Push(); };
+      label.setJustificationType(juce::Justification::centred);
+      label.setFont(juce::FontOptions(12.0f));
+      addAndMakeVisible(label);
+      addAndMakeVisible(knob);
+    };
+    init_mix_knob(
+        m.volume, m.volume_label, /*db=*/true, kDefaultLayerVolumeDb10 / 10.0);
+    init_mix_knob(m.fade_in, m.fade_label, /*db=*/false, kDefaultLayerFadeIn);
+    init_mix_knob(m.decay, m.decay_label, /*db=*/false, kDefaultLayerDecay);
   }
 
   pedal_heading_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
   addAndMakeVisible(pedal_heading_);
-  init_knob(volume_, volume_label_, 0);
-  init_knob(fade_in_, fade_in_label_, 0);
-  init_knob(decay_, decay_label_, 0);
+  init_knob(volume_, volume_label_, 0, kDefaultHiHatVolume);
+  init_knob(fade_in_, fade_in_label_, 0, kDefaultHiHatFadeIn);
+  init_knob(decay_, decay_label_, 0, kDefaultHiHatDecay);
 
   setSize(kPanelWidth, kBaseHeight);
 }

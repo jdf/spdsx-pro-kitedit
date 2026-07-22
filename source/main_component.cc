@@ -120,10 +120,12 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     }
     mode_boxes_[p]->onChange = [this, pad] { ApplyLayerParams(pad); };
     addAndMakeVisible(*mode_boxes_[p]);
-    auto make_fade_slider = [this, pad] {
+    auto make_fade_slider = [this, pad](int default_value) {
       auto slider = std::make_unique<juce::Slider>(juce::Slider::LinearBar,
                                                    juce::Slider::NoTextBox);
       slider->setRange(1, 127, 1);
+      // Double-click returns the slider to its default.
+      slider->setDoubleClickReturnValue(true, default_value);
       // One undo step per adjustment, not one per drag pixel.
       slider->setChangeNotificationOnlyOnRelease(true);
       // No room for a permanent readout; a bubble shows the value
@@ -133,8 +135,8 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       addAndMakeVisible(*slider);
       return slider;
     };
-    fade_point_sliders_[p] = make_fade_slider();
-    fade_end_sliders_[p] = make_fade_slider();
+    fade_point_sliders_[p] = make_fade_slider(kDefaultFadePoint);
+    fade_end_sliders_[p] = make_fade_slider(kDefaultFadeEnd);
     pad_menu_buttons_[p] =
         std::make_unique<juce::TextButton>(juce::String::fromUTF8("⋯"));
     pad_menu_buttons_[p]->onClick = [this, pad] { ShowPadSettings(pad); };
@@ -146,6 +148,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   // compact knob; click its value to type one in.
   velocity_slider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
   velocity_slider_.setRange(1, 127, 1);
+  velocity_slider_.setDoubleClickReturnValue(true, 100);
   velocity_slider_.setValue(
       settings_.getUserSettings()->getIntValue("uiVelocity", 100),
       juce::dontSendNotification);
