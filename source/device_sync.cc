@@ -401,9 +401,9 @@ KitWrite BuildKitWrite(int kit_index, const KitSyncPlan& plan) {
 bool ExecutePush(device::SpdsxDevice& dev,
                  const std::vector<SmpUpload>& uploads,
                  const std::vector<KitWrite>& kits,
-                 const std::function<void(const SmpUpload&)>& on_uploaded,
+                 absl::FunctionRef<void(const SmpUpload&)> on_uploaded,
                  double pace_seconds,
-                 double commit_timeout_seconds) {
+                 absl::FunctionRef<bool()> should_abort) {
   // Uploads and kit writes all land in working state; ONE Commit at the end
   // flushes the whole batch to flash. Per-file commits wedge the device.
   bool wrote = false;
@@ -412,9 +412,7 @@ bool ExecutePush(device::SpdsxDevice& dev,
     wrote = true;
     for (const SmpUpload& u : uploads) {
       dev.UploadWave(u.index, u.smp, u.wavename, u.filename);
-      if (on_uploaded) {
-        on_uploaded(u);
-      }
+      on_uploaded(u);  // a no-op by default (IgnoreUpload)
     }
   }
   for (const KitWrite& kw : kits) {
@@ -447,7 +445,7 @@ bool ExecutePush(device::SpdsxDevice& dev,
   }
   // Everything above (uploads + DT1 writes) is in working state; this single
   // Commit makes the whole batch durable. Nothing written = nothing to commit.
-  return wrote ? dev.Commit(commit_timeout_seconds) : true;
+  return wrote ? dev.Commit(should_abort) : true;
 }
 
 }  // namespace spdsx

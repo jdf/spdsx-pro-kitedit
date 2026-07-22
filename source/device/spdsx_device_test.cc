@@ -313,7 +313,7 @@ TEST_F(SpdsxDeviceTest, CommitBeginsThenPollsUntilTheFlashWriteIsDone) {
   port.QueueReply({0x7a});  // the begin ack
   port.QueueReply(CommitPoll(0x01));  // done on the first poll
 
-  EXPECT_TRUE(dev.Commit(5.0));
+  EXPECT_TRUE(dev.Commit());
 
   const std::vector<Bytes> sent = port.payloads();
   ASSERT_EQ(sent.size(), 2u);
@@ -326,14 +326,15 @@ TEST_F(SpdsxDeviceTest, CommitKeepsPollingWhileTheFlashWriteIsBusy) {
   port.QueueReply(CommitPoll(0x00));  // busy
   port.QueueReply(CommitPoll(0x01));  // then done
 
-  EXPECT_TRUE(dev.Commit(5.0));
+  EXPECT_TRUE(dev.Commit());
   EXPECT_EQ(port.payloads().size(), 3u);  // begin + two polls
 }
 
-// The flash write is what makes an edit survive a power cycle, so a commit
-// that never reports done has to say so rather than claim success.
-TEST_F(SpdsxDeviceTest, CommitGivesUpWhenDoneNeverComes) {
-  EXPECT_FALSE(dev.Commit(0.0));
+// There is no timeout: the poll runs until the device reports done or the
+// caller's should_abort asks it to stop. An immediate abort returns false
+// without claiming the commit finished.
+TEST_F(SpdsxDeviceTest, CommitStopsWhenAskedToAbort) {
+  EXPECT_FALSE(dev.Commit([] { return true; }));
 }
 
 // ---- DeleteWave ----

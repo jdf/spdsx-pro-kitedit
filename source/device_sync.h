@@ -153,17 +153,23 @@ struct KitWrite {
 // Call after SubstituteUploads so wave numbers are pool indices.
 KitWrite BuildKitWrite(int kit_index, const KitSyncPlan& plan);
 
-// Drives the push: uploads each wave (durable one by one — UploadWave
-// flash-commits itself), then every kit's name/wave/param writes, then
-// one Commit to flush them. on_uploaded fires after each upload lands.
-// Returns the Commit verdict (true when there was nothing to commit);
-// throws what the port throws.
-bool ExecutePush(device::SpdsxDevice& dev,
-                 const std::vector<SmpUpload>& uploads,
-                 const std::vector<KitWrite>& kits,
-                 const std::function<void(const SmpUpload&)>& on_uploaded = {},
-                 double pace_seconds = 0.02,
-                 double commit_timeout_seconds = 5.0);
+// Default no-op for ExecutePush's on_uploaded (a named function is a safe
+// FunctionRef default).
+inline void IgnoreUpload(const SmpUpload&) {}
+
+// Drives the push: primes the batch, uploads each wave into working state
+// (on_uploaded fires after each lands), writes every kit's name/wave/params,
+// then ONE flash Commit to make the whole batch durable. Returns the Commit
+// verdict (true when there was nothing to commit); throws what the port
+// throws. should_abort lets a caller stop waiting on the commit (a user
+// Abort) — a false return then makes no claim it finished.
+bool ExecutePush(
+    device::SpdsxDevice& dev,
+    const std::vector<SmpUpload>& uploads,
+    const std::vector<KitWrite>& kits,
+    absl::FunctionRef<void(const SmpUpload&)> on_uploaded = IgnoreUpload,
+    double pace_seconds = 0.02,
+    absl::FunctionRef<bool()> should_abort = device::NeverAbort);
 
 }  // namespace spdsx
 

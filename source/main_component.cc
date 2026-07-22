@@ -551,10 +551,12 @@ void MainComponent::LoadDeviceState() {
 }
 
 void MainComponent::ShowProgress(const juce::String& title,
-                                 const juce::String& message) {
+                                 const juce::String& message,
+                                 std::function<void()> on_abort) {
   HideProgress();  // never stack two
   ProgressDialog* dialog = nullptr;
-  progress_win_ = ProgressDialog::Show(title, message, &dialog);
+  progress_win_ =
+      ProgressDialog::Show(title, message, &dialog, std::move(on_abort));
   progress_dialog_ = dialog;
 }
 
@@ -1031,10 +1033,26 @@ void MainComponent::RunSyncPush(
   sync_pushed_ = 0;
   sync_upload_total_ = static_cast<int>(sync_->uploads.size());
   fetch_blocks_.reset();
+  // The Abort button stops the push waiting on the flash commit (shared so
+  // the worker reads it after this returns). It doesn't tear the device
+  // down mid-flash — it just stops us waiting; the sync then reports as not
+  // committed and nothing is recorded.
+  sync_abort_ = std::make_shared<std::atomic<bool>>(false);
   ShowProgress("Sync with Device",
-               juce::String::fromUTF8("Saving to device\xe2\x80\xa6"));
+               juce::String::fromUTF8("Saving to device\xe2\x80\xa6"),
+               [abort = sync_abort_,
+                safe = Component::SafePointer<MainComponent>(this)] {
+                 abort->store(true);
+                 if (safe != nullptr && safe->progress_dialog_ != nullptr) {
+                   safe->progress_dialog_->SetMessage(juce::String::fromUTF8(
+                       "Aborting\xe2\x80\xa6 (the device may still finish)"));
+                 }
+               });
   juce::Component::SafePointer<MainComponent> safe(this);
-  std::thread([safe, uploads = sync_->uploads, writes = std::move(writes)] {
+  std::thread([safe,
+               uploads = sync_->uploads,
+               writes = std::move(writes),
+               abort = sync_abort_] {
     juce::String error;
     bool committed = false;
     try {
@@ -1084,11 +1102,9 @@ void MainComponent::RunSyncPush(
                 });
           },
           /*pace_seconds=*/0.02,
-          // The batch flash commit's duration scales with how much was
-          // staged; give it generous headroom so a slow-but-fine commit
-          // isn't misreported as a failure.
-          /*commit_timeout_seconds=*/30.0
-              + 6.0 * static_cast<double>(smp_uploads.size()));
+          // The commit polls until the device reports done, however long
+          // that takes; the user's Abort button is the only way to stop it.
+          /*should_abort=*/[&abort] { return abort->load(); });
     } catch (const std::exception& e) {
       error = e.what();
     }
@@ -1102,6 +1118,7 @@ void MainComponent::RunSyncPush(
 
 void MainComponent::CancelSync() {
   sync_.reset();
+  sync_abort_.reset();
   sync_phase_ = SyncPhase::kNone;
   fetch_blocks_.reset();
   HideProgress();
@@ -1174,6 +1191,7 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
         return entry.second.skipped;
       });
   sync_.reset();
+  sync_abort_.reset();
   device_fetching_ = false;
   commands_.commandStatusChanged();
   RefreshKitSelector();

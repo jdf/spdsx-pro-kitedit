@@ -12,11 +12,18 @@
 #include <functional>
 #include <string>
 
+#include "absl/functional/function_ref.h"
 #include "device/kit_image.h"  // PadDeviceParams
 #include "device/protocol.h"
 #include "device/serial_port.h"
 
 namespace spdsx::device {
+
+// The default "keep waiting" predicate for Commit — never asks to stop.
+// A named function (static lifetime) is a safe default for a FunctionRef.
+inline bool NeverAbort() {
+  return false;
+}
 
 // Wraps a payload in the transport frame; the channel is chosen from the
 // payload's message family.
@@ -54,9 +61,12 @@ public:
   std::string FirmwareField(uint8_t field);
   // Persists working changes to flash: control-family commit begin
   // (6a 03 21) then poll (6a 03 22) until the status word reads done.
-  // Returns false on timeout. Same handshake the official app's WRITE
-  // button uses.
-  bool Commit(double timeout_seconds = 5.0);
+  // Polls with NO time limit — a batch commit can take many seconds, and
+  // a timeout that fired mid-commit misreported it and risked interrupting
+  // the flash. Pass should_abort to stop waiting (a user Abort); returning
+  // false then makes no claim the commit finished. Same handshake the
+  // official app's WRITE button uses.
+  bool Commit(absl::FunctionRef<bool()> should_abort = NeverAbort);
 
   // Deletes a sample from the device pool by index, then commits. The
   // slot becomes empty; kits referencing it show no wave. Destructive

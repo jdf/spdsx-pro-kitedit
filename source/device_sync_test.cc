@@ -511,7 +511,7 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   port.QueueReply({0x7a});  // commit begin ack
   port.QueueReply(SyncCommitDone());
 
-  EXPECT_TRUE(ExecutePush(dev, {}, {kw}, {}, 0.0));
+  EXPECT_TRUE(ExecutePush(dev, {}, {kw}, IgnoreUpload, 0.0));
 
   const std::vector<Bytes> sent = port.payloads();
   // 16 name chars + wave + enable + focus + 10 params + begin + poll.
@@ -534,11 +534,13 @@ TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
 
-  EXPECT_TRUE(ExecutePush(dev, {}, {}, {}, 0.0));
+  EXPECT_TRUE(ExecutePush(dev, {}, {}, IgnoreUpload, 0.0));
   EXPECT_TRUE(port.writes().empty());
 }
 
-TEST(DeviceSyncPush, ReportsACommitTheDeviceNeverConfirms) {
+// The commit polls until done; an aborting caller makes ExecutePush return
+// false without claiming the batch was committed.
+TEST(DeviceSyncPush, AnAbortedCommitReportsNotCommitted) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
 
@@ -547,7 +549,8 @@ TEST(DeviceSyncPush, ReportsACommitTheDeviceNeverConfirms) {
   kw.name = true;
   kw.kit_name = "X";
 
-  EXPECT_FALSE(ExecutePush(dev, {}, {kw}, {}, 0.0, /*commit_timeout=*/0.0));
+  EXPECT_FALSE(ExecutePush(
+      dev, {}, {kw}, IgnoreUpload, 0.0, /*should_abort=*/[] { return true; }));
 }
 
 TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
@@ -613,7 +616,7 @@ TEST(DeviceSyncPush, EndToEndFromPlanToWire) {
   port.QueueReply({0x7a});  // commit begin ack
   port.QueueReply(SyncCommitDone());
 
-  EXPECT_TRUE(ExecutePush(dev, {}, {write}, {}, 0.0));
+  EXPECT_TRUE(ExecutePush(dev, {}, {write}, IgnoreUpload, 0.0));
 
   using namespace device;
   const std::vector<Bytes> sent = port.payloads();

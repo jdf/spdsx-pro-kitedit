@@ -187,19 +187,25 @@ Bytes ShortControl(uint8_t sub) {
 
 }  // namespace
 
-bool SpdsxDevice::Commit(double timeout_seconds) {
+bool SpdsxDevice::Commit(absl::FunctionRef<bool()> should_abort) {
   Command(ShortControl(0x21));  // begin; device acks 6a 7a
-  const auto deadline = std::chrono::steady_clock::now()
-      + std::chrono::duration<double>(timeout_seconds);
-  while (std::chrono::steady_clock::now() < deadline) {
+  // Poll until the device reports the flash write done — no time limit. A
+  // batch commit's duration scales with what was staged and can be many
+  // seconds; a timeout that fired mid-commit both misreported success and
+  // (when the port was then reopened) could interrupt the flash. The caller
+  // may pass should_abort to stop waiting (e.g. a user Abort button); that
+  // returns false without any claim the commit finished.
+  for (;;) {
     // Reply: f0 41 6a 02 .. 22 40 00 00 00 04 <status LE32> f7.
     const Bytes r = Command(ShortControl(0x22));
     if (r.size() >= 18 && r[8] == 0x22 && r[14] == 0x01) {
       return true;
     }
+    if (should_abort()) {
+      return false;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
-  return false;
 }
 
 void SpdsxDevice::DeleteWave(int sample_index) {

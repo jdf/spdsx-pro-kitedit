@@ -154,7 +154,10 @@ private:
   void LoadDeviceState();
   void StartDeviceStateFetch();
   // Opens/closes the modal progress dialog for a long device operation.
-  void ShowProgress(const juce::String& title, const juce::String& message);
+  // A non-empty on_abort adds an Abort button that calls it.
+  void ShowProgress(const juce::String& title,
+                    const juce::String& message,
+                    std::function<void()> on_abort = {});
   void HideProgress();
   void FinishDeviceFetch(std::vector<device::KitRecord> kits,
                          std::vector<device::SampleRecord> pool,
@@ -343,6 +346,9 @@ private:
   SyncPhase sync_phase_ = SyncPhase::kNone;
   int sync_pushed_ = 0;  // uploads landed so far this push (drives the bar)
   int sync_upload_total_ = 0;  // uploads this push will do
+  // Set by the progress dialog's Abort button to stop waiting on the flash
+  // commit; shared so the detached push worker reads it safely.
+  std::shared_ptr<std::atomic<bool>> sync_abort_;
   // The unified kit control: arrows, kit menu, in-place rename.
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;

@@ -2,6 +2,7 @@
   "name": "spdsx-patchedit",
   "version": "0.1.0",
   "dependencies": [
+    "abseil",
     "juce",
     "specgram",
     "sqlite3",

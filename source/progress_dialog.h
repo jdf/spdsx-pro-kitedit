@@ -11,6 +11,8 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_PROGRESS_DIALOG_H_
 #define SPDSX_PATCHEDIT_SOURCE_PROGRESS_DIALOG_H_
 
+#include <functional>
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace spdsx {
@@ -29,15 +31,21 @@ public:
   // button, escape disabled) and returns it. The window owns a fresh
   // ProgressDialog, reachable through `dialog_out`; both are destroyed when
   // the caller ends the modal state (DialogWindow::exitModalState). Hold
-  // the returned pointers in SafePointers.
+  // the returned pointers in SafePointers. When on_abort is given, the
+  // panel shows an Abort button that calls it once (for operations that
+  // can be safely told to stop waiting, e.g. the sync's flash commit);
+  // omit it for uninterruptible ones like a bulk read.
   static juce::DialogWindow* Show(const juce::String& title,
                                   const juce::String& message,
-                                  ProgressDialog** dialog_out);
+                                  ProgressDialog** dialog_out,
+                                  std::function<void()> on_abort = {});
 
 private:
   double value_ = -1.0;  // negative = indeterminate animation
   juce::Label message_;
   juce::ProgressBar bar_ {value_};
+  juce::TextButton abort_ {"Abort"};
+  std::function<void()> on_abort_;
 };
 
 }  // namespace spdsx

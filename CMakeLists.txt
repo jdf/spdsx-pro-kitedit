@@ -34,6 +34,8 @@ find_package(JUCE CONFIG REQUIRED)
 find_package(specgram CONFIG REQUIRED)
 # The document is a SQLite database (kits, pads, samples-with-audio-blobs).
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+# absl::FunctionRef for non-owning callable arguments.
+find_package(absl CONFIG REQUIRED)
 
 # The document is a single SQLite file (*.spdsx) — no package/UTI needed.
 # DOCUMENT_EXTENSIONS registers it with Finder (double-clicking a .spdsx
@@ -85,6 +87,9 @@ add_library(spdsx_device STATIC
     source/device/spdsx_device.cc
 )
 target_include_directories(spdsx_device PUBLIC source)
+# absl::FunctionRef appears in this lib's public headers (Commit), so PUBLIC
+# — every consumer (app, spdutil, tests, device_sync) gets it transitively.
+target_link_libraries(spdsx_device PUBLIC absl::function_ref)
 
 # The platform's PortBackend — the only part of the device layer that is not
 # portable. Exactly one implementation links; everything else talks to the
