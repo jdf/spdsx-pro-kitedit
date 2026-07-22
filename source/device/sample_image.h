@@ -9,18 +9,25 @@
 // each record, and does not appear anywhere in the state dump; pulling
 // audio needs a transfer protocol that is still uncaptured.
 //
-// Record layout (reverse-engineered 2026-07-12 from the cached image;
-// index verified: record 127 == "Kick ProcElec 28", the sample number
+// Record layout (reverse-engineered 2026-07-12; boundary CORRECTED
+// 2026-07-22 against live file contents — the binary metadata LEADS the
+// record, it does not trail it. The old boundary read each wave's
+// pointer/frames/category out of the previous slot, so every listing row
+// wore the NEXT wave's duration and category: user wave 1604's 15314
+// frames sat at old-rec-1603+0x94, and preload 1585 showed category OFF.
+// Index verified: record 127 == "Kick ProcElec 28", the sample number
 // pad wave assignment uses):
 //   - 164 (0xa4) bytes per record, record N == sample index N
-//   - +0x00 wavename[16]   space-padded ASCII (the display name)
-//   - +0x10 filename[84]   original file name, space-padded
-//   - +0x8c u64 LE         internal-storage pointer (opaque)
-//   - +0x94 u32 LE         length (sample frames; ~48kHz material)
-//   - +0x9c u32 LE         unknown (preloads 273..383, user waves 127)
-//   - +0xa0 u32 LE         category, 0..21 (kSampleCategoryNames)
-// The directory is located by anchoring on the "PRELOAD 00001" record,
-// so any clean image containing bank 0x20 works.
+//   - +0x00 u64 LE         internal-storage pointer (opaque)
+//   - +0x08 u32 LE         length (sample frames, per channel)
+//   - +0x0c u32 LE         unknown
+//   - +0x10 u32 LE         unknown (preloads 273..383, user waves 127)
+//   - +0x14 u32 LE         category, 0..21 (kSampleCategoryNames)
+//   - +0x18 wavename[16]   space-padded ASCII (the display name)
+//   - +0x28 filename[84]   original file name, space-padded
+// The directory is located by anchoring on the "PRELOAD 00001" record
+// (record 1's filename field, at +0x28), so any clean image containing
+// bank 0x20 works.
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_SAMPLE_IMAGE_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_SAMPLE_IMAGE_H_
 

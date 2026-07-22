@@ -8,12 +8,14 @@ namespace spdsx::device {
 
 namespace {
 
-constexpr size_t kWavenameOffset = 0x00;
+// Offsets within a record — the binary metadata LEADS the record (see the
+// header's layout note; the boundary was corrected 2026-07-22).
+constexpr size_t kFramesOffset = 0x08;
+constexpr size_t kCategoryOffset = 0x14;
+constexpr size_t kWavenameOffset = 0x18;
 constexpr size_t kWavenameLen = 16;
-constexpr size_t kFilenameOffset = 0x10;
+constexpr size_t kFilenameOffset = 0x28;
 constexpr size_t kFilenameLen = 84;
-constexpr size_t kFramesOffset = 0x94;
-constexpr size_t kCategoryOffset = 0xa0;
 
 // The record whose filename anchors the directory: sample 1 is always
 // the first preload.
@@ -75,15 +77,18 @@ std::vector<SampleRecord> ParseSampleDir(const Bytes& clean_image) {
   if (anchor == clean_image.end()) {
     return records;
   }
-  // The anchor is record 1's filename field.
-  const size_t rec1 =
-      static_cast<size_t>(anchor - clean_image.begin()) - kFilenameOffset;
-  if (rec1 < kSampleRecordStride) {
+  // The anchor is record 1's filename field. Offsets run from record 1
+  // directly: with the metadata-first boundary, record 1 starts only a
+  // preamble's worth of bytes into the directory, so there may be no
+  // room for a whole record 0 (the sentinel) before it.
+  const size_t anchor_off = static_cast<size_t>(anchor - clean_image.begin());
+  if (anchor_off < kFilenameOffset) {
     return records;
   }
-  const size_t base = rec1 - kSampleRecordStride;
+  const size_t rec1 = anchor_off - kFilenameOffset;
   for (int i = 1; i < kSampleSlots; ++i) {
-    const size_t off = base + static_cast<size_t>(i) * kSampleRecordStride;
+    const size_t off =
+        rec1 + static_cast<size_t>(i - 1) * kSampleRecordStride;
     if (off + kSampleRecordStride > clean_image.size()) {
       break;
     }

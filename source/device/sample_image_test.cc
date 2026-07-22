@@ -35,13 +35,15 @@ void PutRecord(Bytes& image,
                const std::string& filename,
                uint32_t frames,
                uint32_t category) {
+  // Metadata-first layout: frames at +0x08, category at +0x14, then the
+  // name and filename fields (the 2026-07-22 corrected boundary).
   const size_t rec = kJunk + static_cast<size_t>(index) * kSampleRecordStride;
-  std::memcpy(&image[rec], wavename.data(), wavename.size());
-  std::memcpy(&image[rec + 0x10], filename.data(), filename.size());
+  std::memcpy(&image[rec + 0x18], wavename.data(), wavename.size());
+  std::memcpy(&image[rec + 0x28], filename.data(), filename.size());
   for (int b = 0; b < 4; ++b) {
-    image[rec + 0x94 + static_cast<size_t>(b)] =
+    image[rec + 0x08 + static_cast<size_t>(b)] =
         static_cast<uint8_t>(frames >> (8 * b));
-    image[rec + 0xa0 + static_cast<size_t>(b)] =
+    image[rec + 0x14 + static_cast<size_t>(b)] =
         static_cast<uint8_t>(category >> (8 * b));
   }
 }
