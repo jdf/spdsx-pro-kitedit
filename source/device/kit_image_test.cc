@@ -217,6 +217,33 @@ TEST(ParseKits, ReadsEachLayersWaveAsALittleEndianPoolIndex) {
   EXPECT_EQ(kits[128].pads[1].wave_bottom, 0);  // 0 = no sample
 }
 
+// The mix trio sits in the same layer block: volume s16 LE at +0x02
+// (0.1 dB units, negative below 0 dB), fade-in at +0x0d, decay at +0x0e.
+// Located live 2026-07-22 by writing distinctive values over the DT1
+// layer page and finding them in a fresh dump (kit 199, -12.3 dB -> 85 ff).
+TEST(ParseKits, ReadsEachLayersMixTrio) {
+  Bytes image = CleanImage();
+  const size_t layer = RecordAt(128) + kLayerTableBase;  // kit 129 pad 1
+  image[layer + kLayerVolumeLo] = 0x85;  // -123 = -12.3 dB, LE
+  image[layer + kLayerVolumeLo + 1] = 0xff;
+  image[layer + kLayerFadeIn] = 45;
+  image[layer + kLayerDecay] = 67;
+  const size_t bottom = layer + kLayerBlockStride;
+  image[bottom + kLayerVolumeLo] = 0x22;  // +34 = +3.4 dB
+  image[bottom + kLayerFadeIn] = 89;
+  image[bottom + kLayerDecay] = 101;
+
+  const std::vector<KitRecord> kits = ParseKits(image);
+
+  const PadDeviceParams& pad = kits[128].pads[0];
+  EXPECT_EQ(pad.mix_top.volume_db10, -123);
+  EXPECT_EQ(pad.mix_top.fade_in, 45);
+  EXPECT_EQ(pad.mix_top.decay, 67);
+  EXPECT_EQ(pad.mix_bottom.volume_db10, 34);
+  EXPECT_EQ(pad.mix_bottom.fade_in, 89);
+  EXPECT_EQ(pad.mix_bottom.decay, 101);
+}
+
 // Cut between a record's name and its pad table: take the name and leave the
 // pads at their defaults, rather than reading past the end of the image.
 TEST(ParseKits, StopsMidRecordWhenTheImageEndsAfterTheName) {

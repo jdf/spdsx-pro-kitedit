@@ -64,12 +64,24 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       // The layer table: top = layer pad*2, bottom = pad*2 + 1.
       const size_t top = rec + kLayerTableBase
           + static_cast<size_t>(pad) * 2 * kLayerBlockStride;
-      if (top + kLayerBlockStride + 1 < clean_image.size()) {
-        pp.wave_top =
-            static_cast<uint16_t>(clean_image[top] | clean_image[top + 1] << 8);
-        pp.wave_bottom = static_cast<uint16_t>(
-            clean_image[top + kLayerBlockStride]
-            | clean_image[top + kLayerBlockStride + 1] << 8);
+      if (top + 2 * kLayerBlockStride <= clean_image.size()) {
+        auto layer_wave = [&](size_t at) {
+          return static_cast<uint16_t>(clean_image[at]
+                                       | clean_image[at + 1] << 8);
+        };
+        auto layer_mix = [&](size_t at) {
+          PadDeviceParams::LayerMix m;
+          m.volume_db10 = static_cast<int16_t>(
+              clean_image[at + kLayerVolumeLo]
+              | clean_image[at + kLayerVolumeLo + 1] << 8);
+          m.fade_in = clean_image[at + kLayerFadeIn];
+          m.decay = clean_image[at + kLayerDecay];
+          return m;
+        };
+        pp.wave_top = layer_wave(top);
+        pp.wave_bottom = layer_wave(top + kLayerBlockStride);
+        pp.mix_top = layer_mix(top);
+        pp.mix_bottom = layer_mix(top + kLayerBlockStride);
       }
     }
     kits.push_back(std::move(k));

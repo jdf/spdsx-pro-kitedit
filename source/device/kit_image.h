@@ -62,9 +62,15 @@ inline constexpr size_t kPadHiHatDecay = 0x09;
 inline constexpr size_t kPadTrigReserve = 0x13;
 
 // Per-layer table within a kit record; each layer block starts with the
-// wave index (u16 LE).
+// wave index (u16 LE). The mix trio was located live 2026-07-22 by
+// writing distinctive values over the mapped DT1 layer page and finding
+// them in a fresh dump: volume s16 LE at +0x02 (0.1 dB units), fade-in
+// at +0x0d, decay at +0x0e. (Record offsets differ from the DT1 page's.)
 inline constexpr size_t kLayerTableBase = 0x49a;
 inline constexpr size_t kLayerBlockStride = 60;  // 0x3c
+inline constexpr size_t kLayerVolumeLo = 0x02;  // s16 LE, 0.1 dB units
+inline constexpr size_t kLayerFadeIn = 0x0d;
+inline constexpr size_t kLayerDecay = 0x0e;
 
 // Strips the per-block framing (`f0 41 6c 02` + 10-byte header ... `f7`,
 // one per ~64KB block) from a raw bulk dump, yielding the contiguous
@@ -89,6 +95,17 @@ struct PadDeviceParams {
   // Wave (sample pool index) per layer; 0 = no sample.
   uint16_t wave_top = 0;
   uint16_t wave_bottom = 0;
+  // Per-layer mix: volume (s16, 0.1 dB units, 0 = 0.0 dB), fade-in and
+  // decay (0-127, decay 127 = none).
+  struct LayerMix {
+    int16_t volume_db10 = 0;
+    uint8_t fade_in = 0;
+    uint8_t decay = 127;
+
+    bool operator==(const LayerMix&) const = default;
+  };
+  LayerMix mix_top;
+  LayerMix mix_bottom;
 };
 
 // One kit's parsed contents: name plus the nine pads' mapped params.
