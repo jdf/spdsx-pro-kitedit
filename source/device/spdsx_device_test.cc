@@ -642,7 +642,11 @@ TEST_F(SpdsxDeviceTest, UploadWaveEncodesTheWriteLengthAsSeptets) {
 // A real sample is hundreds of KB, and the device caps a write-data frame
 // at 64 KiB: a larger PCM must go as a back-to-back burst of 64 KiB frames
 // with ONE ack (import-large-1.log). Sending it as a single oversized frame
-// wedges the unit — this is the bug the first live upload hit.
+// wedges the unit — this is the bug the first live upload hit. The one ack
+// hinges on the marker byte: 0x00 on continuation frames, 0x40 ("end of
+// write, ack now") only on the last — 0x40 on every chunk makes the device
+// ack every chunk, which desynced the whole rest of the batch (live,
+// 2026-07-22).
 TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
   // 150000 bytes of PCM -> two full 64 KiB frames + an 18928-byte remainder.
   Bytes pcm(150000);
@@ -669,6 +673,7 @@ TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
   // Walk the transport frames packed into that one write and reassemble
   // their data, checking each carries at most 64 KiB.
   Bytes reassembled;
+  Bytes markers;
   size_t frames = 0;
   size_t i = 0;
   while (i + 20 <= burst->size()) {
@@ -678,8 +683,9 @@ TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
         | (*burst)[i + 18] << 16 | (*burst)[i + 19] << 24;
     const Bytes payload(burst->begin() + static_cast<long>(i + 20),
                         burst->begin() + static_cast<long>(i + 20 + len));
-    // payload: f0 41 7a 03 06 | 5 zeros 40 00 <3 septets> <data> | f7
+    // payload: f0 41 7a 03 06 | 5 zeros <marker> 00 <3 septets> <data> | f7
     ASSERT_EQ(payload[4], 0x06);
+    markers.push_back(payload[10]);
     const Bytes data(payload.begin() + 15, payload.end() - 1);
     EXPECT_LE(data.size(), 65536u) << "frame " << frames << " over 64 KiB";
     reassembled.insert(reassembled.end(), data.begin(), data.end());
@@ -688,6 +694,9 @@ TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
   }
   EXPECT_EQ(frames, 3u);  // 64K + 64K + remainder
   EXPECT_EQ(reassembled, pcm);
+  // Continuations carry 0x00; only the final frame carries the 0x40
+  // end-of-write marker that makes the device send its one ack.
+  EXPECT_EQ(markers, Bytes({0x00, 0x00, 0x40}));
 }
 
 // The two directory records are what make the wave visible and assignable.

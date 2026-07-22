@@ -392,15 +392,21 @@ Bytes SeptetBody(uint32_t n) {
   return b;
 }
 
-// A write-data frame body (03/06): 5 zero bytes, the 40 00 marker, the
+// A write-data frame body (03/06): 5 zero bytes, a marker byte, 0x00, the
 // data length as 3 big-endian base-128 (7-bit) septets, then the data.
-// The length encoding was cracked with controlled uploads (2026-07-13):
-// e.g. 8192 -> 00 40 00, 50834 -> 03 0d 12. A wrong length desyncs the
-// device (it reads the wrong number of data bytes) and hangs it.
-Bytes WriteBody(const Bytes& data) {
+// The marker is 0x40 ONLY on the final frame of a write — it means "end of
+// write, ack now", and the device sends ONE ack for the whole write when
+// it sees it; continuation frames of a multi-frame burst carry 0x00 there
+// (import-multi-1.log: 64 KiB frames `00 00 04 00 00`, the final remainder
+// `40 00 ...`). Stamping 0x40 on every chunk, as this used to, made the
+// device ack every chunk and desynced the burst. The length encoding was
+// cracked with controlled uploads (2026-07-13): e.g. 8192 -> 00 40 00,
+// 50834 -> 03 0d 12. A wrong length desyncs the device (it reads the
+// wrong number of data bytes) and hangs it.
+Bytes WriteBody(const Bytes& data, bool final_frame) {
   const uint32_t n = static_cast<uint32_t>(data.size());
   Bytes b(5, 0x00);
-  b.push_back(0x40);
+  b.push_back(final_frame ? 0x40 : 0x00);
   b.push_back(0x00);
   b.push_back(static_cast<uint8_t>((n >> 14) & 0x7F));
   b.push_back(static_cast<uint8_t>((n >> 7) & 0x7F));
@@ -540,10 +546,12 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   };
   // Writes file data in 03/06 frames. The device caps a single write-data
   // frame at 64 KiB of payload, so a larger blob goes as a back-to-back
-  // burst of 64 KiB frames answered by ONE ack — exactly how the official
-  // app writes (import-large-1.log: a 243 KiB sample = three 64 KiB frames
-  // plus the remainder, one write, one ack). A single oversized frame,
-  // which is what we sent before, wedges the unit mid-write.
+  // burst of 64 KiB frames — continuation frames marked 0x00, the final
+  // one 0x40 ("end of write"), which is what makes the device answer the
+  // WHOLE burst with one ack (import-large/import-multi: e.g. a 243 KiB
+  // sample = three 64 KiB frames plus the remainder, one write, one ack).
+  // A single oversized frame wedges the unit mid-write; 0x40 on every
+  // chunk makes the device ack every chunk and desyncs the stream.
   constexpr size_t kMaxWriteChunk = 65536;
   auto write_data = [&](const char* label, const Bytes& data) {
     Bytes burst;
@@ -552,7 +560,8 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
       const Bytes frame = Wrap(FileRequest(
           0x06,
           WriteBody(Bytes(data.begin() + static_cast<long>(off),
-                          data.begin() + static_cast<long>(off + n)))));
+                          data.begin() + static_cast<long>(off + n)),
+                    /*final_frame=*/off + n == data.size())));
       burst.insert(burst.end(), frame.begin(), frame.end());
     }
     port_->Write(burst);
