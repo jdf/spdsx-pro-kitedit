@@ -326,15 +326,20 @@ Bytes OpenWriteBody(const std::string& path) {
   return b;
 }
 
-// Create-entry body (03/18): 8 zeros, the 03 10 marker, then the path
-// null-padded to a fixed 400-byte field.
-Bytes CreateBody(const std::string& path) {
+// Create-entry body (03/18): 8 zeros, the 03 10 marker, then TWO fixed
+// 200-byte fields — the destination `.SMP` path and the working `.TMP`
+// path (import-multi-1.log). An earlier one-400-byte-field version left the
+// .TMP half zero and the file never persisted.
+Bytes CreateBody(const std::string& smp_path, const std::string& tmp_path) {
   Bytes b(8, 0x00);
   b.push_back(0x03);
   b.push_back(0x10);
-  Bytes field(400, 0x00);
-  std::copy(path.begin(), path.end(), field.begin());
-  b.insert(b.end(), field.begin(), field.end());
+  Bytes smp_field(200, 0x00);
+  std::copy(smp_path.begin(), smp_path.end(), smp_field.begin());
+  Bytes tmp_field(200, 0x00);
+  std::copy(tmp_path.begin(), tmp_path.end(), tmp_field.begin());
+  b.insert(b.end(), smp_field.begin(), smp_field.end());
+  b.insert(b.end(), tmp_field.begin(), tmp_field.end());
   return b;
 }
 
@@ -487,22 +492,43 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
     port_->Write(burst);
     trace_ack(label, ReadFrame(3.0));
   };
-  step("begin", ControlFrame(0x09, 1));
+  // The directory of the .SMP (".../WAVE/DATA/D0NN") and its parent
+  // (".../WAVE/DATA"). The official app walks these and mkdir's the D0NN
+  // directory before opening the file, so a directory with no user waves
+  // yet (only preloads, which have no remote files) gets created.
+  const std::string data_dir = dir.substr(0, dir.rfind('/'));
+  // The handle the device returns in a dir (0c) reply, at payload bytes
+  // 4..8, that the following 0d must echo back.
+  auto handle_of = [](const Bytes& ack) {
+    Bytes h(11, 0x00);
+    if (ack.size() >= 9) {
+      std::copy(ack.begin() + 4, ack.begin() + 9, h.begin());
+    }
+    return h;
+  };
+
   step("stat tmp", FileRequest(0x0A, PathBody(tmp_path)));
-  step("create", FileRequest(0x18, CreateBody(smp_path)));
-  const Bytes dack = step("dir", FileRequest(0x0C, PathBody(dir)));
-  Bytes handle(11, 0x00);
-  if (dack.size() >= 9) {
-    std::copy(dack.begin() + 4, dack.begin() + 9, handle.begin());
-  }
-  step("dir handle", FileRequest(0x0D, handle));
+  step("create", FileRequest(0x18, CreateBody(smp_path, tmp_path)));
+  // Navigate + ensure the D0NN directory exists, exactly as the app does.
+  Bytes h = handle_of(step("dir D", FileRequest(0x0C, PathBody(dir))));
+  step("dir DATA", FileRequest(0x0C, PathBody(data_dir)));
+  step("dir 0d", FileRequest(0x0D, h));
+  step("dir D", FileRequest(0x0C, PathBody(dir)));
+  step("mkdir D", FileRequest(0x09, PathBody(dir)));
+  h = handle_of(step("dir D", FileRequest(0x0C, PathBody(dir))));
+  step("dir 0d", FileRequest(0x0D, h));
   step("open write", FileRequest(0x00, OpenWriteBody(smp_path)));
   Bytes seek(11, 0x00);
   seek[8] = 0x04;
   step("seek", FileRequest(0x07, seek));
-  // (The app also issues a 03/19 free-space query on "/SPDSXREMOTE//"
-  // here; its reply isn't consumed and replaying it gets no ack, so we
-  // skip it — the write completes without it.)
+  // Free-space query on the remote root, exactly as the official app issues
+  // before the data write (import-multi-1.log). It appears to stage the file
+  // so the batch's single flash commit captures it — without it, uploads
+  // register metadata but their data never persists. Its reply is a short
+  // off-format frame (16 bytes, 0c-prefixed) our transport doesn't model, so
+  // read and discard exactly those bytes rather than framing them.
+  port_->Write(Wrap(FileRequest(0x19, PathBody("/SPDSXREMOTE//"))));
+  port_->ReadExact(16, 1.0);
   write_data("write pcm", pcm);
   step("seek 0", FileRequest(0x07, Bytes(11, 0x00)));
   write_data("write hdr", header);  // 512 bytes: always one frame
@@ -514,11 +540,12 @@ void SpdsxDevice::RegisterWave(int sample_index,
                                const std::string& wavename,
                                const std::string& filename) {
   // Replays the official app's post-write register sequence (decoded from
-  // synthupload-1.log, 2026-07-13): finalize the temp file, open a register
-  // slot for N, then write two DT1 directory records into the block at
-  // 0x2000000 + N*256 and flash-commit. The name record's 32-bit hash
-  // field is written as 0; the device ignores it (live-verified — a
-  // zero-hash sample registers, measures, and plays normally).
+  // synthupload-1.log + import-multi-1.log): finalize the temp file, open a
+  // register slot for N, then write two DT1 directory records into the block
+  // at 0x2000000 + N*256, with a 15/16 status handshake between them, and a
+  // light 09/0a session finalize. Crucially it does NOT flash-commit here:
+  // the batch commits ONCE at the end (see UploadWave/the caller). The name
+  // record's 32-bit hash field is 0; the device ignores it.
   const std::string smp_path = RemoteWavePath(sample_index);
   const std::string tmp_path = smp_path.substr(0, smp_path.size() - 4) + ".TMP";
 
@@ -542,27 +569,42 @@ void SpdsxDevice::RegisterWave(int sample_index,
         Command(
             Dt1(SampleRecordAddr(sample_index, 0x00), SampleBaseRecord(frames)),
             3.0));
+  trace("status 15", Command(ShortControl(0x15), 3.0));
+  trace("status 16", Command(ShortControl(0x16), 3.0));
   trace("name record",
         Command(Dt1(SampleRecordAddr(sample_index, 0x1B),
                     SampleNameRecord(wavename, filename, /*content_hash=*/0)),
                 3.0));
-  Commit();
+  // Light per-file finalize into working state — NOT a flash commit.
+  trace("finalize 09", Command(ControlFrame(0x09, 1), 3.0));
+  trace("finalize 0a", Command(ShortControl(0x0A), 3.0));
 }
 
 void SpdsxDevice::UploadWave(int sample_index,
                              const Bytes& smp,
                              const std::string& wavename,
                              const std::string& filename) {
-  // The full upload: write the wave file to flash, then register it in the
-  // pool directory (writing without registering leaves an orphan file no
-  // UI can see, so the two are never done separately). `frames` = 16-bit
-  // mono sample count, drives the directory record's size field.
+  // Writes the wave file and registers it in the pool directory (writing
+  // without registering leaves an orphan file no UI can see, so the two are
+  // never done separately). Both land in WORKING state only — the caller
+  // must flash-commit once after the batch (see PrepareUploadBatch/Commit).
+  // Committing per file, as this used to, made the device wedge after a few
+  // uploads (import-multi-1.log: the official app commits the whole batch
+  // once). `frames` = 16-bit mono sample count for the size field.
   if (smp.size() <= kRfwvHeaderSize) {
     throw std::runtime_error("smp too small to have header + PCM");
   }
   const int frames = static_cast<int>((smp.size() - kRfwvHeaderSize) / 2);
   WriteRemoteFile(sample_index, smp);
   RegisterWave(sample_index, frames, wavename, filename);
+}
+
+void SpdsxDevice::PrepareUploadBatch() {
+  // The session-sync the official app issues once before the first upload
+  // (import-multi-1.log preamble): 09/0a primes the remote working
+  // directory. Each RegisterWave repeats it as a per-file finalize.
+  Command(ControlFrame(0x09, 1));
+  Command(ShortControl(0x0A));
 }
 
 Bytes SpdsxDevice::DumpBank(uint8_t bank,

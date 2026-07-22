@@ -76,6 +76,13 @@ public:
                   const std::string& wavename,
                   const std::string& filename);
 
+  // Primes the remote working directory before a run of UploadWave calls
+  // (call once). UploadWave leaves everything in working state; a single
+  // Commit() after the whole batch flushes it to flash. Committing per
+  // file wedges the device after a few uploads — the official app commits
+  // the batch once (import-multi-1.log).
+  void PrepareUploadBatch();
+
   Bytes SelectKit(int kit);
   Bytes SelectObject(ObjectKind kind, int index);
   // Focus (replies; drains) then write the pad-link group (fire-and-forget)

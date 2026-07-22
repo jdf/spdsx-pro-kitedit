@@ -368,17 +368,30 @@ TEST_F(SpdsxDeviceTest, DeleteWaveBracketsTheDeleteInASessionAndCommits) {
 // the device has no opinion about a step arriving out of order until it
 // desyncs. Nothing below is reachable without a port to watch.
 
-// The 18 commands an upload sends. Only two replies are ever read: the
-// directory listing (for its handle) and the commit poll.
+// Replies for the 25 commands one UploadWave sends (no flash commit — the
+// batch commits once, in the caller). The two dir listings carry the
+// handle; the free-space query's reply is a raw 16-byte off-format frame
+// read outside the transport framing.
 void QueueUploadReplies(FakeSerialPort& port, const Bytes& dir_reply) {
-  port.QueueReply({0x7a});  // begin session
-  port.QueueReply({0x7a});  // stat tmp
-  port.QueueReply({0x7a});  // create
-  port.QueueReply(dir_reply);  // dir listing
-  for (int i = 0; i < 13; ++i) {
-    port.QueueReply({0x7a});  // dir handle .. name record, then commit begin
+  port.QueueReply({0x7a});  // 0  stat tmp
+  port.QueueReply({0x7a});  // 1  create
+  port.QueueReply(dir_reply);  // 2  dir D0NN (handle)
+  port.QueueReply({0x7a});  // 3  dir DATA
+  port.QueueReply({0x7a});  // 4  dir 0d
+  port.QueueReply({0x7a});  // 5  dir D0NN
+  port.QueueReply({0x7a});  // 6  mkdir D0NN
+  port.QueueReply(dir_reply);  // 7  dir D0NN (handle)
+  port.QueueReply({0x7a});  // 8  dir 0d
+  port.QueueReply({0x7a});  // 9  open write
+  port.QueueReply({0x7a});  // 10 seek
+  port.QueueRaw(Bytes(16, 0x00));  // 11 free-space reply (raw 16-byte read)
+  port.QueueReply({0x7a});  // 12 write pcm ack
+  port.QueueReply({0x7a});  // 13 seek 0
+  port.QueueReply({0x7a});  // 14 write hdr ack
+  port.QueueReply({0x7a});  // 15 close
+  for (int i = 0; i < 9; ++i) {
+    port.QueueReply({0x7a});  // 16..24 finalize/register/status/name/finalize
   }
-  port.QueueReply(CommitPoll(0x01));  // the commit's poll
 }
 
 // A directory reply carrying a recognisable handle at bytes 4..8.
@@ -400,39 +413,52 @@ TEST_F(SpdsxDeviceTest, UploadWaveRefusesAnSmpWithNoPcm) {
   EXPECT_TRUE(port.writes().empty());  // nothing went out
 }
 
-// Writing without registering leaves an orphan file no UI can see, and
-// neither survives without the commit — so the three are one action.
-TEST_F(SpdsxDeviceTest, UploadWaveWritesTheFileThenRegistersItThenCommits) {
+// The faithful sequence (import-multi-1.log): stat, create, the directory
+// walk that mkdir's the D0NN folder, open, write, close, then register —
+// and crucially NO per-file flash commit (that wedged the device; the batch
+// commits once in the caller).
+TEST_F(SpdsxDeviceTest,
+       UploadWaveWritesTheFileThenRegistersItWithoutCommitting) {
   QueueUploadReplies(port, DirReply());
 
   dev.UploadWave(1587, CapturedSmp(), "B_noise_4096", "B_noise_4096.wav");
 
   const std::vector<Bytes> sent = port.payloads();
-  ASSERT_EQ(sent.size(), 18u);
+  ASSERT_EQ(sent.size(), 25u);
 
-  // The file write, in the capture's order.
-  EXPECT_EQ(sent[0][4], 0x09);  // begin session
-  EXPECT_EQ(sent[1][4], 0x0A);  // stat tmp
-  EXPECT_EQ(sent[2][4], 0x18);  // create
-  EXPECT_EQ(sent[3][4], 0x0C);  // dir
+  // The file write, in the capture's order — including the dir dance.
+  EXPECT_EQ(sent[0][4], 0x0A);  // stat tmp
+  EXPECT_EQ(sent[1][4], 0x18);  // create (two paths)
+  EXPECT_EQ(sent[2][4], 0x0C);  // dir D0NN
+  EXPECT_EQ(sent[3][4], 0x0C);  // dir DATA (parent)
   EXPECT_EQ(sent[4][4], 0x0D);  // dir handle
-  EXPECT_EQ(sent[5][4], 0x00);  // open for write
-  EXPECT_EQ(sent[6][4], 0x07);  // seek
-  EXPECT_EQ(sent[7][4], 0x06);  // write pcm
-  EXPECT_EQ(sent[8][4], 0x07);  // seek back
-  EXPECT_EQ(sent[9][4], 0x06);  // write header
-  EXPECT_EQ(sent[10][4], 0x03);  // close
+  EXPECT_EQ(sent[5][4], 0x0C);  // dir D0NN
+  EXPECT_EQ(sent[6][4], 0x09);  // mkdir D0NN
+  EXPECT_EQ(sent[7][4], 0x0C);  // dir D0NN
+  EXPECT_EQ(sent[8][4], 0x0D);  // dir handle
+  EXPECT_EQ(sent[9][4], 0x00);  // open for write
+  EXPECT_EQ(sent[10][4], 0x07);  // seek
+  EXPECT_EQ(sent[11][4], 0x19);  // free-space query
+  EXPECT_EQ(sent[12][4], 0x06);  // write pcm
+  EXPECT_EQ(sent[13][4], 0x07);  // seek back
+  EXPECT_EQ(sent[14][4], 0x06);  // write header
+  EXPECT_EQ(sent[15][4], 0x03);  // close
 
-  // Then the registration, then the flash commit.
-  EXPECT_EQ(sent[11][4], 0x0A);  // finalize tmp
-  EXPECT_EQ(sent[12][4], 0x0B);
-  EXPECT_EQ(sent[13][4], 0x0C);
-  EXPECT_EQ(sent[16][4], 0x21);  // commit begin
-  EXPECT_EQ(sent[17][4], 0x22);  // commit poll
+  // Then the registration + light finalize, ending on 09/0a, never 21/22.
+  EXPECT_EQ(sent[16][4], 0x0A);  // finalize tmp
+  EXPECT_EQ(sent[17][4], 0x0B);  // register
+  EXPECT_EQ(sent[18][4], 0x0C);
+  EXPECT_EQ(sent[20][4], 0x15);  // status handshake between the DT1 records
+  EXPECT_EQ(sent[21][4], 0x16);
+  EXPECT_EQ(sent[23][4], 0x09);  // light session finalize (not a flash commit)
+  EXPECT_EQ(sent[24][4], 0x0A);
+  for (const Bytes& p : sent) {
+    EXPECT_NE(p[4], 0x21) << "UploadWave must not flash-commit per file";
+  }
 
-  // The file ops go on the remote-file channel, the commit on control.
-  EXPECT_EQ(port.writes()[7][3], 0x06);
-  EXPECT_EQ(port.writes()[16][3], 0x09);
+  // The file ops go on the remote-file channel, control on 0x09.
+  EXPECT_EQ(port.writes()[12][3], 0x06);  // write pcm
+  EXPECT_EQ(port.writes()[17][3], 0x09);  // register (control family)
 }
 
 // The handle is the device's, not ours: it comes back in the dir listing and
@@ -442,8 +468,10 @@ TEST_F(SpdsxDeviceTest, UploadWaveCarriesTheDirHandleIntoTheNextRequest) {
 
   dev.UploadWave(1587, CapturedSmp(), "n", "n.wav");
 
+  // The first dir handle (payload 4) echoes the handle from the dir reply.
   const Bytes handle_req = port.payloads()[4];
   ASSERT_GE(handle_req.size(), 10u);
+  EXPECT_EQ(handle_req[4], 0x0D);
   EXPECT_EQ(Bytes(handle_req.begin() + 5, handle_req.begin() + 10),
             Bytes({0xAA, 0xBB, 0xCC, 0xDD, 0xEE}));
 }
@@ -457,15 +485,15 @@ TEST_F(SpdsxDeviceTest, UploadWaveWritesThePcmThenSeeksBackForTheHeader) {
 
   const std::vector<Bytes> sent = port.payloads();
   // A write body is 5 zeros, the 40 00 marker, three length septets, data.
-  const Bytes pcm_written(sent[7].begin() + 15, sent[7].end() - 1);
+  const Bytes pcm_written(sent[12].begin() + 15, sent[12].end() - 1);
   EXPECT_EQ(pcm_written, Bytes(smp.begin() + kRfwvHeaderSize, smp.end()));
 
-  const Bytes header_written(sent[9].begin() + 15, sent[9].end() - 1);
+  const Bytes header_written(sent[14].begin() + 15, sent[14].end() - 1);
   EXPECT_EQ(header_written, Bytes(smp.begin(), smp.begin() + kRfwvHeaderSize));
-  // The seek before the header returns to the start of the file; the one
-  // before the PCM positions past it. They are not the same seek.
-  EXPECT_EQ(Bytes(sent[8].begin() + 5, sent[8].end() - 1), Bytes(11, 0x00));
-  EXPECT_NE(sent[6], sent[8]);
+  // The seek before the header (13) returns to the start of the file; the
+  // one before the PCM (10) positions past it. They are not the same seek.
+  EXPECT_EQ(Bytes(sent[13].begin() + 5, sent[13].end() - 1), Bytes(11, 0x00));
+  EXPECT_NE(sent[10], sent[13]);
 }
 
 // Three big-endian base-128 septets, cracked with controlled uploads: 8192
@@ -475,11 +503,11 @@ TEST_F(SpdsxDeviceTest, UploadWaveEncodesTheWriteLengthAsSeptets) {
   QueueUploadReplies(port, DirReply());
   dev.UploadWave(1587, CapturedSmp(), "n", "n.wav");
 
-  const Bytes pcm_write = port.payloads()[7];
+  const Bytes pcm_write = port.payloads()[12];
   EXPECT_EQ(Bytes(pcm_write.begin() + 12, pcm_write.begin() + 15),
             Bytes({0x00, 0x40, 0x00}));  // 8192
 
-  const Bytes hdr_write = port.payloads()[9];
+  const Bytes hdr_write = port.payloads()[14];
   EXPECT_EQ(Bytes(hdr_write.begin() + 12, hdr_write.begin() + 15),
             Bytes({0x00, 0x04, 0x00}));  // 512
 }
@@ -544,11 +572,11 @@ TEST_F(SpdsxDeviceTest, UploadWaveRegistersTheDirectoryRecordsForThatIndex) {
 
   const std::vector<Bytes> sent = port.payloads();
   // frames = the PCM's 8192 bytes as 16-bit mono, which the size field wants.
-  EXPECT_EQ(sent[14],
+  EXPECT_EQ(sent[19],
             Dt1(SampleRecordAddr(1587, 0x00), SampleBaseRecord(4096)));
   // The hash field goes out as 0: the device stores it verbatim and ignores
   // it (see SAMPLE-RECORD-HASH.md).
-  EXPECT_EQ(sent[15],
+  EXPECT_EQ(sent[22],
             Dt1(SampleRecordAddr(1587, 0x1B),
                 SampleNameRecord("B_noise_4096", "B_noise_4096.wav", 0)));
 }
@@ -558,7 +586,7 @@ TEST_F(SpdsxDeviceTest, UploadWaveSizesTheRecordFromThePcmLength) {
   // 4096 PCM bytes is 2048 frames, half the captured wave.
   dev.UploadWave(1587, PcmToRfwv(Bytes(4096, 0), 48000, 1, 16), "n", "n.wav");
 
-  EXPECT_EQ(port.payloads()[14],
+  EXPECT_EQ(port.payloads()[19],
             Dt1(SampleRecordAddr(1587, 0x00), SampleBaseRecord(2048)));
 }
 
