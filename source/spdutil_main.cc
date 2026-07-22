@@ -440,8 +440,10 @@ int RunSendWave(const std::string& port_arg,
               index);
 
   // Phase 1: upload every file on the one connection (as the GUI sync
-  // does). No per-file readback: a file read immediately after its own
-  // commit can miss before the flash settles.
+  // does), all into working state, then ONE flash commit — the official
+  // app's batch model. No per-file readback: a file read immediately after
+  // its own commit can miss before the flash settles.
+  dev.PrepareUploadBatch();
   for (size_t i = 0; i < from_paths.size(); ++i) {
     const int idx = index + static_cast<int>(i);
     const auto [wavename, filename] = DeriveWaveNames(
@@ -455,6 +457,12 @@ int RunSendWave(const std::string& port_arg,
                 filename.c_str());
     std::fflush(stdout);
     dev.UploadWave(idx, smps[i], wavename, filename);
+  }
+  std::printf("committing the batch to flash...\n");
+  std::fflush(stdout);
+  if (!dev.Commit()) {
+    std::fprintf(stderr, "commit did not confirm\n");
+    return 1;
   }
 
   // Phase 2: read each back and compare. A wave that didn't persist either
