@@ -507,7 +507,6 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   pw.dp.fade_point = 50;
   kw.pads.push_back(pw);
 
-  port.QueueReply({0x7a});  // the pad focus before the param writes
   port.QueueReply({0x7a});  // commit begin ack
   port.QueueReply(SyncCommitDone());
 
@@ -563,18 +562,22 @@ TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
   upload.wavename = "kick";
   upload.filename = "kick.wav";
 
-  // A push with one upload: batch preamble (2) + UploadWave (25, one of
-  // whose reads is the raw 16-byte free-space reply) + a single batch commit
-  // (2). 13 framed replies land before the free-space raw read, 13 after,
-  // then the commit's begin ack and its done poll.
-  for (int i = 0; i < 13; ++i) {
+  // A push with one upload: the batch preamble query (1) + UploadWave (24
+  // here — the generic replies carry no dir handle, so the mkdir walk runs;
+  // one of its reads is the raw 16-byte free-space fragment followed by its
+  // ack frame) + the import-style commit (4). 14 framed replies land before
+  // the free-space raw read, then its ack and 8 more, then the commit's
+  // begin ack, its two epilogue replies, and the done poll.
+  for (int i = 0; i < 14; ++i) {
     port.QueueReply({0x7a});
   }
-  port.QueueRaw(Bytes(16, 0x00));  // free-space reply
-  for (int i = 0; i < 13; ++i) {
-    port.QueueReply({0x7a});
+  port.QueueRaw(Bytes(16, 0x00));  // free-space fragment...
+  for (int i = 0; i < 9; ++i) {
+    port.QueueReply({0x7a});  // ...its ack frame, then the rest
   }
   port.QueueReply({0x7a});  // commit begin ack
+  port.QueueReply({0x7a});  // commit epilogue 0c
+  port.QueueReply({0x7a});  // commit epilogue 02
   port.QueueReply(SyncCommitDone());  // commit poll: done
 
   std::vector<int> reported;
@@ -586,12 +589,17 @@ TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
       0.0));
 
   EXPECT_EQ(reported, std::vector<int>({1587}));
-  // 2 preamble + 25 upload + 2 commit.
+  // 1 preamble + 24 upload + 4 commit.
   ASSERT_EQ(port.payloads().size(), 29u);
-  EXPECT_EQ(port.payloads()[0][4], 0x09);  // batch preamble session-sync
-  EXPECT_EQ(port.payloads()[1][4], 0x0A);
-  EXPECT_EQ(port.payloads()[2][4], 0x0A);  // upload's stat tmp
-  EXPECT_EQ(port.payloads()[27][4], 0x21);  // the single flash commit begin
+  EXPECT_EQ(port.payloads()[0][4], 0x0D);  // the batch preamble query
+  EXPECT_EQ(port.payloads()[1][4], 0x09);  // the file's session open
+  EXPECT_EQ(port.payloads()[1][15], 0x01);
+  EXPECT_EQ(port.payloads()[2][4], 0x0A);
+  EXPECT_EQ(port.payloads()[3][4], 0x0A);  // upload's stat tmp
+  EXPECT_EQ(port.payloads()[25][4], 0x21);  // the single flash commit begin
+  EXPECT_EQ(port.payloads()[26][4], 0x0C);  // with the import epilogue
+  EXPECT_EQ(port.payloads()[27][4], 0x02);
+  EXPECT_EQ(port.payloads()[28][4], 0x22);
 }
 
 // The whole pipeline: a local file layer plans an upload, substitution

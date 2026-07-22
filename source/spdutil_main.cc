@@ -461,7 +461,7 @@ int RunSendWave(const std::string& port_arg,
   std::printf("committing the batch to flash...\n");
   std::fflush(stdout);
   // Polls until the device reports done, no time limit (Ctrl-C to bail).
-  if (!dev.Commit()) {
+  if (!dev.CommitUploadBatch()) {
     std::fprintf(stderr, "commit did not confirm\n");
     return 1;
   }

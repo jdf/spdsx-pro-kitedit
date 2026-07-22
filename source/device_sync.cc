@@ -444,8 +444,14 @@ bool ExecutePush(device::SpdsxDevice& dev,
     }
   }
   // Everything above (uploads + DT1 writes) is in working state; this single
-  // Commit makes the whole batch durable. Nothing written = nothing to commit.
-  return wrote ? dev.Commit(should_abort) : true;
+  // commit makes the whole batch durable. Nothing written = nothing to
+  // commit. A batch with uploads commits the way the official app ends an
+  // import; kit writes alone commit the way its WRITE button does.
+  if (!wrote) {
+    return true;
+  }
+  return uploads.empty() ? dev.Commit(should_abort)
+                         : dev.CommitUploadBatch(should_abort);
 }
 
 }  // namespace spdsx
