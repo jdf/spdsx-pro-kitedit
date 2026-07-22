@@ -151,11 +151,12 @@ int Usage() {
       "              .wav = converted, else raw .SMP)\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
-      "  sendwave <N> --from F.smp [--name X.wav]\n"
-      "                  upload a wave: write the file AND register it in\n"
-      "                  the pool so it shows in `samples`, then read the\n"
-      "                  file back and report MATCH (writes the pool\n"
-      "                  directory; use a fresh index)\n"
+      "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
+      "                  upload one or more waves on one connection to\n"
+      "                  consecutive indices from N: write each file AND\n"
+      "                  register it in the pool, then read every one back\n"
+      "                  and report MATCH/FAIL (use a fresh index; --name\n"
+      "                  applies only to a single file)\n"
       "  assign [K] --sample N --pad P.S   assign pool sample N to kit K\n"
       "                  (default 1), pad P (1-9), slot S (0 top/1 bottom);\n"
       "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
@@ -381,23 +382,12 @@ int RunReadWave(const std::string& port_arg,
   return smp.empty() ? 1 : 0;
 }
 
-int RunSendWave(const std::string& port_arg,
-                int index,
-                const std::string& from_path,
-                const std::string& name_arg) {
-  if (from_path.empty()) {
-    std::fprintf(stderr, "sendwave needs --from <file.smp>\n");
-    return 2;
-  }
-  const Bytes smp = ReadFile(from_path);
-  if (smp.size() <= 512) {
-    std::fprintf(stderr, "smp too small (%zu bytes)\n", smp.size());
-    return 1;
-  }
-  // Derive the pool names: --name gives the filename field (e.g.
-  // "Kick.wav"); the wavename is that without the extension, capped at 16.
-  // Both default to the source file's basename.
-  std::string filename = name_arg;
+// Derives (wavename, filename) for a pool record from a source path.
+// --name overrides the filename field; the wavename is that without an
+// extension, capped at 16 chars.
+std::pair<std::string, std::string> DeriveWaveNames(
+    const std::string& from_path, const std::string& name_override) {
+  std::string filename = name_override;
   if (filename.empty()) {
     const size_t slash = from_path.find_last_of('/');
     filename =
@@ -411,42 +401,86 @@ int RunSendWave(const std::string& port_arg,
   if (wavename.size() > 16) {
     wavename = wavename.substr(0, 16);
   }
+  return {wavename, filename};
+}
+
+// Uploads one or more `.smp` files to consecutive pool indices starting at
+// `index`, all over a SINGLE device connection — mirroring how the GUI
+// sync pushes a whole kit's samples at once. --name applies only when
+// there is a single file; otherwise each name comes from its own basename.
+int RunSendWave(const std::string& port_arg,
+                int index,
+                const std::vector<std::string>& from_paths,
+                const std::string& name_arg) {
+  if (from_paths.empty()) {
+    std::fprintf(stderr, "sendwave needs --from <file.smp> (repeatable)\n");
+    return 2;
+  }
+  // Read + validate every file before opening the port, so a bad file
+  // fails fast with nothing sent.
+  std::vector<Bytes> smps;
+  smps.reserve(from_paths.size());
+  for (const std::string& path : from_paths) {
+    const Bytes smp = ReadFile(path);
+    if (smp.size() <= 512) {
+      std::fprintf(
+          stderr, "smp too small (%zu bytes): %s\n", smp.size(), path.c_str());
+      return 1;
+    }
+    smps.push_back(smp);
+  }
+
   const std::string port = ResolvePort(port_arg);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
-  std::printf(
-      "opened %s: uploading %zu bytes to index %d as \"%s\" / "
-      "\"%s\"...\n",
-      port.c_str(),
-      smp.size(),
-      index,
-      wavename.c_str(),
-      filename.c_str());
-  dev.UploadWave(index, smp, wavename, filename);
-  std::printf("uploaded; reading back to compare the file...\n");
-  const Bytes back = dev.ReadRemoteWave(index);
-  const bool match = back == smp;
-  if (match) {
-    std::printf(
-        "file MATCH — check the pool with `spdutil samples` and "
-        "`spdutil readwave %d`\n",
-        index);
-    return 0;
+  std::printf("opened %s: uploading %zu file(s) from index %d...\n",
+              port.c_str(),
+              from_paths.size(),
+              index);
+
+  // Phase 1: upload every file on the one connection (as the GUI sync
+  // does). No per-file readback: a file read immediately after its own
+  // commit can miss before the flash settles.
+  for (size_t i = 0; i < from_paths.size(); ++i) {
+    const int idx = index + static_cast<int>(i);
+    const auto [wavename, filename] = DeriveWaveNames(
+        from_paths[i], from_paths.size() == 1 ? name_arg : std::string());
+    std::printf("  [%zu/%zu] index %d <- %zu bytes as \"%s\" / \"%s\"\n",
+                i + 1,
+                from_paths.size(),
+                idx,
+                smps[i].size(),
+                wavename.c_str(),
+                filename.c_str());
+    std::fflush(stdout);
+    dev.UploadWave(idx, smps[i], wavename, filename);
   }
-  size_t first = 0;
-  while (first < back.size() && first < smp.size()
-         && back[first] == smp[first]) {
-    ++first;
+
+  // Phase 2: read each back and compare. A wave that didn't persist either
+  // has no exportable file (ReadRemoteWave throws) or reads back short.
+  std::printf("verifying...\n");
+  int failures = 0;
+  for (size_t i = 0; i < from_paths.size(); ++i) {
+    const int idx = index + static_cast<int>(i);
+    std::printf("  index %d: ", idx);
+    try {
+      const Bytes back = dev.ReadRemoteWave(idx);
+      if (back == smps[i]) {
+        std::printf("MATCH\n");
+      } else {
+        std::printf(
+            "MISMATCH (read %zu of %zu bytes)\n", back.size(), smps[i].size());
+        ++failures;
+      }
+    } catch (const std::exception& e) {
+      std::printf("FAIL (%s)\n", e.what());
+      ++failures;
+    }
   }
   std::printf(
-      "read back %zu bytes (sent %zu); file MISMATCH — first "
-      "differing byte at %zu (%#zx)\n",
-      back.size(),
-      smp.size(),
-      first,
-      first);
-  return 1;
+      "%zu uploaded, %d failed verification\n", from_paths.size(), failures);
+  return failures == 0 ? 0 : 1;
 }
 
 // Parses a "P.S" pad spec: pad 1-9 before the dot, slot after (0 = top,
@@ -831,6 +865,7 @@ int main(int argc, char** argv) {
   std::string out_path;
   std::string verify_path;
   std::string from_path;
+  std::vector<std::string> from_paths;
   std::string name_arg;
   std::string pad_spec;
   std::string params_spec;
@@ -882,6 +917,7 @@ int main(int argc, char** argv) {
         verify_path = next();
       } else if (arg == "--from") {
         from_path = next();
+        from_paths.push_back(from_path);
       } else if (arg == "--name") {
         name_arg = next();
       } else if (arg == "--sample") {
@@ -944,7 +980,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "sendwave needs a target index\n");
         return 2;
       }
-      return RunSendWave(port, kit_arg, from_path, name_arg);
+      return RunSendWave(port, kit_arg, from_paths, name_arg);
     }
     if (command == "assign") {
       return RunAssign(
