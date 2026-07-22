@@ -319,6 +319,18 @@ private:
   };
 
   std::unique_ptr<SyncSession> sync_;
+  // Which stage the sync is in, so the 30 Hz timer feeds the right text
+  // into the progress dialog (kResolving = the conflict dialog is up, so
+  // no progress bar). Message-thread only.
+  enum class SyncPhase {
+    kNone,
+    kReading,
+    kResolving,
+    kPushing
+  };
+  SyncPhase sync_phase_ = SyncPhase::kNone;
+  int sync_pushed_ = 0;  // uploads landed so far this push (drives the bar)
+  int sync_upload_total_ = 0;  // uploads this push will do
   // The unified kit control: arrows, kit menu, in-place rename.
   KitChooser kit_chooser_ {DeviceModel::kKitCount};
   std::unique_ptr<juce::FileChooser> import_chooser_;

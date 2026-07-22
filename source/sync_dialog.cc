@@ -56,19 +56,26 @@ SyncConflictPanel::SyncConflictPanel(std::vector<SyncConflict> conflicts) {
   viewport_.setScrollBarsShown(true, false);
   addAndMakeVisible(viewport_);
 
+  // Close the dialog BEFORE running the callback: the apply path opens the
+  // sync progress dialog, which must not stack on this still-modal window.
+  // Capture the callback by value and defer it so it fires once this window
+  // is gone (CloseDialog may delete `this`).
   apply_.onClick = [this] {
     decided_ = true;
-    if (on_apply) {
-      on_apply(Resolutions());
-    }
+    auto cb = on_apply;
+    auto resolutions = Resolutions();
     CloseDialog();
+    if (cb) {
+      juce::MessageManager::callAsync([cb, resolutions] { cb(resolutions); });
+    }
   };
   cancel_.onClick = [this] {
     decided_ = true;
-    if (on_cancel) {
-      on_cancel();
-    }
+    auto cb = on_cancel;
     CloseDialog();
+    if (cb) {
+      juce::MessageManager::callAsync([cb] { cb(); });
+    }
   };
   addAndMakeVisible(apply_);
   addAndMakeVisible(cancel_);

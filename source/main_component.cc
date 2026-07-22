@@ -870,24 +870,28 @@ void MainComponent::SaveChangesToDevice() {
   }
   commands_.commandStatusChanged();
   UpdateSaveButton();  // disabled while the sync runs
-  device_samples_.SetStatus(
-      juce::String::fromUTF8("sync: reading device state\xe2\x80\xa6"));
+  sync_phase_ = SyncPhase::kReading;
+  auto blocks = std::make_shared<std::atomic<int>>(0);
+  fetch_blocks_ = blocks;
+  ShowProgress("Sync with Device",
+               juce::String::fromUTF8("Reading device state\xe2\x80\xa6"));
   juce::Component::SafePointer<MainComponent> safe(this);
-  std::thread([safe, need_pool] {
+  std::thread([safe, need_pool, blocks] {
     std::vector<device::KitRecord> kits;
     std::vector<device::SampleRecord> pool;
     juce::String error;
+    const auto count = [&blocks](const device::Bytes&) { ++*blocks; };
     try {
       const std::unique_ptr<device::SerialPort> serial =
           device::PlatformPorts().Open(device::FindDevicePort());
       device::SpdsxDevice dev(serial.get());
       kits = device::ParseKits(
-          device::CleanBulkImage(dev.DumpBank(device::kBankKits)));
+          device::CleanBulkImage(dev.DumpBank(device::kBankKits, count)));
       if (kits.empty()) {
         error = "the device's kit data came back empty";
       } else if (need_pool) {
         pool = device::ParseSampleDir(
-            device::CleanBulkImage(dev.DumpBank(device::kBankSamples)));
+            device::CleanBulkImage(dev.DumpBank(device::kBankSamples, count)));
         if (pool.empty()) {
           error = "the device's sample directory came back empty";
         }
@@ -941,8 +945,11 @@ void MainComponent::FinishSyncFetch(std::vector<device::KitRecord> kits,
     RunSyncPush({});
     return;
   }
-  device_samples_.SetStatus(
-      juce::String::fromUTF8("sync: resolving conflicts\xe2\x80\xa6"));
+  // The conflict dialog is itself modal; the progress bar would fight it,
+  // so drop it while the user chooses (RunSyncPush brings it back).
+  sync_phase_ = SyncPhase::kResolving;
+  fetch_blocks_.reset();
+  HideProgress();
   juce::Component::SafePointer<MainComponent> safe(this);
   SyncConflictPanel::Show(
       sync_->conflicts,
@@ -1018,8 +1025,14 @@ void MainComponent::RunSyncPush(
     }
   }
 
-  device_samples_.SetStatus(
-      juce::String::fromUTF8("sync: saving to device\xe2\x80\xa6"));
+  // Now pushing: re-show the bar (the conflict dialog, if any, hid it) and
+  // arm the upload counter the timer reads for its "X of N" line.
+  sync_phase_ = SyncPhase::kPushing;
+  sync_pushed_ = 0;
+  sync_upload_total_ = static_cast<int>(sync_->uploads.size());
+  fetch_blocks_.reset();
+  ShowProgress("Sync with Device",
+               juce::String::fromUTF8("Saving to device\xe2\x80\xa6"));
   juce::Component::SafePointer<MainComponent> safe(this);
   std::thread([safe, uploads = sync_->uploads, writes = std::move(writes)] {
     juce::String error;
@@ -1080,6 +1093,9 @@ void MainComponent::RunSyncPush(
 
 void MainComponent::CancelSync() {
   sync_.reset();
+  sync_phase_ = SyncPhase::kNone;
+  fetch_blocks_.reset();
+  HideProgress();
   device_fetching_ = false;
   commands_.commandStatusChanged();
   UpdateSaveButton();
@@ -1098,11 +1114,14 @@ void MainComponent::OnWaveUploaded(UploadPlan plan,
   // The file has become a device wave everywhere it was assigned; the
   // active kit's slots follow through the model listeners.
   document_.ReplaceFileLayers(plan.file, plan.index);
+  ++sync_pushed_;  // advances the progress bar's "X of N" line
   MarkEdited();
   RefreshDeviceSamples();
 }
 
 void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
+  sync_phase_ = SyncPhase::kNone;
+  HideProgress();
   device_samples_.SetStatus({});
   if (sync_ == nullptr) {
     CancelSync();
@@ -1851,13 +1870,23 @@ void MainComponent::timerCallback() {
 
   PollConnection();
 
-  // Live detail in the progress dialog while a device fetch streams blocks.
-  if (device_fetching_ && fetch_blocks_ != nullptr
-      && progress_dialog_ != nullptr) {
-    const int n = fetch_blocks_->load();
-    progress_dialog_->SetMessage(
-        juce::String::fromUTF8("Reading device state\xe2\x80\xa6\n")
-        + juce::String(n) + (n == 1 ? " block" : " blocks"));
+  // Live detail in the progress dialog. Load Device State and the sync's
+  // read phase both stream blocks (fetch_blocks_); the sync's push phase
+  // reports its upload count instead.
+  if (progress_dialog_ != nullptr) {
+    if (sync_phase_ == SyncPhase::kPushing) {
+      progress_dialog_->SetMessage(
+          sync_upload_total_ > 0 && sync_pushed_ < sync_upload_total_
+              ? juce::String::fromUTF8("Uploading samples\xe2\x80\xa6\n")
+                  + juce::String(sync_pushed_) + " of "
+                  + juce::String(sync_upload_total_)
+              : juce::String::fromUTF8("Writing kit changes\xe2\x80\xa6"));
+    } else if (device_fetching_ && fetch_blocks_ != nullptr) {
+      const int n = fetch_blocks_->load();
+      progress_dialog_->SetMessage(
+          juce::String::fromUTF8("Reading device state\xe2\x80\xa6\n")
+          + juce::String(n) + (n == 1 ? " block" : " blocks"));
+    }
   }
   // Animate the per-slot download throbbers/rings while fetching waves.
   UpdateDownloadIndicators();
