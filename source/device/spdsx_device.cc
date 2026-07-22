@@ -376,8 +376,22 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
   // STAT: reply is f0 41 7a 02 .. 08 <u32 attr> <u32 size> f7; the file
   // size is the second u32 (offset 18).
   const Bytes sr = Command(FileRequest(0x13, Bytes(11, 0x00)));
-  if (sr.size() < 22) {
-    throw std::runtime_error("short STAT reply for " + path);
+  if (std::getenv("SPDSX_TRACE") != nullptr) {
+    std::string hex;
+    char buf[4];
+    for (uint8_t b : sr) {
+      std::snprintf(buf, sizeof(buf), "%02x ", b);
+      hex += buf;
+    }
+    std::fprintf(
+        stderr, "  STAT reply (%zu bytes): %s\n", sr.size(), hex.c_str());
+  }
+  // A data reply is f0 41 7a 02 ...; some factory preloads have no
+  // exportable file and answer STAT with a 7a error reply (f0 41 7a 7a
+  // 7f 7f 7f 7f 7f ...) instead, which is short and not readable.
+  if (sr.size() < 22 || sr[3] != 0x02) {
+    throw std::runtime_error("wave " + std::to_string(sample_index)
+                             + " has no exportable file (preload?): " + path);
   }
   const uint32_t size = static_cast<uint32_t>(sr[18])
       | static_cast<uint32_t>(sr[19]) << 8 | static_cast<uint32_t>(sr[20]) << 16

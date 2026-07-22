@@ -699,6 +699,32 @@ Bytes StatReply(uint32_t size) {
   return r;
 }
 
+// Some factory preloads have no exportable file: OPEN succeeds but the
+// device answers STAT with a 7a error reply (f0 41 7a 7a 7f...), not the
+// 02 data reply. That must be a clean throw, not a misread size — a
+// download batch skips such a wave and moves on (device 900, live).
+TEST_F(SpdsxDeviceTest, ReadRemoteWaveRejectsAWaveWithNoExportableFile) {
+  port.QueueReply(FileAck());  // OPEN succeeds
+  // The 7a STAT error the device sends for a non-exportable preload.
+  port.QueueReply({0xF0,
+                   0x41,
+                   0x7A,
+                   0x7A,
+                   0x7F,
+                   0x7F,
+                   0x7F,
+                   0x7F,
+                   0x7F,
+                   0x00,
+                   0x00,
+                   0x00,
+                   0x00,
+                   0x02,
+                   0xF7});
+
+  EXPECT_THROW(dev.ReadRemoteWave(900, {}, 0.01), std::runtime_error);
+}
+
 TEST_F(SpdsxDeviceTest, ReadRemoteWaveOpensTheWavesOwnPath) {
   port.QueueReply(FileAck());  // open
   port.QueueReply(StatReply(4));
