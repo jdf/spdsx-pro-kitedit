@@ -39,6 +39,10 @@ constexpr int kPedalHeight = kRowGap + kRowHeight + (kRowGap + kKnobHeight) * 3;
 constexpr double kMinVolumeDb = -60.0;
 constexpr double kMaxVolumeDb = 12.0;
 
+// What a knob's value means, and therefore its range and display: a plain
+// 0-127 device value, or decibels with a tenth's precision.
+enum class ControlMode { kLinear, kDecibels };
+
 }  // namespace
 
 PadSettingsPanel::PadSettingsPanel() {
@@ -89,10 +93,10 @@ PadSettingsPanel::PadSettingsPanel() {
     addAndMakeVisible(m.heading);
     auto init_mix_knob = [this](juce::Slider& knob,
                                 juce::Label& label,
-                                bool db,
+                                ControlMode mode,
                                 double default_value) {
       knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-      if (db) {
+      if (mode == ControlMode::kDecibels) {
         knob.setRange(kMinVolumeDb, kMaxVolumeDb, 0.1);
         knob.setNumDecimalPlacesToDisplay(1);
       } else {
@@ -108,10 +112,14 @@ PadSettingsPanel::PadSettingsPanel() {
       addAndMakeVisible(label);
       addAndMakeVisible(knob);
     };
+    init_mix_knob(m.volume,
+                  m.volume_label,
+                  ControlMode::kDecibels,
+                  kDefaultLayerVolumeDb10 / 10.0);
     init_mix_knob(
-        m.volume, m.volume_label, /*db=*/true, kDefaultLayerVolumeDb10 / 10.0);
-    init_mix_knob(m.fade_in, m.fade_label, /*db=*/false, kDefaultLayerFadeIn);
-    init_mix_knob(m.decay, m.decay_label, /*db=*/false, kDefaultLayerDecay);
+        m.fade_in, m.fade_label, ControlMode::kLinear, kDefaultLayerFadeIn);
+    init_mix_knob(
+        m.decay, m.decay_label, ControlMode::kLinear, kDefaultLayerDecay);
   }
 
   pedal_heading_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
