@@ -577,10 +577,16 @@ void SpdsxDevice::RegisterWave(int sample_index,
             3.0));
   trace("status 15", Command(ShortControl(0x15), 3.0));
   trace("status 16", Command(ShortControl(0x16), 3.0));
+  // The name record is a DT1 the device does NOT ack — the official app
+  // writes it and moves straight to the finalize (import-multi-1.log).
+  // Command-waiting 3s for a reply that never comes cost 3s PER FILE. A
+  // short timeout still drains any stray/delayed frame (keeping the stream
+  // aligned) without the long wait. (The base record above rides on a
+  // delayed frame from the register step, so it keeps its full Command.)
   trace("name record",
         Command(Dt1(SampleRecordAddr(sample_index, 0x1B),
                     SampleNameRecord(wavename, filename, /*content_hash=*/0)),
-                3.0));
+                0.3));
   // Light per-file finalize into working state — NOT a flash commit.
   trace("finalize 09", Command(ControlFrame(0x09, 1), 3.0));
   trace("finalize 0a", Command(ShortControl(0x0A), 3.0));
