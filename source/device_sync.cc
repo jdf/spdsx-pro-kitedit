@@ -404,13 +404,19 @@ bool ExecutePush(device::SpdsxDevice& dev,
                  const std::function<void(const SmpUpload&)>& on_uploaded,
                  double pace_seconds,
                  double commit_timeout_seconds) {
-  for (const SmpUpload& u : uploads) {
-    dev.UploadWave(u.index, u.smp, u.wavename, u.filename);
-    if (on_uploaded) {
-      on_uploaded(u);
+  // Uploads and kit writes all land in working state; ONE Commit at the end
+  // flushes the whole batch to flash. Per-file commits wedge the device.
+  bool wrote = false;
+  if (!uploads.empty()) {
+    dev.PrepareUploadBatch();
+    wrote = true;
+    for (const SmpUpload& u : uploads) {
+      dev.UploadWave(u.index, u.smp, u.wavename, u.filename);
+      if (on_uploaded) {
+        on_uploaded(u);
+      }
     }
   }
-  bool wrote = false;
   for (const KitWrite& kw : kits) {
     if (kw.name) {
       dev.SetKitName(kw.kit, kw.kit_name, pace_seconds);
@@ -439,8 +445,8 @@ bool ExecutePush(device::SpdsxDevice& dev,
       }
     }
   }
-  // The DT1 writes above land in working state; the Commit is what makes
-  // them durable. Nothing written = nothing to commit.
+  // Everything above (uploads + DT1 writes) is in working state; this single
+  // Commit makes the whole batch durable. Nothing written = nothing to commit.
   return wrote ? dev.Commit(commit_timeout_seconds) : true;
 }
 

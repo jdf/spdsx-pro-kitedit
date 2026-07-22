@@ -560,12 +560,19 @@ TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
   upload.wavename = "kick";
   upload.filename = "kick.wav";
 
-  // The upload's 18 commands (see the UploadWave suite), only the commit
-  // poll of which is inspected here.
-  for (int i = 0; i < 17; ++i) {
+  // A push with one upload: batch preamble (2) + UploadWave (25, one of
+  // whose reads is the raw 16-byte free-space reply) + a single batch commit
+  // (2). 13 framed replies land before the free-space raw read, 13 after,
+  // then the commit's begin ack and its done poll.
+  for (int i = 0; i < 13; ++i) {
     port.QueueReply({0x7a});
   }
-  port.QueueReply(SyncCommitDone());
+  port.QueueRaw(Bytes(16, 0x00));  // free-space reply
+  for (int i = 0; i < 13; ++i) {
+    port.QueueReply({0x7a});
+  }
+  port.QueueReply({0x7a});  // commit begin ack
+  port.QueueReply(SyncCommitDone());  // commit poll: done
 
   std::vector<int> reported;
   EXPECT_TRUE(ExecutePush(
@@ -576,8 +583,12 @@ TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
       0.0));
 
   EXPECT_EQ(reported, std::vector<int>({1587}));
-  ASSERT_EQ(port.payloads().size(), 18u);
-  EXPECT_EQ(port.payloads()[0][4], 0x09);  // the upload session begin
+  // 2 preamble + 25 upload + 2 commit.
+  ASSERT_EQ(port.payloads().size(), 29u);
+  EXPECT_EQ(port.payloads()[0][4], 0x09);  // batch preamble session-sync
+  EXPECT_EQ(port.payloads()[1][4], 0x0A);
+  EXPECT_EQ(port.payloads()[2][4], 0x0A);  // upload's stat tmp
+  EXPECT_EQ(port.payloads()[27][4], 0x21);  // the single flash commit begin
 }
 
 // The whole pipeline: a local file layer plans an upload, substitution
