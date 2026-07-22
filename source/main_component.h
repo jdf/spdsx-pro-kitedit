@@ -297,6 +297,9 @@ private:
   // Header connection light + its polling state.
   ConnectionDot connection_dot_;
   std::atomic<bool> device_connected_ {false};
+  // The unit's firmware version, read once per connection (message
+  // thread only); shown in bug reports.
+  juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};
   juce::uint32 last_conn_check_ms_ = 0;
   // Follow-the-app kit selection on the unit: the pending 1-based kit

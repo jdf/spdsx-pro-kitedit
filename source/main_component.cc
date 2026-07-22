@@ -7,9 +7,11 @@
 #include <thread>
 
 #include "actions.h"
+#include "app_log.h"
 #include "commands.h"
 #include "device/kit_image.h"
 #include "device/spdsx_device.h"
+#include "feedback_dialog.h"
 #include "sample_upload.h"
 #include "spectro.h"
 #include "sync_dialog.h"
@@ -277,6 +279,7 @@ void MainComponent::OpenLastDocument() {
 
 void MainComponent::OpenDocument(const juce::File& file) {
   if (const auto r = document_.OpenDevice(file); r.failed()) {
+    AppLog::Note("open document failed: " + r.getErrorMessage());
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon,
         "Open a device",
@@ -301,7 +304,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kDownloadKitSamples,
                 commands::kSaveToDevice,
                 commands::kToggleBrowser,
-                commands::kToggleAutoplay});
+                commands::kToggleAutoplay,
+                commands::kSendFeedback});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id,
@@ -386,6 +390,12 @@ void MainComponent::getCommandInfo(juce::CommandID id,
                    0);
       info.setTicked(
           settings_.getUserSettings()->getBoolValue("autoplayBrowsing", false));
+      break;
+    case commands::kSendFeedback:
+      info.setInfo(juce::String::fromUTF8("Report a Bug or Send Feedback…"),
+                   "File a report straight from the app — no account needed",
+                   "Help",
+                   0);
       break;
     default:
       break;
@@ -491,6 +501,23 @@ bool MainComponent::perform(const InvocationInfo& info) {
         engine_.StopPreview();
       }
       commands_.commandStatusChanged();  // refresh the menu tick
+      return true;
+    }
+    case commands::kSendFeedback: {
+      BugReport seed;
+      auto* app = juce::JUCEApplication::getInstance();
+      seed.app_version =
+          app != nullptr ? app->getApplicationVersion() : juce::String("dev");
+      seed.os = juce::SystemStats::getOperatingSystemName();
+      seed.device = DeviceConnected()
+          ? "connected"
+              + (device_firmware_.isNotEmpty()
+                     ? ", firmware " + device_firmware_
+                     : juce::String())
+          : juce::String("not connected");
+      seed.document =
+          "schema v" + juce::String(DeviceDb::kCurrentSchemaVersion);
+      FeedbackPanel::Show(std::move(seed));
       return true;
     }
     default:
@@ -623,10 +650,13 @@ void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
   HideProgress();
   commands_.commandStatusChanged();
   if (error.isNotEmpty()) {
+    AppLog::Note("load device state failed: " + error);
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon, "Load Device State", error);
     return;
   }
+  AppLog::Note("load device state ok: " + juce::String(kits.size())
+               + " kits, " + juce::String(pool.size()) + " pool records");
   document_.ReplaceWithDeviceState(kits, std::move(pool));
   MarkEdited();
   RefreshKitSelector();
@@ -831,22 +861,29 @@ void MainComponent::PollConnection() {
   std::thread([safe, was_connected] {
     bool connected = false;
     int device_kit = 0;  // 1-based; 0 = not read
+    juce::String firmware;
     try {
       const std::string path = device::FindDevicePort();
       connected = !path.empty();
       // On the way from disconnected to connected (app launch included),
-      // learn the unit's active kit so the app can open on it. Steady-
-      // state polls stay a cheap ping.
+      // learn the unit's active kit (so the app can open on it) and its
+      // firmware (for the header of a bug report). Steady-state polls
+      // stay a cheap ping.
       if (connected && !was_connected) {
         const std::unique_ptr<device::SerialPort> serial =
             device::PlatformPorts().Open(path);
         device::SpdsxDevice dev(serial.get());
         device_kit = dev.CurrentKit();
+        firmware = juce::String(dev.FirmwareField(0));
+        const std::string build = dev.FirmwareField(3);
+        if (!build.empty()) {
+          firmware << " (" << juce::String(build) << ")";
+        }
       }
     } catch (const std::exception&) {
       connected = false;  // no node, or nothing answered
     }
-    juce::MessageManager::callAsync([safe, connected, device_kit] {
+    juce::MessageManager::callAsync([safe, connected, device_kit, firmware] {
       if (safe == nullptr) {
         return;
       }
@@ -857,8 +894,16 @@ void MainComponent::PollConnection() {
         safe->commands_.commandStatusChanged();  // re-enable device menu items
         safe->UpdateTransferButton();
         safe->UpdateSaveButton();  // enable/disable with connection
-        if (connected && device_kit > 0) {
-          safe->AdoptKit(device_kit - 1);  // follow the unit, no echo back
+        if (connected) {
+          safe->device_firmware_ = firmware;
+          AppLog::Note("device connected, firmware "
+                       + (firmware.isEmpty() ? "?" : firmware) + ", kit "
+                       + juce::String(device_kit));
+          if (device_kit > 0) {
+            safe->AdoptKit(device_kit - 1);  // follow the unit, no echo back
+          }
+        } else {
+          AppLog::Note("device disconnected");
         }
       }
     });
@@ -891,6 +936,8 @@ void MainComponent::SaveChangesToDevice() {
     UpdateSaveButton();
     return;
   }
+  AppLog::Note("sync started: " + juce::String(dirty.size())
+               + " dirty kit(s)");
   // Uploads need a trustworthy picture of which pool indices are free,
   // so a sync that will upload also re-reads the pool directory.
   bool need_pool = false;
@@ -1178,6 +1225,9 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
     return;
   }
   if (error.isNotEmpty() || !committed) {
+    AppLog::Note("sync push failed: "
+                 + (error.isNotEmpty() ? error
+                                       : juce::String("commit unconfirmed")));
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon,
         "Save Changes to Device",
@@ -1191,6 +1241,8 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
     CancelSync();
     return;
   }
+  AppLog::Note("sync push committed: " + juce::String(sync_->landed.size())
+               + " upload(s) landed");
   // The commit confirmed: now record every landed upload (pool entry +
   // cached audio) and advance the kits. ApplySyncedKit installs the
   // device-wave layers the plan already substituted.

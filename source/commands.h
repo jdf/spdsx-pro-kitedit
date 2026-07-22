@@ -20,6 +20,7 @@ enum : juce::CommandID {
   kSaveToDevice,
   kToggleBrowser,
   kToggleAutoplay,
+  kSendFeedback,
 };
 
 }  // namespace spdsx::commands

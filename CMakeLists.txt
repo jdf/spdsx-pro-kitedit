@@ -47,11 +47,14 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit"
     DOCUMENT_EXTENSIONS spdsx)
 
 target_sources(spdsx-patchedit PRIVATE
+    source/app_log.cc
     source/audio.cc
+    source/bug_report.cc
     source/device_db.cc
     source/device_document.cc
     source/device_samples.cc
     source/device_sync.cc
+    source/feedback_dialog.cc
     source/kit_chooser.cc
     source/layers.cc
     source/main.cc
@@ -129,6 +132,8 @@ if(SPDSX_TESTS)
     target_sources(spdsx_tests PRIVATE
         testing/juce_test_environment.cc
         source/actions_test.cc
+        source/app_log_test.cc
+        source/bug_report_test.cc
         source/device/kit_image_test.cc
         source/device/protocol_test.cc
         source/device/sample_image_test.cc
@@ -143,11 +148,14 @@ if(SPDSX_TESTS)
     )
     # The production translation units under test.
     target_sources(spdsx_tests PRIVATE
+        source/app_log.cc
         source/audio.cc
+        source/bug_report.cc
         source/device_db.cc
         source/device_document.cc
         source/device_samples.cc
         source/device_sync.cc
+        source/feedback_dialog.cc
         source/kit_chooser.cc
         source/layers.cc
         source/main_component.cc
