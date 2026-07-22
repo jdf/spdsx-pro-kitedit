@@ -40,6 +40,7 @@
 #include "device/protocol.h"
 #include "device/sample_image.h"
 #include "device/spdsx_device.h"
+#include "layers.h"
 
 namespace {
 
@@ -155,6 +156,11 @@ int Usage() {
       "                  to persist\n"
       "  selectkit <N>   switch the device's playback kit (1-200)\n"
       "  currentkit      print the device's active kit\n"
+      "  setmode --mode M [--if-mode M] [--range A[-B]] [--dry-run]\n"
+      "                  set every pad's layer mode in the given kits\n"
+      "                  (names: MIX FADE1 FADE2 XFADE SWITCH SW(MONO)\n"
+      "                  ALTERNATE HI-HAT); --if-mode touches only pads\n"
+      "                  currently in that mode; --commit to persist\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
       "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
@@ -741,6 +747,130 @@ int RunSetLayer(const SetLayerArgs& args) {
   return 0;
 }
 
+struct SetModeArgs {
+  std::string port;
+  std::string mode;  // target layer mode name (MIX, FADE1, ... HI-HAT)
+  std::string if_mode;  // only touch pads currently in this mode; "" = any
+  std::vector<KitRange> ranges;  // default: all kits
+  bool dry_run = false;
+  bool commit = false;
+};
+
+// Sets the layer mode of every pad in the given kits, optionally only
+// pads currently in --if-mode. Reads the kits bank first, so untouched
+// pads stay exactly as they are, then writes one DT1 per changed pad.
+int RunSetMode(const SetModeArgs& args) {
+  using spdsx::LayerMode;
+  const auto parse_mode = [](const std::string& name, LayerMode* out) {
+    const LayerMode m = spdsx::ParseLayerMode(name, LayerMode::kMix);
+    if (spdsx::LayerModeName(m) != name) {
+      return false;
+    }
+    *out = m;
+    return true;
+  };
+  LayerMode target = LayerMode::kMix;
+  if (!parse_mode(args.mode, &target)) {
+    std::fprintf(stderr,
+                 "setmode needs --mode of MIX, FADE1, FADE2, XFADE, SWITCH, "
+                 "SW(MONO), ALTERNATE or HI-HAT\n");
+    return 2;
+  }
+  LayerMode only = LayerMode::kMix;
+  const bool filtered = !args.if_mode.empty();
+  if (filtered && !parse_mode(args.if_mode, &only)) {
+    std::fprintf(stderr, "bad --if-mode \"%s\"\n", args.if_mode.c_str());
+    return 2;
+  }
+  std::vector<KitRange> ranges = args.ranges;
+  if (ranges.empty()) {
+    ranges.push_back({1, 200});
+  }
+
+  const std::string port = ResolvePort(args.port);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
+  std::printf("opened %s, reading the kits bank...\n", port.c_str());
+  const auto kits = spdsx::device::ParseKits(
+      spdsx::device::CleanBulkImage(dev.DumpBank(spdsx::device::kBankKits)));
+  if (kits.empty()) {
+    std::fprintf(stderr, "couldn't read the kits bank\n");
+    return 1;
+  }
+
+  struct Change {
+    int kit;  // 1-based
+    int pad;  // 1-based
+    LayerMode from;
+  };
+  std::vector<Change> plan;
+  for (const KitRange& r : ranges) {
+    for (int kit = r.first; kit <= r.last; ++kit) {
+      if (static_cast<size_t>(kit) > kits.size()) {
+        break;
+      }
+      const auto& rec = kits[static_cast<size_t>(kit - 1)];
+      for (int pad = 1; pad <= 9; ++pad) {
+        const auto cur = static_cast<LayerMode>(std::clamp(
+            static_cast<int>(rec.pads[static_cast<size_t>(pad - 1)].layer_mode),
+            0,
+            spdsx::kLayerModeCount - 1));
+        if (cur == target || (filtered && cur != only)) {
+          continue;
+        }
+        plan.push_back({.kit = kit, .pad = pad, .from = cur});
+      }
+    }
+  }
+  std::printf("%zu pad(s) to set to %s%s\n",
+              plan.size(),
+              args.mode.c_str(),
+              args.dry_run ? " (dry run, nothing sent)" : "");
+  if (args.dry_run || plan.empty()) {
+    return 0;
+  }
+
+  // Focus once per pad number (the write address is kit-absolute), then
+  // stream the one-byte mode writes.
+  constexpr double kPace = 0.02;
+  int focused = 0;
+  for (int pad = 1; pad <= 9; ++pad) {
+    bool any = false;
+    for (const Change& c : plan) {
+      if (c.pad != pad) {
+        continue;
+      }
+      if (!any) {
+        dev.SelectObject(spdsx::device::ObjectKind::kPad, pad);
+        std::this_thread::sleep_for(std::chrono::duration<double>(kPace));
+        any = true;
+        ++focused;
+      }
+      dev.Send(spdsx::device::Dt1(
+          spdsx::device::PadParamAddr({.kit = c.kit, .pad = c.pad}, 0x00),
+          {static_cast<uint8_t>(target)}));
+      std::this_thread::sleep_for(std::chrono::duration<double>(kPace));
+    }
+    std::printf("\r  pad %d/9 done", pad);
+    std::fflush(stdout);
+  }
+  std::printf("\n");
+  (void)focused;
+  if (args.commit) {
+    std::printf("committing to flash...\n");
+    if (!dev.Commit()) {
+      std::fprintf(stderr, "commit did not confirm\n");
+      return 1;
+    }
+  } else {
+    dev.Ping();  // delivery barrier for the fire-and-forget tail
+    std::printf("working state only (power cycle reverts; --commit to keep)\n");
+  }
+  std::printf("done\n");
+  return 0;
+}
+
 int RunCurrentKit(const std::string& port_arg) {
   const std::string port = ResolvePort(port_arg);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
@@ -1019,6 +1149,8 @@ int main(int argc, char** argv) {
   int sample_arg = -1;
   int pad_num = 0;
   int kit_arg = 0;
+  std::string mode_arg;
+  std::string if_mode_arg;
   double volume_arg = 0.0;
   bool have_volume = false;
   int fadein_arg = 0;
@@ -1075,6 +1207,10 @@ int main(int argc, char** argv) {
         sample_arg = std::atoi(next().c_str());
       } else if (arg == "--params") {
         params_spec = next();
+      } else if (arg == "--mode") {
+        mode_arg = next();
+      } else if (arg == "--if-mode") {
+        if_mode_arg = next();
       } else if (arg == "--volume") {
         volume_arg = std::atof(next().c_str());
         have_volume = true;
@@ -1149,6 +1285,14 @@ int main(int argc, char** argv) {
     }
     if (command == "currentkit") {
       return RunCurrentKit(port);
+    }
+    if (command == "setmode") {
+      return RunSetMode({.port = port,
+                         .mode = mode_arg,
+                         .if_mode = if_mode_arg,
+                         .ranges = ranges,
+                         .dry_run = dry_run,
+                         .commit = commit_flag});
     }
     if (command == "deletewave") {
       if (kit_arg <= 0) {

@@ -108,7 +108,7 @@ endif()
 # spdutil: CLI for the device — ping/info/dump/kits/samples, the wave
 # read/write ops, and padlink. The protocol itself is verified by the
 # source/device/*_test.cc suites, byte-for-byte against the captures.
-add_executable(spdutil source/spdutil_main.cc)
+add_executable(spdutil source/spdutil_main.cc source/layers.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
 
 # ---- Unit tests & coverage ----
