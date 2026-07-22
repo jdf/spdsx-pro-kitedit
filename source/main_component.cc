@@ -1377,6 +1377,19 @@ void MainComponent::resized() {
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
+  // Delete/Backspace clears the layer under the cursor (same edit as the
+  // slot's right-click Clear). The 30 Hz hover poll keeps hovered_ current.
+  if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
+    if (hovered_ >= 0 && hovered_ < kSlotCount
+        && slots_[static_cast<size_t>(hovered_)]->has_sample()) {
+      undo().beginNewTransaction("Clear layer");
+      undo().perform(new SetSampleAction(model_,
+                                         hovered_ / KitModel::kLayersPerPad,
+                                         hovered_ % KitModel::kLayersPerPad,
+                                         LayerSample()));
+    }
+    return true;
+  }
   if (key == juce::KeyPress::spaceKey) {
     // OS auto-repeat re-sends keyPressed while held; only the first
     // press of a trigger key plays (a drummer holding a stick down
