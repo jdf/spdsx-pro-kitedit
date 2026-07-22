@@ -106,6 +106,9 @@ public:
 
   // Kit/object selects are DT1 writes like any other: fire-and-forget, no
   // ack to wait for (waiting for one was a hidden 0.4s stall per call).
+  // CAUTION: if the port will close right after, follow the send with any
+  // round trip (Ping is the cheap one) — closing a CDC port can kill an
+  // in-flight write, and tcdrain does not save it (live, 2026-07-22).
   void SelectKit(int kit);
   void SelectObject(ObjectKind kind, int index);
   // Focus the object, then write the pad-link group for a specific kit;

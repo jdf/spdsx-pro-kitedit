@@ -149,6 +149,7 @@ int Usage() {
       "              directory only — the dump carries no audio)\n"
       "  readwave <N> read wave N's audio off the device (--out FILE:\n"
       "              .wav = converted, else raw .SMP)\n"
+      "  selectkit <N>   switch the device's playback kit (1-200)\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
       "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
@@ -650,6 +651,22 @@ int RunSetName(const std::string& port_arg,
   return 0;
 }
 
+int RunSelectKit(const std::string& port_arg, int kit) {
+  // Deliberately the app's kit-follow shape in miniature: open, one
+  // fire-and-forget DT1, close. The write must survive the close (the
+  // port drains before closing) or the unit never sees it.
+  const std::string port = ResolvePort(port_arg);
+  const std::unique_ptr<spdsx::device::SerialPort> serial =
+      spdsx::device::PlatformPorts().Open(port);
+  spdsx::device::SpdsxDevice dev(serial.get());
+  std::printf("opened %s, selecting kit %d...\n", port.c_str(), kit);
+  dev.SelectKit(kit);
+  // A same-connection barrier: the ping's round trip proves the select was
+  // delivered and gives the device time to act before the port closes.
+  dev.Ping();
+  return 0;
+}
+
 int RunDeleteWave(const std::string& port_arg, int index) {
   const std::string port = ResolvePort(port_arg);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
@@ -976,6 +993,13 @@ int main(int argc, char** argv) {
         return 2;
       }
       return RunReadWave(port, kit_arg, out_path);
+    }
+    if (command == "selectkit") {
+      if (kit_arg <= 0) {
+        std::fprintf(stderr, "selectkit needs a kit number (1-200)\n");
+        return 2;
+      }
+      return RunSelectKit(port, kit_arg);
     }
     if (command == "deletewave") {
       if (kit_arg <= 0) {

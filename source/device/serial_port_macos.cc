@@ -104,6 +104,10 @@ MacOSSerialPort::MacOSSerialPort(const std::string& path, int baud) {
 
 MacOSSerialPort::~MacOSSerialPort() {
   if (fd_ >= 0) {
+    // close() on a tty may discard untransmitted output, and a
+    // fire-and-forget write (kit-select is one) can be microseconds old
+    // when the port closes — drain first so it reaches the device.
+    ::tcdrain(fd_);
     ::close(fd_);
   }
 }

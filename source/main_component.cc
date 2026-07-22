@@ -788,6 +788,10 @@ void MainComponent::SyncDeviceKit() {
         sent = want;
         dev.SelectKit(want);
       }
+      // The select is fire-and-forget and closing a CDC port can kill an
+      // in-flight write (tcdrain doesn't help; live-verified 2026-07-22).
+      // The ping's round trip proves delivery before the port closes.
+      dev.Ping();
     } catch (const std::exception&) {
       // The device went away, or the port was busy: the unit just doesn't
       // follow this time. The next switch (or a reconnect) tries again.
