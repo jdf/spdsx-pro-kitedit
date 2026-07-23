@@ -23,7 +23,7 @@ Environment variables (Vercel dashboard ▸ Settings ▸ Environment Variables):
 | var | required | meaning |
 | --- | --- | --- |
 | `GITHUB_TOKEN` | yes | fine-grained PAT scoped to ONE repo, permission Issues: read/write, nothing else |
-| `GITHUB_REPO` | no | target repo, default `jdf/spdsx-patchedit` |
+| `GITHUB_REPO` | no | target repo, default `jdf/spdsx-pro-kitedit` |
 | `REPORT_SECRET` | no | if set, requests must carry it in `x-report-secret`; deters drive-by scanners (it ships inside the app binary, so it is a filter, not a lock) |
 
 After the first deploy, point the app at the real URL: the endpoint

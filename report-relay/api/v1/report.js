@@ -96,7 +96,7 @@ module.exports = async (req, res) => {
     return res.status(400).json({error: 'report too large'});
   }
 
-  const repo = process.env.GITHUB_REPO || 'jdf/spdsx-patchedit';
+  const repo = process.env.GITHUB_REPO || 'jdf/spdsx-pro-kitedit';
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
     return res.status(500).json({error: 'relay not configured'});
