@@ -14,6 +14,12 @@ constexpr int kPadding = 16;
 constexpr int kRowHeight = 28;
 constexpr int kOptionHeight = 36;
 constexpr int kRowGap = 8;
+constexpr int kHintHeight = 60;
+
+// Body text matches the button labels' size (JUCE's ~15pt default); the
+// 11-13pt used before read as tiny next to them.
+constexpr float kBodyFont = 15.0f;
+constexpr float kCaptionFont = 13.0f;
 
 // Where reports go. The relay (report-relay/ in this repo) holds the
 // GitHub token and files the issue. SPDSX_REPORT_URL overrides for
@@ -33,15 +39,16 @@ juce::Colour DimText() {
 
 FeedbackPanel::FeedbackPanel(BugReport seed)
     : seed_(std::move(seed)) {
-  heading_.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+  heading_.setFont(juce::FontOptions(20.0f, juce::Font::bold));
   addAndMakeVisible(heading_);
 
-  hint_.setText("Your report goes straight to the developer — no account "
-                "needed. Your platform, app build, and recent device "
-                "activity ride along.",
-                juce::dontSendNotification);
+  hint_.setText(
+      juce::String::fromUTF8("Your report goes straight to the developer — "
+                             "no account needed. Your platform, app build, "
+                             "and recent device activity ride along."),
+      juce::dontSendNotification);
   hint_.setColour(juce::Label::textColourId, DimText());
-  hint_.setFont(juce::FontOptions(13.0f));
+  hint_.setFont(juce::FontOptions(kBodyFont));
   addAndMakeVisible(hint_);
 
   report_bug_.onClick = [this] {
@@ -59,20 +66,22 @@ FeedbackPanel::FeedbackPanel(BugReport seed)
     addAndMakeVisible(*option);
   }
 
-  prompt_.setFont(juce::FontOptions(13.0f));
+  prompt_.setFont(juce::FontOptions(kBodyFont));
   addAndMakeVisible(prompt_);
   text_.setMultiLine(true, true);
   text_.setReturnKeyStartsNewLine(true);
+  text_.setFont(juce::FontOptions(kBodyFont));
   addAndMakeVisible(text_);
 
   attached_caption_.setColour(juce::Label::textColourId, DimText());
-  attached_caption_.setFont(juce::FontOptions(12.0f));
+  attached_caption_.setFont(juce::FontOptions(kCaptionFont));
   addAndMakeVisible(attached_caption_);
   attached_.setMultiLine(true);
   attached_.setReadOnly(true);
-  attached_.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(),
-                                      11.0f,
-                                      juce::Font::plain));
+  attached_.setFont(
+      juce::FontOptions(juce::Font::getDefaultMonospacedFontName(),
+                        kBodyFont,
+                        juce::Font::plain));
   attached_.setColour(juce::TextEditor::textColourId, DimText());
   addAndMakeVisible(attached_);
 
@@ -82,14 +91,15 @@ FeedbackPanel::FeedbackPanel(BugReport seed)
   addAndMakeVisible(back_);
 
   outcome_.setJustificationType(juce::Justification::centred);
+  outcome_.setFont(juce::FontOptions(16.0f));
   addAndMakeVisible(outcome_);
   view_issue_.onClick = [this] {
     juce::URL(issue_url_).launchInDefaultBrowser();
   };
   addAndMakeVisible(view_issue_);
   copy_report_.onClick = [this] {
-    juce::SystemClipboard::copyTextToClipboard(
-        text_.getText() + "\n\n" + attached_.getText());
+    juce::SystemClipboard::copyTextToClipboard(text_.getText() + "\n\n"
+                                               + attached_.getText());
     copy_report_.setButtonText("Copied");
   };
   addAndMakeVisible(copy_report_);
@@ -97,13 +107,12 @@ FeedbackPanel::FeedbackPanel(BugReport seed)
   build_.setText("spdsx-patchedit " + seed_.app_version,
                  juce::dontSendNotification);
   build_.setColour(juce::Label::textColourId, DimText());
-  build_.setFont(juce::FontOptions(12.0f));
+  build_.setFont(juce::FontOptions(kBodyFont));
   addAndMakeVisible(build_);
   cancel_.onClick = [this] { CloseDialog(); };
   addAndMakeVisible(cancel_);
 
-  ShowPage(Page::kChoose);
-  setSize(kPanelWidth, 0);  // height set per page
+  ShowPage(Page::kChoose);  // sizes and lays out the panel
 }
 
 void FeedbackPanel::ChooseCategory(const juce::String& category,
@@ -125,7 +134,7 @@ void FeedbackPanel::SendReport() {
     return;
   }
   sending_ = true;
-  send_.setButtonText("Sending…");
+  send_.setButtonText(juce::String::fromUTF8("Sending…"));
   send_.setEnabled(false);
   back_.setEnabled(false);
 
@@ -138,8 +147,7 @@ void FeedbackPanel::SendReport() {
     int status = 0;
     juce::String reply;
     {
-      const juce::URL url =
-          juce::URL(ReportEndpoint()).withPOSTData(body);
+      const juce::URL url = juce::URL(ReportEndpoint()).withPOSTData(body);
       const auto options =
           juce::URL::InputStreamOptions(
               juce::URL::ParameterHandling::inPostData)
@@ -205,11 +213,11 @@ void FeedbackPanel::ShowPage(Page page) {
   copy_report_.setVisible(done && issue_url_.isEmpty());
   cancel_.setButtonText(done ? "Close" : "Cancel");
 
-  const int height = choose
-      ? kPadding * 2 + kRowHeight + 44 + 3 * (kOptionHeight + kRowGap)
-          + kRowHeight
+  const int height = choose ? kPadding * 2 + kRowHeight + kHintHeight
+          + 3 * (kOptionHeight + kRowGap) + kRowHeight
       : compose ? 480
-                : kPadding * 2 + kRowHeight + 3 * kRowHeight;
+                : kPadding * 2 + kRowHeight + kRowGap + kRowHeight * 2
+          + kRowGap * 2 + kRowHeight + kRowGap + kRowHeight;
   setSize(kPanelWidth, height);
   if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>()) {
     dialog->setContentComponentSize(kPanelWidth, height);
@@ -227,7 +235,7 @@ void FeedbackPanel::resized() {
 
   heading_.setBounds(area.removeFromTop(kRowHeight));
   if (page_ == Page::kChoose) {
-    hint_.setBounds(area.removeFromTop(44));
+    hint_.setBounds(area.removeFromTop(kHintHeight));
     for (juce::TextButton* option :
          {&report_bug_, &request_feature_, &general_feedback_}) {
       area.removeFromTop(kRowGap);
@@ -248,6 +256,7 @@ void FeedbackPanel::resized() {
   } else {
     area.removeFromTop(kRowGap);
     outcome_.setBounds(area.removeFromTop(kRowHeight * 2));
+    area.removeFromTop(kRowGap * 2);
     auto action = area.removeFromTop(kRowHeight);
     view_issue_.setBounds(action.withSizeKeepingCentre(160, kRowHeight));
     copy_report_.setBounds(action.withSizeKeepingCentre(160, kRowHeight));
