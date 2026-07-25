@@ -77,10 +77,11 @@ Developer ID signing and notarization workflow in
 Apple Developer and Keychain setup:
 
 ```sh
-./package-macos.sh
+./build_for_dist.py
 ```
 
-This produces a signed, notarized, and stapled DMG in `dist/`.
+This bumps the version, commits, and produces a signed, notarized, and
+stapled DMG in `dist/`.
 
 ## History
 

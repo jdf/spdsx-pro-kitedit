@@ -1,6 +1,6 @@
 # Distributing the macOS app
 
-`package-macos.sh` builds a Release app, signs it with a Developer ID
+`build_for_dist.py` builds a Release app, signs it with a Developer ID
 Application certificate and the hardened runtime, creates a disk image,
 submits that disk image to Apple's notarization service, staples the ticket,
 and asks Gatekeeper to assess the finished artifact.
@@ -55,12 +55,17 @@ in the Apple Developer Program.
 
 ## Make a release
 
-Update `project(VERSION ...)` in `CMakeLists.txt`, commit the release source,
-then run:
+Commit the release source, then run:
 
 ```sh
-./package-macos.sh
+./build_for_dist.py
 ```
+
+This bumps the patch component of `project(VERSION ...)` in `CMakeLists.txt`,
+commits that bump, packages, and finishes by revealing the DMG in Finder.
+`--versioning minor` or `--versioning major` bumps a different component;
+`--package-only` skips the bump and commit and just packages the working copy
+at its current version.
 
 The finished file is written to `dist/`, with its version and CPU architecture
 in the filename.
