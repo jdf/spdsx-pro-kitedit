@@ -30,6 +30,15 @@ constexpr int kIconSize = 96;
 constexpr int kRowHeight = 22;
 constexpr int kMargin = 20;
 
+constexpr const char* kSourceUrl = "https://github.com/jdf/spdsx-pro-kitedit";
+
+// The full license text, written into the bundle at build time by
+// collect-licenses.py.
+juce::File LicensesFile() {
+  return juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+      .getChildFile("Contents/Resources/LICENSES.txt");
+}
+
 }  // namespace
 
 AboutPanel::AboutPanel(const juce::String& version) {
@@ -52,9 +61,25 @@ AboutPanel::AboutPanel(const juce::String& version) {
   copyright_.setJustificationType(juce::Justification::centred);
   addAndMakeVisible(copyright_);
 
+  source_.setButtonText(juce::String::fromUTF8("Source code on GitHub"));
+  source_.setURL(juce::URL(kSourceUrl));
+  source_.setJustificationType(juce::Justification::centred);
+  addAndMakeVisible(source_);
+
   built_with_.setText("Built with:", juce::dontSendNotification);
   built_with_.setFont(juce::FontOptions(15.0f, juce::Font::bold));
   addAndMakeVisible(built_with_);
+
+  more_.setText(juce::String::fromUTF8("…and other open-source components."),
+                juce::dontSendNotification);
+  more_.setFont(juce::FontOptions(13.0f));
+  more_.setColour(juce::Label::textColourId,
+                  findColour(juce::Label::textColourId).withAlpha(0.7f));
+  addAndMakeVisible(more_);
+
+  licenses_button_.onClick = [] { LicensesFile().startAsProcess(); };
+  licenses_button_.setVisible(LicensesFile().existsAsFile());
+  addChildComponent(licenses_button_);
 
   for (const auto& credit : kCredits) {
     auto link = std::make_unique<juce::HyperlinkButton>(
@@ -72,8 +97,8 @@ AboutPanel::AboutPanel(const juce::String& version) {
 
   const int rows = static_cast<int>(std::size(kCredits));
   setSize(kWidth,
-          kMargin + kIconSize + 8 + 28 + 20 + 20 + 16 + 26 + rows * kRowHeight
-              + kMargin);
+          kMargin + kIconSize + 8 + 28 + 20 + 20 + 20 + 16 + 26
+              + rows * kRowHeight + 18 + 14 + 30 + kMargin);
 }
 
 void AboutPanel::paint(juce::Graphics& g) {
@@ -92,13 +117,20 @@ void AboutPanel::resized() {
   name_.setBounds(area.removeFromTop(28));
   version_.setBounds(area.removeFromTop(20));
   copyright_.setBounds(area.removeFromTop(20));
+  source_.setBounds(area.removeFromTop(20));
   area.removeFromTop(16);
+
+  area.removeFromBottom(kMargin);
+  licenses_button_.setBounds(area.removeFromBottom(30));
+  area.removeFromBottom(14);
+
   built_with_.setBounds(area.removeFromTop(26));
   for (size_t i = 0; i < links_.size(); ++i) {
     auto row = area.removeFromTop(kRowHeight);
     links_[i]->setBounds(row.removeFromLeft(row.getWidth() / 2));
     licenses_[i]->setBounds(row);
   }
+  more_.setBounds(area.removeFromTop(18));
 }
 
 void AboutPanel::Show(const juce::String& version) {

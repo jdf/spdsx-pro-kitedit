@@ -27,7 +27,12 @@ private:
   juce::Label name_;
   juce::Label version_;
   juce::Label copyright_;
+  juce::HyperlinkButton source_;
   juce::Label built_with_;
+  juce::Label more_;
+  // Opens the bundle's LICENSES.txt; hidden when it isn't there (a
+  // loose non-bundle build).
+  juce::TextButton licenses_button_ {"Open Source Licenses"};
   // Parallel per-dependency rows: a link to the project, and its license.
   std::vector<std::unique_ptr<juce::HyperlinkButton>> links_;
   std::vector<std::unique_ptr<juce::Label>> licenses_;
