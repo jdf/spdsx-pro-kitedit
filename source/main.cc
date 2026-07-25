@@ -39,6 +39,8 @@ public:
       menu.addCommandItem(&commands_, commands::kToggleAutoplay);
     } else if (name == "Help") {
       menu.addCommandItem(&commands_, commands::kSendFeedback);
+      menu.addSeparator();
+      menu.addCommandItem(&commands_, commands::kInstallCli);
     }
     return menu;
   }

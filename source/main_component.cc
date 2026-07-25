@@ -8,6 +8,7 @@
 
 #include "actions.h"
 #include "app_log.h"
+#include "cli_install.h"
 #include "commands.h"
 #include "device/kit_image.h"
 #include "device/spdsx_device.h"
@@ -305,7 +306,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kSaveToDevice,
                 commands::kToggleBrowser,
                 commands::kToggleAutoplay,
-                commands::kSendFeedback});
+                commands::kSendFeedback,
+                commands::kInstallCli});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id,
@@ -394,6 +396,12 @@ void MainComponent::getCommandInfo(juce::CommandID id,
     case commands::kSendFeedback:
       info.setInfo(juce::String::fromUTF8("Report a Bug or Send Feedback…"),
                    "File a report straight from the app — no account needed",
+                   "Help",
+                   0);
+      break;
+    case commands::kInstallCli:
+      info.setInfo(juce::String::fromUTF8("Install Command-Line Tool…"),
+                   "Put the bundled spdutil on your PATH",
                    "Help",
                    0);
       break;
@@ -509,20 +517,90 @@ bool MainComponent::perform(const InvocationInfo& info) {
       seed.app_version =
           app != nullptr ? app->getApplicationVersion() : juce::String("dev");
       seed.os = juce::SystemStats::getOperatingSystemName();
-      seed.device = DeviceConnected()
-          ? "connected"
+      seed.device = DeviceConnected() ? "connected"
               + (device_firmware_.isNotEmpty()
                      ? ", firmware " + device_firmware_
                      : juce::String())
-          : juce::String("not connected");
+                                      : juce::String("not connected");
       seed.document =
           "schema v" + juce::String(DeviceDb::kCurrentSchemaVersion);
       FeedbackPanel::Show(std::move(seed));
       return true;
     }
+    case commands::kInstallCli:
+      InstallCli();
+      return true;
     default:
       return false;
   }
+}
+
+namespace {
+
+void ReportCliInstall(bool ok) {
+  if (ok) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::InfoIcon,
+        "Install Command-Line Tool",
+        juce::String::fromUTF8(
+            "spdutil is installed — run “spdutil” in a Terminal."));
+  } else {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon,
+        "Install Command-Line Tool",
+        "spdutil was not installed.");
+  }
+}
+
+}  // namespace
+
+void MainComponent::InstallCli() {
+  const auto bundle =
+      juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+  const auto source = bundle.getChildFile("Contents/Helpers/spdutil");
+  if (!source.existsAsFile()) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon,
+        "Install Command-Line Tool",
+        "This build has no bundled spdutil (" + source.getFullPathName()
+            + ").");
+    return;
+  }
+  // Gatekeeper can run a quarantined app "translocated" from an ephemeral
+  // read-only mount; a symlink there would dangle on the next launch.
+  if (bundle.getFullPathName().contains("/AppTranslocation/")) {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon,
+        "Install Command-Line Tool",
+        "Move the app to Applications and relaunch it first.");
+    return;
+  }
+
+  // The link points INTO the bundle, so replacing the app at the same
+  // path updates the CLI too. Symlink directly if /usr/local/bin is
+  // writable; otherwise run the same command through the macOS
+  // administrator-password prompt, off the message thread so the prompt
+  // doesn't freeze the UI.
+  const juce::File link("/usr/local/bin/spdutil");
+  const auto bin = link.getParentDirectory();
+  if (bin.isDirectory() && bin.hasWriteAccess()) {
+    link.deleteFile();
+    if (source.createSymbolicLink(link, /*overwriteExisting=*/true)) {
+      ReportCliInstall(true);
+      return;
+    }
+  }
+  const auto script = AdminInstallScript(InstallCliCommand(
+      source.getFullPathName().toStdString(), "/usr/local/bin", "spdutil"));
+  juce::Thread::launch([script] {
+    juce::ChildProcess osascript;
+    const bool ok =
+        osascript.start(juce::StringArray {
+            "/usr/bin/osascript", "-e", juce::String::fromUTF8(script.c_str())})
+        && osascript.waitForProcessToFinish(120 * 1000)
+        && osascript.getExitCode() == 0;
+    juce::MessageManager::callAsync([ok] { ReportCliInstall(ok); });
+  });
 }
 
 void MainComponent::SetBrowserVisible(bool visible) {
@@ -655,8 +733,8 @@ void MainComponent::FinishDeviceFetch(std::vector<device::KitRecord> kits,
         juce::MessageBoxIconType::WarningIcon, "Load Device State", error);
     return;
   }
-  AppLog::Note("load device state ok: " + juce::String(kits.size())
-               + " kits, " + juce::String(pool.size()) + " pool records");
+  AppLog::Note("load device state ok: " + juce::String(kits.size()) + " kits, "
+               + juce::String(pool.size()) + " pool records");
   document_.ReplaceWithDeviceState(kits, std::move(pool));
   MarkEdited();
   RefreshKitSelector();
@@ -936,8 +1014,7 @@ void MainComponent::SaveChangesToDevice() {
     UpdateSaveButton();
     return;
   }
-  AppLog::Note("sync started: " + juce::String(dirty.size())
-               + " dirty kit(s)");
+  AppLog::Note("sync started: " + juce::String(dirty.size()) + " dirty kit(s)");
   // Uploads need a trustworthy picture of which pool indices are free,
   // so a sync that will upload also re-reads the pool directory.
   bool need_pool = false;
@@ -1225,9 +1302,9 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
     return;
   }
   if (error.isNotEmpty() || !committed) {
-    AppLog::Note("sync push failed: "
-                 + (error.isNotEmpty() ? error
-                                       : juce::String("commit unconfirmed")));
+    AppLog::Note(
+        "sync push failed: "
+        + (error.isNotEmpty() ? error : juce::String("commit unconfirmed")));
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon,
         "Save Changes to Device",

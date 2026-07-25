@@ -50,6 +50,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/app_log.cc
     source/audio.cc
     source/bug_report.cc
+    source/cli_install.cc
     source/device_db.cc
     source/device_document.cc
     source/device_samples.cc
@@ -114,6 +115,18 @@ endif()
 add_executable(spdutil source/spdutil_main.cc source/layers.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
 
+# Bundle spdutil inside the app (Contents/Helpers) so Help > Install
+# Command-Line Tool can symlink /usr/local/bin/spdutil at it; because the
+# link points into the bundle, replacing the app updates the CLI too.
+add_dependencies(spdsx-patchedit spdutil)
+add_custom_command(TARGET spdsx-patchedit POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_BUNDLE_CONTENT_DIR:spdsx-patchedit>/Helpers"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:spdutil>"
+        "$<TARGET_BUNDLE_CONTENT_DIR:spdsx-patchedit>/Helpers/spdutil"
+)
+
 # ---- Unit tests & coverage ----
 # One test binary compiles every source/*_test.cc (each header's suite, next
 # to the header it covers) alongside the production translation units, so line
@@ -134,6 +147,7 @@ if(SPDSX_TESTS)
         source/actions_test.cc
         source/app_log_test.cc
         source/bug_report_test.cc
+        source/cli_install_test.cc
         source/device/kit_image_test.cc
         source/device/protocol_test.cc
         source/device/sample_image_test.cc
@@ -151,6 +165,7 @@ if(SPDSX_TESTS)
         source/app_log.cc
         source/audio.cc
         source/bug_report.cc
+        source/cli_install.cc
         source/device_db.cc
         source/device_document.cc
         source/device_samples.cc

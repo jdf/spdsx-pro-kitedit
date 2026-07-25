@@ -45,7 +45,8 @@ the official app (tooling and notes in [re/](re/README.md)). A JUCE-free
 library (`source/device/`) implements what's mapped so far, and the
 `spdutil` CLI exercises it against the hardware: ping the device, dump
 its memory image, and list kits and pad parameters live. Two-way kit
-sync is in progress.
+sync is in progress. The app bundles `spdutil`; **Help ▸ Install
+Command-Line Tool** puts it on your `PATH`.
 
 For testing without the mouse, slots can be pre-filled from the command
 line (slot indices are `(row * 3 + col) * 2`, `+1` for the bottom slot):

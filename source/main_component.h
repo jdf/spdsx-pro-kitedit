@@ -242,6 +242,9 @@ private:
   void MarkEdited();
   // Syncs the header's kit chooser with the active kit and its name.
   void RefreshKitSelector();
+  // Help > Install Command-Line Tool: symlinks the bundled spdutil into
+  // /usr/local/bin, asking for an administrator password if needed.
+  void InstallCli();
   void timerCallback() override;
   juce::Rectangle<int> GridArea() const;
   juce::Rectangle<int> PadBounds(int row, int col) const;

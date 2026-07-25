@@ -21,6 +21,7 @@ enum : juce::CommandID {
   kToggleBrowser,
   kToggleAutoplay,
   kSendFeedback,
+  kInstallCli,
 };
 
 }  // namespace spdsx::commands
