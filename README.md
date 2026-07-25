@@ -84,8 +84,8 @@ Apple Developer and Keychain setup:
 ./build_for_dist.py
 ```
 
-This bumps the version, commits, and produces a signed, notarized, and
-stapled DMG in `dist/`.
+This bumps the version, commits and pushes, and publishes a GitHub release
+with a signed, notarized, and stapled DMG attached.
 
 ## History
 

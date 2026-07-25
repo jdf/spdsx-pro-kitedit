@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Cut a release: bump the version, commit, package, reveal the DMG.
+"""Cut a release: bump the version, commit, push, package, publish.
 
 Bumps project(VERSION ...) in CMakeLists.txt (--versioning major | minor |
-patch, default patch), commits that change with jj, then builds a Release
-app, signs it with a Developer ID Application certificate and the hardened
-runtime, wraps it in a drag-to-Applications DMG, notarizes, staples, asks
-Gatekeeper's opinion, and opens a Finder window showing the finished DMG.
+patch, default patch), commits that change with jj and pushes it (the
+presubmit gates the push, as always), then builds a Release app, signs it
+with a Developer ID Application certificate and the hardened runtime, wraps
+it in a drag-to-Applications DMG, notarizes, staples, asks Gatekeeper's
+opinion, publishes a GitHub release with the DMG attached, and opens a
+Finder window showing the finished DMG.
 
---package-only skips the bump and commit and just packages the working copy.
+--package-only skips the bump, commit, push, and GitHub release, and just
+packages the working copy.
 """
 
 import argparse
@@ -27,6 +30,7 @@ CMAKELISTS = ROOT / "CMakeLists.txt"
 VERSION_RE = re.compile(r"^(\s*VERSION\s+)(\d+)\.(\d+)\.(\d+)\s*$", re.MULTILINE)
 
 APP_NAME = "spdsx-patchedit"
+GITHUB_REPO = "jdf/spdsx-pro-kitedit"
 IDENTITY = os.environ.get("MACOS_SIGNING_IDENTITY", "Developer ID Application")
 NOTARY_PROFILE = os.environ.get("MACOS_NOTARY_PROFILE", "spdsx-patchedit-notary")
 
@@ -92,9 +96,11 @@ def BumpVersion(text: str, versioning: str) -> tuple[str, str]:
     return VERSION_RE.sub(f"{prefix}{version}", text), version
 
 
-def CheckTooling() -> None:
+def CheckTooling(release: bool) -> None:
     if not shutil.which("cmake"):
         Die("cmake is required")
+    if release and not shutil.which("gh"):
+        Die("gh is required to publish the GitHub release")
     if not shutil.which("hdiutil"):
         Die("hdiutil is required (run this on macOS)")
     for tool in ("notarytool", "stapler"):
@@ -198,6 +204,20 @@ def NotarizeAndStaple(dmg: pathlib.Path) -> None:
     )
 
 
+def PublishGithubRelease(dmg: pathlib.Path, version: str) -> None:
+    print("Publishing the GitHub release...")
+    Run(
+        "gh", "release", "create", f"v{version}", str(dmg),
+        "--repo", GITHUB_REPO, "--target", "main",
+        "--title", f"{APP_NAME} {version}",
+        "--generate-notes",
+        "--notes",
+        f"**Download** `{dmg.name}` below, open it, and drag the app to "
+        "Applications.\n\nRequires an Apple silicon Mac running macOS 26 "
+        "or later.",
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -213,17 +233,23 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    CheckTooling(release=not args.package_only)
+
     if not args.package_only:
         text = CMAKELISTS.read_text()
         new_text, version = BumpVersion(text, args.versioning)
         CMAKELISTS.write_text(new_text)
         print(f"Version bumped to {version}.")
         Run("jj", "commit", "CMakeLists.txt", "-m", f"release: v{version}")
+        # The GitHub release tags a commit, so the bump must be on the
+        # remote before we can publish.
+        Run("jj", "push-main")
 
-    CheckTooling()
     BuildAndSignApp()
     dmg = MakeDmg()
     NotarizeAndStaple(dmg)
+    if not args.package_only:
+        PublishGithubRelease(dmg, version)
     print(f"ready to distribute: {dmg}")
     Run("open", "-R", str(dmg))
 

@@ -62,10 +62,16 @@ Commit the release source, then run:
 ```
 
 This bumps the patch component of `project(VERSION ...)` in `CMakeLists.txt`,
-commits that bump, packages, and finishes by revealing the DMG in Finder.
-`--versioning minor` or `--versioning major` bumps a different component;
-`--package-only` skips the bump and commit and just packages the working copy
-at its current version.
+commits and pushes that bump (`jj push-main`, so the presubmit gates it),
+packages, publishes a GitHub release tagged `v<version>` with the DMG
+attached, and finishes by revealing the DMG in Finder. `--versioning minor`
+or `--versioning major` bumps a different component; `--package-only` skips
+the bump, commit, push, and GitHub release, and just packages the working
+copy at its current version.
+
+If packaging fails after the push, fix the cause and re-run with
+`--package-only`, then publish the release by hand with `gh release create
+v<version> dist/<the dmg> --target main`.
 
 The finished file is written to `dist/`, with its version and CPU architecture
 in the filename.
