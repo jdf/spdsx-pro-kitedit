@@ -141,9 +141,13 @@ def BuildAndSignApp() -> None:
     print(f"Built for minimum macOS {minos.group(1) if minos else 'unknown'}.")
 
     print(f"Signing with {IDENTITY}...")
-    # This bundle currently contains one Mach-O executable and no embedded
-    # frameworks or helpers. Avoid --deep: it can conceal incorrectly signed
-    # nested code if the bundle gains any later.
+    # Sign inside-out (nested code first, then the bundle) rather than
+    # --deep, which can conceal incorrectly signed nested code.
+    Run(
+        "codesign", "--force", "--sign", IDENTITY,
+        "--options", "runtime", "--timestamp",
+        str(APP / "Contents/Helpers/spdutil"),
+    )
     Run(
         "codesign", "--force", "--sign", IDENTITY,
         "--options", "runtime", "--timestamp", str(APP),
