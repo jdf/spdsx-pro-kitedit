@@ -39,8 +39,6 @@ public:
       menu.addCommandItem(&commands_, commands::kToggleAutoplay);
     } else if (name == "Help") {
       menu.addCommandItem(&commands_, commands::kSendFeedback);
-      menu.addSeparator();
-      menu.addCommandItem(&commands_, commands::kInstallCli);
     }
     return menu;
   }
@@ -138,7 +136,11 @@ public:
     // so Undo/Redo (and the View ticks) keep their stale enabled state.
     menu->setApplicationCommandManagerToWatch(&command_manager);
 #if JUCE_MAC
-    juce::MenuBarModel::setMacMainMenu(menu.get());
+    // Install Command-Line Tool lives in the application menu (BBEdit
+    // precedent), not Help.
+    juce::PopupMenu app_menu_extras;
+    app_menu_extras.addCommandItem(&command_manager, commands::kInstallCli);
+    juce::MenuBarModel::setMacMainMenu(menu.get(), &app_menu_extras);
 #else
     window->setMenuBar(menu.get());
 #endif

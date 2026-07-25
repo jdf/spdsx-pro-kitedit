@@ -402,7 +402,7 @@ void MainComponent::getCommandInfo(juce::CommandID id,
     case commands::kInstallCli:
       info.setInfo(juce::String::fromUTF8("Install Command-Line Tool…"),
                    "Put the bundled spdutil on your PATH",
-                   "Help",
+                   "Application",
                    0);
       break;
     default:

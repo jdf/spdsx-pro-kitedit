@@ -115,9 +115,10 @@ endif()
 add_executable(spdutil source/spdutil_main.cc source/layers.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
 
-# Bundle spdutil inside the app (Contents/Helpers) so Help > Install
-# Command-Line Tool can symlink /usr/local/bin/spdutil at it; because the
-# link points into the bundle, replacing the app updates the CLI too.
+# Bundle spdutil inside the app (Contents/Helpers) so the app menu's
+# Install Command-Line Tool can symlink /usr/local/bin/spdutil at it;
+# because the link points into the bundle, replacing the app updates the
+# CLI too.
 add_dependencies(spdsx-patchedit spdutil)
 add_custom_command(TARGET spdsx-patchedit POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
