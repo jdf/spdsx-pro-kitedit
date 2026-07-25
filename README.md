@@ -5,8 +5,7 @@ C++20, JUCE 8 for UI and audio, built with CMake and vcpkg.
 
 **[⬇ Download for macOS](https://github.com/jdf/spdsx-pro-kitedit/releases/latest)**
 — grab the `.dmg` from the latest release, open it, and drag the app to
-Applications. Requires an Apple silicon Mac running macOS 26 or later; the
-app is signed and notarized.
+Applications. Requires an Apple silicon Mac running macOS 26 or later.
 
 The main window is a 3x3 grid mirroring the SPD-SX PRO's pad layout,
 with a top and a bottom sample slot per pad — 18 slots in all. Drag
