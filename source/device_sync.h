@@ -1,4 +1,4 @@
-// The three-way device sync behind "Save Changes to Device" — pure
+// The three-way device sync behind "Sync Changes with Device" — pure
 // logic, no I/O, so the whole flow is testable without hardware.
 //
 // A sync compares three copies of every kit: `current` (the document as

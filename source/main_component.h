@@ -210,15 +210,15 @@ private:
   // to connected (app launch included) it also reads the device's
   // ACTIVE kit and adopts it, so the app opens on what the unit shows.
   void PollConnection();
-  // Shows/enables the header "Save Changes to Device" button: visible
+  // Shows/enables the header "Sync Changes with Device" button: visible
   // when any kit differs from the last-synced base snapshot, enabled
   // when a device is connected and no sync is already running.
-  void UpdateSaveButton();
+  void UpdateSyncButton();
   // The three-way sync (jdf's Phase 3 spec): a fresh device read on a
   // worker ("theirs"), a per-pad current/base/theirs diff, a resolution
   // dialog for conflicts, then uploads + kit writes + one flash commit
   // on a worker, and finally the base snapshots advance.
-  void SaveChangesToDevice();
+  void SyncChangesWithDevice();
   // Message-thread landing for the fresh device read; builds the
   // conflict list and either runs the push or asks the user first.
   void FinishSyncFetch(std::vector<device::KitRecord> kits,
@@ -319,15 +319,15 @@ private:
       std::make_shared<std::atomic<int>>(0);
   std::shared_ptr<std::atomic<bool>> kit_select_running_ =
       std::make_shared<std::atomic<bool>>(false);
-  // "Save Changes to Device" header button. Dirtiness is computed, not
+  // "Sync Changes with Device" header button. Dirtiness is computed, not
   // tracked: a kit is dirty when its content differs from the document's
   // base snapshot (DeviceDocument::DirtyKits). model_loading_ marks kit
   // loads, whose change listeners are not user edits.
-  juce::TextButton save_button_ {
-      juce::String::fromUTF8("Save Changes to Device")};
+  juce::TextButton sync_button_ {
+      juce::String::fromUTF8("Sync Changes with Device")};
   bool model_loading_ = false;
 
-  // An in-flight "Save Changes to Device": the fresh device read, the
+  // An in-flight "Sync Changes with Device": the fresh device read, the
   // conflicts awaiting resolution, and the per-kit plans being pushed.
   // Present only while the sync runs; device_fetching_ stays true for
   // its whole span so nothing else opens the port.

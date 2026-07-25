@@ -46,7 +46,7 @@ SyncConflictPanel::SyncConflictPanel(std::vector<SyncConflict> conflicts) {
     row->choice.addItem("My copy wins", kIdMine);
     row->choice.addItem("Device wins", kIdTheirs);
     row->choice.addItem("Do nothing", kIdSkip);
-    // The user pressed "Save Changes to Device": pushing their copy is
+    // The user pressed "Sync Changes with Device": pushing their copy is
     // the expected default.
     row->choice.setSelectedId(kIdMine, juce::dontSendNotification);
     row_holder_.addAndMakeVisible(row->choice);

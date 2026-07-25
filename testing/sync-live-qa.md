@@ -34,14 +34,14 @@ hand, but only scratch kits keep that cheap.
 - [ ] **File > Load Device State** once, even if the doc looks current: your
       real document may predate the base snapshot (no base rows = all 200
       kits read dirty and the conflict dialog would be a wall). After the
-      load: **the Save button must be hidden** (current == base). If it
+      load: **the Sync button must be hidden** (current == base). If it
       shows a "(N kits)" count here, stop — that's a bug, note the count.
 
 ## 1. Single param edit (the smallest push)
 
 - [x] Switch to kit 199. Open pad 3's header, change **fade point** to a
       value you'll recognize (e.g. 77).
-- [x] Save button appears, plain label (one kit). Click it.
+- [x] Sync button appears, plain label (one kit). Click it.
 - [x] Status walks: `sync: reading device state…` → `sync: saving to
       device…` → `synced with device`; button disappears.
 - [x] Quit app. `./build/spdutil kit 199` → pad 3 fade point = 77.

@@ -30,7 +30,7 @@ public:
       menu.addSeparator();
       menu.addCommandItem(&commands_, commands::kLoadDeviceState);
       menu.addCommandItem(&commands_, commands::kDownloadKitSamples);
-      menu.addCommandItem(&commands_, commands::kSaveToDevice);
+      menu.addCommandItem(&commands_, commands::kSyncWithDevice);
     } else if (name == "Edit") {
       menu.addCommandItem(&commands_, commands::kUndo);
       menu.addCommandItem(&commands_, commands::kRedo);

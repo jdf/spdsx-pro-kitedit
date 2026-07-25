@@ -45,8 +45,8 @@ the official app (tooling and notes in [re/](re/README.md)). A JUCE-free
 library (`source/device/`) implements what's mapped so far, and the
 `spdutil` CLI ([full command reference](docs/spdutil.md)) exercises it
 against the hardware: ping the device, dump its memory image, and list
-kits and pad parameters live. Kit sync is two-way: **Save Changes to
-Device** pushes your edits — uploading local audio files to the sample
+kits and pad parameters live. Kit sync is two-way: **Sync Changes
+with Device** pushes your edits — uploading local audio files to the sample
 pool as needed — while pulling changes made on the unit, with per-pad
 conflict resolution when both sides touched the same thing; **Load
 Device State** replaces the whole document with the device's contents. The app bundles `spdutil`; **SPD-SX PROgram ▸

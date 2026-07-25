@@ -188,10 +188,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addAndMakeVisible(connection_dot_);
   // The primary sync action: appears when the active kit has edits not
   // yet pushed to the device.
-  save_button_.onClick = [this] { SaveChangesToDevice(); };
-  save_button_.setColour(juce::TextButton::buttonColourId,
+  sync_button_.onClick = [this] { SyncChangesWithDevice(); };
+  sync_button_.setColour(juce::TextButton::buttonColourId,
                          juce::Colour(0xffb5761f));
-  addChildComponent(save_button_);
+  addChildComponent(sync_button_);
   // The unified kit control: arrows and menu switch kits (stashing the
   // old one), the pencil renames in place.
   kit_chooser_.kit_name = [this](int i) {
@@ -228,7 +228,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       }
     }
     // A wholesale content replacement can move the dirty-vs-base line.
-    UpdateSaveButton();
+    UpdateSyncButton();
   };
   document_.on_model_reload = [this](bool loading) {
     model_loading_ = loading;
@@ -305,7 +305,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kImportKit,
                 commands::kLoadDeviceState,
                 commands::kDownloadKitSamples,
-                commands::kSaveToDevice,
+                commands::kSyncWithDevice,
                 commands::kToggleBrowser,
                 commands::kToggleAutoplay,
                 commands::kSendFeedback,
@@ -360,11 +360,11 @@ void MainComponent::getCommandInfo(juce::CommandID id,
           0);
       info.setActive(!device_fetching_ && DeviceConnected());
       break;
-    case commands::kSaveToDevice: {
+    case commands::kSyncWithDevice: {
       const int dirty = static_cast<int>(document_.DirtyKits().size());
-      info.setInfo(dirty > 1 ? "Save Changes to Device (" + juce::String(dirty)
-                           + " kits)"
-                             : juce::String("Save Changes to Device"),
+      info.setInfo(dirty > 1 ? "Sync Changes with Device ("
+                           + juce::String(dirty) + " kits)"
+                             : juce::String("Sync Changes with Device"),
                    "Push this document's edits to the connected device",
                    "File",
                    0);
@@ -504,8 +504,8 @@ bool MainComponent::perform(const InvocationInfo& info) {
     case commands::kDownloadKitSamples:
       DownloadKitSamples();
       return true;
-    case commands::kSaveToDevice:
-      SaveChangesToDevice();
+    case commands::kSyncWithDevice:
+      SyncChangesWithDevice();
       return true;
     case commands::kToggleBrowser:
       SetBrowserVisible(!browser_visible_);
@@ -911,7 +911,7 @@ void MainComponent::AdoptKit(int index) {
   MarkEdited();  // persists the new current kit
   RefreshKitSelector();
   RefreshDocumentState();
-  UpdateSaveButton();  // reflect the newly-active kit's dirty state
+  UpdateSyncButton();  // reflect the newly-active kit's dirty state
 }
 
 void MainComponent::SyncDeviceKit() {
@@ -1002,7 +1002,7 @@ void MainComponent::PollConnection() {
         safe->connection_dot_.SetConnected(connected);
         safe->commands_.commandStatusChanged();  // re-enable device menu items
         safe->UpdateTransferButton();
-        safe->UpdateSaveButton();  // enable/disable with connection
+        safe->UpdateSyncButton();  // enable/disable with connection
         if (connected) {
           safe->device_firmware_ = firmware;
           AppLog::Note("device connected, firmware "
@@ -1019,22 +1019,22 @@ void MainComponent::PollConnection() {
   }).detach();
 }
 
-void MainComponent::UpdateSaveButton() {
+void MainComponent::UpdateSyncButton() {
   const int dirty = static_cast<int>(document_.DirtyKits().size());
-  const juce::String label = "Save Changes to Device";
+  const juce::String label = "Sync Changes with Device";
   const juce::String text =
       dirty > 1 ? label + " (" + juce::String(dirty) + " kits)" : label;
-  save_button_.setEnabled(DeviceConnected() && !device_fetching_);
+  sync_button_.setEnabled(DeviceConnected() && !device_fetching_);
   const bool show = dirty > 0;
-  if (text != save_button_.getButtonText()
-      || show != save_button_.isVisible()) {
-    save_button_.setButtonText(text);
-    save_button_.setVisible(show);
+  if (text != sync_button_.getButtonText()
+      || show != sync_button_.isVisible()) {
+    sync_button_.setButtonText(text);
+    sync_button_.setVisible(show);
     resized();  // reclaim/space the header for the (possibly wider) label
   }
 }
 
-void MainComponent::SaveChangesToDevice() {
+void MainComponent::SyncChangesWithDevice() {
   if (device_fetching_.exchange(true)) {
     return;  // the port is busy (a fetch, a download, or another sync)
   }
@@ -1042,7 +1042,7 @@ void MainComponent::SaveChangesToDevice() {
   const std::vector<int> dirty = document_.DirtyKits();
   if (dirty.empty() || !DeviceConnected()) {
     device_fetching_ = false;
-    UpdateSaveButton();
+    UpdateSyncButton();
     return;
   }
   AppLog::Note("sync started: " + juce::String(dirty.size()) + " dirty kit(s)");
@@ -1056,7 +1056,7 @@ void MainComponent::SaveChangesToDevice() {
     }
   }
   commands_.commandStatusChanged();
-  UpdateSaveButton();  // disabled while the sync runs
+  UpdateSyncButton();  // disabled while the sync runs
   sync_phase_ = SyncPhase::kReading;
   auto blocks = std::make_shared<std::atomic<int>>(0);
   fetch_blocks_ = blocks;
@@ -1103,7 +1103,9 @@ void MainComponent::FinishSyncFetch(std::vector<device::KitRecord> kits,
   if (error.isNotEmpty()) {
     device_samples_.SetStatus({});
     juce::AlertWindow::showMessageBoxAsync(
-        juce::MessageBoxIconType::WarningIcon, "Save Changes to Device", error);
+        juce::MessageBoxIconType::WarningIcon,
+        "Sync Changes with Device",
+        error);
     CancelSync();
     return;
   }
@@ -1309,7 +1311,7 @@ void MainComponent::CancelSync() {
   HideProgress();
   device_fetching_ = false;
   commands_.commandStatusChanged();
-  UpdateSaveButton();
+  UpdateSyncButton();
 }
 
 void MainComponent::OnWaveUploaded(UploadPlan plan,
@@ -1338,7 +1340,7 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
         + (error.isNotEmpty() ? error : juce::String("commit unconfirmed")));
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon,
-        "Save Changes to Device",
+        "Sync Changes with Device",
         error.isNotEmpty()
             ? error
             : juce::String("the device did not confirm the flash commit"));
@@ -1386,7 +1388,7 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
   commands_.commandStatusChanged();
   RefreshKitSelector();
   RefreshDocumentState();
-  UpdateSaveButton();
+  UpdateSyncButton();
   device_samples_.SetStatus(skipped ? "synced (skipped conflicts remain)"
                                     : "synced with device");
   juce::Timer::callAfterDelay(
@@ -1520,7 +1522,7 @@ void MainComponent::MarkEdited() {
 void MainComponent::KitNameChanged() {
   kit_chooser_.SetCurrent(device_.current_kit(), model_.name());
   MarkEdited();
-  UpdateSaveButton();
+  UpdateSyncButton();
   RefreshDocumentState();
 }
 
@@ -1530,7 +1532,7 @@ void MainComponent::KitNameChanged() {
 // idx = pad * 2 + layer.
 void MainComponent::SampleChanged(int pad, int layer) {
   MarkEdited();
-  UpdateSaveButton();
+  UpdateSyncButton();
   SyncSlotFromModel(pad, layer);
 }
 
@@ -1659,11 +1661,11 @@ void MainComponent::resized() {
     transfer_button_.setBounds(
         header.removeFromRight(120).withSizeKeepingCentre(120, 26));
   }
-  if (save_button_.isVisible()) {
+  if (sync_button_.isVisible()) {
     header.removeFromRight(8);
     // Wide enough for the "(N kits)" suffix when several kits are dirty.
-    const int w = juce::jmax(180, save_button_.getBestWidthForHeight(26));
-    save_button_.setBounds(
+    const int w = juce::jmax(180, sync_button_.getBestWidthForHeight(26));
+    sync_button_.setBounds(
         header.removeFromRight(w).withSizeKeepingCentre(w, 26));
   }
   // The kit chooser owns what's LEFT of the header — `header` has been
@@ -1997,7 +1999,7 @@ void MainComponent::UpdatePadWidgets(int pad) {
 
 void MainComponent::PadParamsChanged(int pad) {
   MarkEdited();
-  UpdateSaveButton();
+  UpdateSyncButton();
   UpdatePadWidgets(pad);
   // Keep an open settings panel honest when undo/redo (or anything
   // else) changes the pad underneath it.
