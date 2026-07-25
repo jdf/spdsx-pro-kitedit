@@ -83,6 +83,11 @@ public:
   // Shared by File > Open and Finder (double-clicking a .spdsx).
   void OpenDocument(const juce::File& file);
 
+  // Shows the first-launch clickwrap risk acknowledgment unless this
+  // settings profile already accepted the current version; declining
+  // quits the app.
+  void MaybeShowDisclaimer();
+
   void paint(juce::Graphics& g) override;
   void resized() override;
   bool keyPressed(const juce::KeyPress& key) override;

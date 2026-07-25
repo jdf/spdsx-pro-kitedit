@@ -148,6 +148,12 @@ public:
 #else
     window->setMenuBar(menu.get());
 #endif
+
+    // First launch: the clickwrap risk acknowledgment. Selftests drive
+    // the app unattended, so they skip it.
+    if (std::getenv("SPDSX_SELFTEST") == nullptr) {
+      content->MaybeShowDisclaimer();
+    }
   }
 
   // Everything autosaves; flush whatever the debounce hasn't written

@@ -62,6 +62,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/device_document.cc
     source/device_samples.cc
     source/device_sync.cc
+    source/disclaimer_dialog.cc
     source/feedback_dialog.cc
     source/kit_chooser.cc
     source/layers.cc
@@ -184,6 +185,7 @@ if(SPDSX_TESTS)
         source/device_document.cc
         source/device_samples.cc
         source/device_sync.cc
+        source/disclaimer_dialog.cc
         source/feedback_dialog.cc
         source/kit_chooser.cc
         source/layers.cc

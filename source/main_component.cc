@@ -13,6 +13,7 @@
 #include "commands.h"
 #include "device/kit_image.h"
 #include "device/spdsx_device.h"
+#include "disclaimer_dialog.h"
 #include "feedback_dialog.h"
 #include "sample_upload.h"
 #include "spectro.h"
@@ -567,6 +568,22 @@ void ReportCliInstall(bool ok) {
 }
 
 }  // namespace
+
+void MainComponent::MaybeShowDisclaimer() {
+  if (settings_.getUserSettings()->getIntValue(kDisclaimerAcceptedKey, 0)
+      >= kDisclaimerVersion) {
+    return;
+  }
+  DisclaimerPanel::Show([this](bool accepted) {
+    if (accepted) {
+      settings_.getUserSettings()->setValue(kDisclaimerAcceptedKey,
+                                            kDisclaimerVersion);
+      settings_.getUserSettings()->saveIfNeeded();
+    } else {
+      juce::JUCEApplication::getInstance()->systemRequestedQuit();
+    }
+  });
+}
 
 void MainComponent::InstallCli() {
   const auto bundle =
