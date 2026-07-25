@@ -69,6 +69,19 @@ The spectrogram renderer is consumed as a vcpkg dependency through the
 overlay port in [ports/specgram](ports/specgram), which builds a pinned
 commit of [jdf/specgram](https://github.com/jdf/specgram).
 
+## Making a distributable macOS app
+
+For a double-clickable release that Gatekeeper accepts on other Macs, use the
+Developer ID signing and notarization workflow in
+[docs/macos-distribution.md](docs/macos-distribution.md). After its one-time
+Apple Developer and Keychain setup:
+
+```sh
+./package-macos.sh
+```
+
+This produces a signed, notarized, and stapled DMG in `dist/`.
+
 ## History
 
 The first iteration used Slint for the UI (with miniaudio for playback
