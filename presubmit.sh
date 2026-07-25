@@ -11,6 +11,17 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# A build tree configured at a different source path (e.g. the repo was
+# moved) poisons every CMake invocation in it; throw it away and start over.
+if [ -d build ]; then
+    cache_src="$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' \
+        build/CMakeCache.txt 2>/dev/null || true)"
+    if [ "$cache_src" != "$PWD" ]; then
+        echo "==> discarding build/ (configured for '${cache_src:-nothing}', not '$PWD')"
+        rm -rf build
+    fi
+fi
+
 # Ninja re-runs CMake by itself when the build files are stale, so only a
 # missing build tree needs an explicit configure.
 if [ ! -d build ]; then
