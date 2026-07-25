@@ -16,9 +16,9 @@ them; each loaded sample shows as a spectrogram rendered by
 
 ## The device document
 
-A document is a whole-device mirror: a `*.spdsx` folder (a macOS
-package) holding all 200 kits, with a kit chooser in the header and
-per-kit undo history. There is no Save command — every edit autosaves,
+A document is a whole-device mirror: a single `*.spdsx` file holding
+all 200 kits, with a kit chooser in the header and per-kit undo
+history. There is no Save command — every edit autosaves,
 and the app reopens your last document on launch.
 
 Each pad emulates the device's shared pad properties: the eight layer
