@@ -78,11 +78,11 @@ public:
 
 class App : public juce::JUCEApplication {
 public:
-  const juce::String getApplicationName() override {
-    return "SPD-SX PROgram";
-  }
+  const juce::String getApplicationName() override { return "SPD-SX PROgram"; }
 
-  const juce::String getApplicationVersion() override { return "0.1.0"; }
+  const juce::String getApplicationVersion() override {
+    return SPDSX_VERSION;  // from project(VERSION) via CMake
+  }
 
   // A document app: a second launch (or a Finder double-click of a
   // .spdsx while running) routes into this instance instead.
@@ -138,9 +138,11 @@ public:
     // so Undo/Redo (and the View ticks) keep their stale enabled state.
     menu->setApplicationCommandManagerToWatch(&command_manager);
 #if JUCE_MAC
-    // Install Command-Line Tool lives in the application menu (BBEdit
-    // precedent), not Help.
+    // The application menu: About up top (standard position), then
+    // Install Command-Line Tool (BBEdit precedent).
     juce::PopupMenu app_menu_extras;
+    app_menu_extras.addCommandItem(&command_manager, commands::kAbout);
+    app_menu_extras.addSeparator();
     app_menu_extras.addCommandItem(&command_manager, commands::kInstallCli);
     juce::MenuBarModel::setMacMainMenu(menu.get(), &app_menu_extras);
 #else

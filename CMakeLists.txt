@@ -49,7 +49,11 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "SPD-SX PROgram"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
     DOCUMENT_EXTENSIONS spdsx)
 
+# The app icon, embedded so the About box can draw it.
+juce_add_binary_data(spdsx_binary_data SOURCES assets/icon.png)
+
 target_sources(spdsx-patchedit PRIVATE
+    source/about_dialog.cc
     source/app_log.cc
     source/audio.cc
     source/bug_report.cc
@@ -71,11 +75,15 @@ target_sources(spdsx-patchedit PRIVATE
     source/spectro.cc
     source/sync_dialog.cc
 )
+# The one user-visible version, from project(VERSION): the app's About box
+# and bug reports, and spdutil --version, all report the same number.
 target_compile_definitions(spdsx-patchedit PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    SPDSX_VERSION="${PROJECT_VERSION}"
 )
 target_link_libraries(spdsx-patchedit PRIVATE
+    spdsx_binary_data
     juce::juce_audio_utils
     juce::juce_gui_basics
     specgram::specgram
@@ -117,6 +125,7 @@ endif()
 # source/device/*_test.cc suites, byte-for-byte against the captures.
 add_executable(spdutil source/spdutil_main.cc source/layers.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
+target_compile_definitions(spdutil PRIVATE SPDSX_VERSION="${PROJECT_VERSION}")
 
 # Bundle spdutil inside the app (Contents/Helpers) so the app menu's
 # Install Command-Line Tool can symlink /usr/local/bin/spdutil at it;
@@ -166,6 +175,7 @@ if(SPDSX_TESTS)
     )
     # The production translation units under test.
     target_sources(spdsx_tests PRIVATE
+        source/about_dialog.cc
         source/app_log.cc
         source/audio.cc
         source/bug_report.cc
@@ -192,6 +202,7 @@ if(SPDSX_TESTS)
         JUCE_USE_CURL=0
     )
     target_link_libraries(spdsx_tests PRIVATE
+        spdsx_binary_data
         juce::juce_audio_utils
         juce::juce_gui_basics
         specgram::specgram

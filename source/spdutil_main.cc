@@ -152,11 +152,23 @@ size_t EditDistance(const std::string& a, const std::string& b) {
 }
 
 // Every command the dispatcher understands, for the unknown-command path.
-constexpr std::array<std::string_view, 17> kCommands = {
-    "ping",      "info",       "dump",     "kits",       "kit",
-    "samples",   "readwave",   "setlayer", "selectkit",  "currentkit",
-    "setmode",   "deletewave", "sendwave", "assign",     "setname",
-    "setparams", "padlink"};
+constexpr std::array<std::string_view, 17> kCommands = {"ping",
+                                                        "info",
+                                                        "dump",
+                                                        "kits",
+                                                        "kit",
+                                                        "samples",
+                                                        "readwave",
+                                                        "setlayer",
+                                                        "selectkit",
+                                                        "currentkit",
+                                                        "setmode",
+                                                        "deletewave",
+                                                        "sendwave",
+                                                        "assign",
+                                                        "setname",
+                                                        "setparams",
+                                                        "padlink"};
 
 int UnknownCommand(const std::string& command) {
   std::fprintf(stderr, "unknown command \"%s\"", command.c_str());
@@ -180,6 +192,7 @@ int Usage() {
   std::fprintf(
       stderr,
       "usage: spdutil [--port <dev>] <command> [options]\n"
+      "       spdutil --version\n"
       "\n"
       "  ping        open the port and ping the device (read-only)\n"
       "  info        serial port, ping status, firmware version\n"
@@ -854,6 +867,7 @@ int RunSetMode(const SetModeArgs& args) {
     int pad;  // 1-based
     LayerMode from;
   };
+
   std::vector<Change> plan;
   for (const KitRange& r : ranges) {
     for (int kit = r.first; kit <= r.last; ++kit) {
@@ -1218,7 +1232,10 @@ int main(int argc, char** argv) {
         }
         return argv[++i];
       };
-      if (arg == "--port") {
+      if (arg == "--version") {
+        std::printf("spdutil %s (SPD-SX PROgram)\n", SPDSX_VERSION);
+        return 0;
+      } else if (arg == "--port") {
         port = next();
       } else if (arg == "--group") {
         group = std::atoi(next().c_str());

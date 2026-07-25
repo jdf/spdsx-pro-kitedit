@@ -6,6 +6,7 @@
 #include <map>
 #include <thread>
 
+#include "about_dialog.h"
 #include "actions.h"
 #include "app_log.h"
 #include "cli_install.h"
@@ -307,7 +308,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kToggleBrowser,
                 commands::kToggleAutoplay,
                 commands::kSendFeedback,
-                commands::kInstallCli});
+                commands::kInstallCli,
+                commands::kAbout});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id,
@@ -402,6 +404,12 @@ void MainComponent::getCommandInfo(juce::CommandID id,
     case commands::kInstallCli:
       info.setInfo(juce::String::fromUTF8("Install Command-Line Tool…"),
                    "Put the bundled spdutil on your PATH",
+                   "Application",
+                   0);
+      break;
+    case commands::kAbout:
+      info.setInfo("About SPD-SX PROgram",
+                   "Version and dependency credits",
                    "Application",
                    0);
       break;
@@ -530,6 +538,12 @@ bool MainComponent::perform(const InvocationInfo& info) {
     case commands::kInstallCli:
       InstallCli();
       return true;
+    case commands::kAbout: {
+      auto* app = juce::JUCEApplication::getInstance();
+      AboutPanel::Show(app != nullptr ? app->getApplicationVersion()
+                                      : juce::String("dev"));
+      return true;
+    }
     default:
       return false;
   }
