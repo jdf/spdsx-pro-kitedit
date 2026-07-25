@@ -1,4 +1,11 @@
-# Live QA: the three-way device sync (built 2026-07-21, never run against hardware)
+# Live QA: the three-way device sync
+
+Status after the 2026-07-21 hardware session: tests **1–3 passed** (single
+param push incl. the power-cycle proof, rename, pool-wave reassign; the
+download path too). That session also caught the oversized write-frame bug
+— uploads now chunk at 64 KiB, re-verified byte-exact via spdutil — but the
+full in-app upload (test 5) has not run since. **Remaining: tests 4–8.**
+Test 0 is per-session pre-flight; redo it each time.
 
 Work top to bottom — each test builds on the state the previous one leaves.
 Do everything on the scratch kits (**198, 199** — 199 is already "CLAUDE WAS
@@ -32,25 +39,25 @@ hand, but only scratch kits keep that cheap.
 
 ## 1. Single param edit (the smallest push)
 
-- [ ] Switch to kit 199. Open pad 3's header, change **fade point** to a
+- [x] Switch to kit 199. Open pad 3's header, change **fade point** to a
       value you'll recognize (e.g. 77).
-- [ ] Save button appears, plain label (one kit). Click it.
-- [ ] Status walks: `sync: reading device state…` → `sync: saving to
+- [x] Save button appears, plain label (one kit). Click it.
+- [x] Status walks: `sync: reading device state…` → `sync: saving to
       device…` → `synced with device`; button disappears.
-- [ ] Quit app. `./build/spdutil kit 199` → pad 3 fade point = 77.
-- [ ] **Power-cycle the unit**, `spdutil kit 199` again → still 77 (proves
+- [x] Quit app. `./build/spdutil kit 199` → pad 3 fade point = 77.
+- [x] **Power-cycle the unit**, `spdutil kit 199` again → still 77 (proves
       the flash commit in this flow, not just working state).
 
 ## 2. Kit rename
 
-- [ ] Relaunch app (doc reopens; button should be hidden). Rename kit 199
+- [x] Relaunch app (doc reopens; button should be hidden). Rename kit 199
       via the pencil. Push. Verify the name on the unit's kit screen (or
       `spdutil kits | grep 199`).
 
 ## 3. Reassign an existing pool wave
 
-- [ ] Device tab → drag any pool wave onto kit 199 pad 6 top. Push.
-- [ ] Hit pad 6 on the unit → plays that wave.
+- [x] Device tab → drag any pool wave onto kit 199 pad 6 top. Push.
+- [x] Hit pad 6 on the unit → plays that wave.
 
 ## 4. Clear a layer — watch item (A)
 
