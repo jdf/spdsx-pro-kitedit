@@ -183,7 +183,7 @@ juce::Result DeviceDocument::OpenDb(const juce::File& file) {
   if (db->SchemaVersion() > DeviceDb::kCurrentSchemaVersion) {
     return juce::Result::fail(
         file.getFileName()
-        + " was written by a newer version of spdsx-patchedit (document v"
+        + " was written by a newer version of SPD-SX PROgram (document v"
         + juce::String(db->SchemaVersion()) + "; this build reads up to v"
         + juce::String(DeviceDb::kCurrentSchemaVersion) + ")");
   }

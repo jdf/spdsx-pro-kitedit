@@ -104,7 +104,7 @@ FeedbackPanel::FeedbackPanel(BugReport seed)
   };
   addAndMakeVisible(copy_report_);
 
-  build_.setText("spdsx-patchedit " + seed_.app_version,
+  build_.setText("SPD-SX PROgram " + seed_.app_version,
                  juce::dontSendNotification);
   build_.setColour(juce::Label::textColourId, DimText());
   build_.setFont(juce::FontOptions(kBodyFont));

@@ -4,7 +4,7 @@ namespace spdsx {
 
 juce::String EnvironmentReport(const BugReport& report) {
   juce::String out;
-  out << "app: spdsx-patchedit " << report.app_version << "\n"
+  out << "app: SPD-SX PROgram " << report.app_version << "\n"
       << "os: " << report.os << "\n"
       << "device: " << report.device << "\n"
       << "document: " << report.document << "\n";

@@ -17,7 +17,7 @@ hand, but only scratch kits keep that cheap.
 
 ## 0. Pre-flight
 
-- [ ] `./presubmit.sh` green; run the app from `build/…/spdsx-patchedit.app`.
+- [ ] `./presubmit.sh` green; run the app from `build/…/SPD-SX PROgram.app`.
 - [ ] **Back up the document**: `cp ~/Documents/"SPD-SX PRO.spdsx" ~/Documents/"SPD-SX PRO.spdsx.pre-qa"` (adjust if your doc lives elsewhere).
 - [ ] Quit the official Roland app (one program per port).
 - [ ] Plug the device; wait for the header dot to go **green** (poll is 2s).

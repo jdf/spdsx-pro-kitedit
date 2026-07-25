@@ -1,7 +1,7 @@
 # spdutil — SPD-SX PRO command-line utility
 
 `spdutil` talks to a Roland SPD-SX PRO over its USB serial port using the
-same reverse-engineered protocol as the spdsx-patchedit app. It reads and
+same reverse-engineered protocol as the SPD-SX PROgram app. It reads and
 writes device state directly: kits, pad parameters, layer settings, and the
 sample pool (including audio upload/download). It is also the repro and
 verification tool the protocol work itself is driven with.

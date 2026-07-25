@@ -53,7 +53,7 @@ class MainWindow : public juce::DocumentWindow {
 public:
   // Takes ownership of content.
   explicit MainWindow(MainComponent* content)
-      : juce::DocumentWindow("SPD-SX Patch Edit",
+      : juce::DocumentWindow("SPD-SX PROgram",
                              juce::Colour(0xff12161b),
                              juce::DocumentWindow::allButtons) {
     setUsingNativeTitleBar(true);
@@ -78,7 +78,9 @@ public:
 
 class App : public juce::JUCEApplication {
 public:
-  const juce::String getApplicationName() override { return "spdsx-patchedit"; }
+  const juce::String getApplicationName() override {
+    return "SPD-SX PROgram";
+  }
 
   const juce::String getApplicationVersion() override { return "0.1.0"; }
 
@@ -115,7 +117,7 @@ public:
       } else {
         std::fprintf(stderr,
                      "unrecognized argument '%s'\n"
-                     "usage: spdsx-patchedit [--load <slot> <file.wav>]...\n",
+                     "usage: SPD-SX PROgram [--load <slot> <file.wav>]...\n",
                      args[i].toRawUTF8());
       }
     }

@@ -1,4 +1,4 @@
-# spdsx-patchedit
+# SPD-SX PROgram
 
 A desktop tool for interactively designing Roland SPD-SX PRO kits.
 C++20, JUCE 8 for UI and audio, built with CMake and vcpkg.
@@ -45,14 +45,14 @@ the official app (tooling and notes in [re/](re/README.md)). A JUCE-free
 library (`source/device/`) implements what's mapped so far, and the
 `spdutil` CLI exercises it against the hardware: ping the device, dump
 its memory image, and list kits and pad parameters live. Two-way kit
-sync is in progress. The app bundles `spdutil`; **spdsx-patchedit ▸
+sync is in progress. The app bundles `spdutil`; **SPD-SX PROgram ▸
 Install Command-Line Tool** puts it on your `PATH`.
 
 For testing without the mouse, slots can be pre-filled from the command
 line (slot indices are `(row * 3 + col) * 2`, `+1` for the bottom slot):
 
 ```
-spdsx-patchedit --load 0 kick.wav --load 1 snare.wav
+"SPD-SX PROgram" --load 0 kick.wav --load 1 snare.wav
 ```
 
 ## Building
@@ -63,7 +63,7 @@ Requires CMake ≥ 3.25, Ninja, and a [vcpkg](https://vcpkg.io) checkout
 ```
 cmake --preset default
 cmake --build --preset default
-./build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit
+"./build/spdsx-patchedit_artefacts/RelWithDebInfo/SPD-SX PROgram.app/Contents/MacOS/SPD-SX PROgram"
 ```
 
 The first configure builds the vcpkg dependencies (JUCE and specgram's

@@ -41,7 +41,10 @@ find_package(absl CONFIG REQUIRED)
 # DOCUMENT_EXTENSIONS registers it with Finder (double-clicking a .spdsx
 # opens the app; App::anotherInstanceStarted routes it to the document),
 # and ICON_BIG becomes the bundle's .icns (source: assets/icon.svg).
-juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "spdsx-patchedit"
+# The CMake target keeps the repo's name; PRODUCT_NAME is the app's
+# user-facing name (bundle, executable, menu bar). BUNDLE_ID stays at the
+# original identifier so macOS permissions and defaults survive the rename.
+juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "SPD-SX PROgram"
     BUNDLE_ID com.jdf.spdsx-patchedit
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
     DOCUMENT_EXTENSIONS spdsx)

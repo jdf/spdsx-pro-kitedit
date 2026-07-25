@@ -14,9 +14,9 @@ from this directory). Push with jdf's `jj push-main` alias.
 ## Build / run
 ```
 cmake --preset default && cmake --build --preset default
-./build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit
+"./build/spdsx-patchedit_artefacts/RelWithDebInfo/SPD-SX PROgram.app/Contents/MacOS/SPD-SX PROgram"
 ```
-`./install-app.sh` builds and installs `/Applications/spdsx-patchedit.app` — a normal double-clickable app with its own icon (`assets/icon.svg` → `icon.png` → JUCE `ICON_BIG`; regen recipe in `assets/README.md`) and the `.spdsx` extension registered, so double-clicking a document opens it (single-instance; `App::anotherInstanceStarted` → `MainComponent::OpenDocument`).
+`./install-app.sh` builds and installs `/Applications/SPD-SX PROgram.app` (the product renamed from spdsx-patchedit 2026-07-25; CMake target and BUNDLE_ID keep the old name) — a normal double-clickable app with its own icon (`assets/icon.svg` → `icon.png` → JUCE `ICON_BIG`; regen recipe in `assets/README.md`) and the `.spdsx` extension registered, so double-clicking a document opens it (single-instance; `App::anotherInstanceStarted` → `MainComponent::OpenDocument`).
 Targets: the GUI app; `spdutil` (device CLI: read `ping`/`info`/`dump`/`kits`/`kit <N>`/`samples`/`readwave`; write `assign`/`setname`/`setparams`/`sendwave` (upload+register)/`deletewave`/`padlink` (write ops take `--commit`) — run it bare for the options); `spdsx_device` (JUCE-free static lib). Preset is RelWithDebInfo (breakpoints). VS Code: open `../hax.code-workspace` (multi-root); `--load <slot> <wav>` pre-fills slots for testing.
 
 ## Architecture (source/)

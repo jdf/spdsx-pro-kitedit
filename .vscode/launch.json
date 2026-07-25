@@ -2,18 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "spdsx-patchedit",
+      "name": "SPD-SX PROgram",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit",
+      "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/SPD-SX PROgram.app/Contents/MacOS/SPD-SX PROgram",
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "cmake build"
     },
     {
-      "name": "spdsx-patchedit (test samples)",
+      "name": "SPD-SX PROgram (test samples)",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app/Contents/MacOS/spdsx-patchedit",
+      "program": "${workspaceFolder}/build/spdsx-patchedit_artefacts/RelWithDebInfo/SPD-SX PROgram.app/Contents/MacOS/SPD-SX PROgram",
       "args": [
         "--load", "0", "../specgram/test.wav",
         "--load", "9", "../specgram/levels.wav"

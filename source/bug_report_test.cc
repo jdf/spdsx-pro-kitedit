@@ -19,7 +19,7 @@ BugReport SampleReport() {
 
 TEST(EnvironmentReport, CarriesEveryFieldAsKeyValueLines) {
   const juce::String env = EnvironmentReport(SampleReport());
-  EXPECT_TRUE(env.contains("app: spdsx-patchedit 0.1.0"));
+  EXPECT_TRUE(env.contains("app: SPD-SX PROgram 0.1.0"));
   EXPECT_TRUE(env.contains("os: macOS 15.5 (arm64)"));
   EXPECT_TRUE(env.contains("device: connected, firmware 2.00 (0094)"));
   EXPECT_TRUE(env.contains("document: schema v2"));

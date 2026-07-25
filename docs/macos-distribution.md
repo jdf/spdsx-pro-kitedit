@@ -89,7 +89,7 @@ downloading the DMG through the same website users will use:
 
 ```sh
 spctl --assess --type open --context context:primary-signature \
-  --verbose=2 ~/Downloads/spdsx-patchedit-*.dmg
+  --verbose=2 ~/Downloads/SPD-SX-PROgram-*.dmg
 ```
 
 Opening the DMG and double-clicking the app should show the normal first-launch

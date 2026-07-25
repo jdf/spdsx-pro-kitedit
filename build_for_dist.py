@@ -29,7 +29,8 @@ ROOT = pathlib.Path(__file__).resolve().parent
 CMAKELISTS = ROOT / "CMakeLists.txt"
 VERSION_RE = re.compile(r"^(\s*VERSION\s+)(\d+)\.(\d+)\.(\d+)\s*$", re.MULTILINE)
 
-APP_NAME = "spdsx-patchedit"
+APP_NAME = "SPD-SX PROgram"
+DIST_SLUG = APP_NAME.replace(" ", "-")
 GITHUB_REPO = "jdf/spdsx-pro-kitedit"
 IDENTITY = os.environ.get("MACOS_SIGNING_IDENTITY", "Developer ID Application")
 NOTARY_PROFILE = os.environ.get("MACOS_NOTARY_PROFILE", "spdsx-patchedit-notary")
@@ -163,7 +164,7 @@ def MakeDmg() -> pathlib.Path:
     archs = Output(
         "lipo", "-archs", str(APP / "Contents/MacOS" / APP_NAME)
     ).strip().replace(" ", "-")
-    dmg = ROOT / "dist" / f"{APP_NAME}-{version}-macos-{archs}.dmg"
+    dmg = ROOT / "dist" / f"{DIST_SLUG}-{version}-macos-{archs}.dmg"
     dmg.parent.mkdir(exist_ok=True)
     if dmg.exists():
         Die(f"{dmg} already exists; move or remove it before making this release")

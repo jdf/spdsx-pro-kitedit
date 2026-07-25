@@ -9,8 +9,10 @@ cd "$(dirname "$0")"
 cmake --preset default >/dev/null
 cmake --build --preset default --target spdsx-patchedit
 
-APP="build/spdsx-patchedit_artefacts/RelWithDebInfo/spdsx-patchedit.app"
-DEST="/Applications/spdsx-patchedit.app"
+APP="build/spdsx-patchedit_artefacts/RelWithDebInfo/SPD-SX PROgram.app"
+DEST="/Applications/SPD-SX PROgram.app"
+# Drop the pre-rename bundle so LaunchServices doesn't see two copies.
+rm -rf "/Applications/spdsx-patchedit.app"
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 # Nudge LaunchServices so the icon and the .spdsx association show up

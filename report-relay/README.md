@@ -1,6 +1,6 @@
 # report-relay
 
-The tiny Vercel function that lets spdsx-patchedit users file bug reports
+The tiny Vercel function that lets SPD-SX PROgram users file bug reports
 without a GitHub account: the app POSTs a report here (Help ▸ Report a Bug
 or Send Feedback…), and this relay — which holds the GitHub token — files
 it as an issue.
