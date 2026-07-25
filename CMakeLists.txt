@@ -52,7 +52,29 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "SPD-SX PROgram"
 # The app icon, embedded so the About box can draw it.
 juce_add_binary_data(spdsx_binary_data SOURCES assets/icon.png)
 
+# Every statically linked dependency's license, concatenated into
+# Contents/Resources. The AGPL/GPL/LGPL/Apache components require their
+# texts to travel with the binary; the About box opens this file. Carried
+# as a bundle resource (not a POST_BUILD step) so CMake regenerates it
+# when the collector, our LICENSE, or the version changes.
+set(SPDSX_LICENSES "${CMAKE_CURRENT_BINARY_DIR}/LICENSES.txt")
+file(GLOB SPDSX_LICENSE_EXTRAS "${CMAKE_CURRENT_SOURCE_DIR}/licenses/*.txt")
+add_custom_command(OUTPUT "${SPDSX_LICENSES}"
+    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/collect-licenses.py"
+        "${VCPKG_INSTALLED_DIR}" "${VCPKG_TARGET_TRIPLET}" "${PROJECT_VERSION}"
+        "${SPDSX_LICENSES}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/collect-licenses.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+            ${SPDSX_LICENSE_EXTRAS}
+    COMMENT "Collecting dependency licenses"
+    VERBATIM
+)
+set_source_files_properties("${SPDSX_LICENSES}" PROPERTIES
+    GENERATED TRUE
+    MACOSX_PACKAGE_LOCATION Resources)
+
 target_sources(spdsx-patchedit PRIVATE
+    "${SPDSX_LICENSES}"
     source/about_dialog.cc
     source/app_log.cc
     source/audio.cc
