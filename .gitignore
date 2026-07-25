@@ -3,7 +3,9 @@
 .vs/
 build/
 build-coverage/
+build-release*/
 cmake-build-*/
+dist/
 prefix/
 CMakeLists.txt.user
 CMakeUserPresets.json
