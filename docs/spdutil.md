@@ -8,9 +8,14 @@ verification tool the protocol work itself is driven with.
 
 ```
 spdutil [--port <dev>] <command> [options]
+spdutil --version
 ```
 
-Built by the normal CMake build; the binary lands at `build/spdutil`.
+`--version` prints the SPD-SX PROgram version this tool was built with.
+
+Built by the normal CMake build; the binary lands at `build/spdutil`. It
+also ships inside the app bundle, and the app menu's **Install
+Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
 
 ## Connecting
 
@@ -18,7 +23,7 @@ Built by the normal CMake build; the binary lands at `build/spdutil`.
   until the device answers. The node number changes on every replug, so this
   is the normal way to run it.
 - **Close the official SPD-SX PRO App first** — one program per port.
-- The spdsx-patchedit app can stay open: it only holds the port during an
+- The SPD-SX PROgram app can stay open: it only holds the port during an
   active device operation, and its 2-second connection poll retries around
   short collisions.
 
@@ -81,7 +86,9 @@ Some factory preloads have no exportable file and fail cleanly.
 
 ## Kit and pad writes
 
-All of these take an optional kit number `[K]` (default 1) and `--commit`.
+`setname`, `assign`, `setparams`, and `setlayer` take an optional kit
+number `[K]` (default 1) and `--commit`; `selectkit` and `setmode` are
+their own shapes, below.
 
 ### `selectkit <N>`
 Switches the device's playback kit (1-200). Instant, not a stored edit —

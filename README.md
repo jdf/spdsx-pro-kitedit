@@ -43,9 +43,9 @@ The SPD-SX PRO speaks Roland DT1 SysEx wrapped in a proprietary frame
 over USB serial; the protocol is being reverse-engineered by sniffing
 the official app (tooling and notes in [re/](re/README.md)). A JUCE-free
 library (`source/device/`) implements what's mapped so far, and the
-`spdutil` CLI exercises it against the hardware: ping the device, dump
-its memory image, and list kits and pad parameters live. Two-way kit
-sync is in progress. The app bundles `spdutil`; **SPD-SX PROgram ▸
+`spdutil` CLI ([full command reference](docs/spdutil.md)) exercises it
+against the hardware: ping the device, dump its memory image, and list
+kits and pad parameters live. Two-way kit sync is in progress. The app bundles `spdutil`; **SPD-SX PROgram ▸
 Install Command-Line Tool** puts it on your `PATH`.
 
 For testing without the mouse, slots can be pre-filled from the command
