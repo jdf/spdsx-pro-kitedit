@@ -468,6 +468,19 @@ bool ExecutePush(device::SpdsxDevice& dev,
     wrote = true;
     for (const SmpUpload& u : uploads) {
       dev.UploadWave(u.index, u.smp, u.wavename, u.filename);
+      // Read it back before telling anyone it landed. The caller records
+      // an upload as soon as it is reported, so that a sync interrupted
+      // later does not upload the same file twice; that is only safe if
+      // what reached the device is known to be what was sent, rather
+      // than assumed from a write that returned.
+      const device::Bytes readback = dev.ReadRemoteWave(u.index);
+      if (readback.size() < u.smp.size()
+          || !std::equal(u.smp.begin(), u.smp.end(), readback.begin())) {
+        throw std::runtime_error(
+            "sample " + std::to_string(u.index)
+            + " did not read back as written, so it was not recorded; "
+              "nothing was left pointing at it");
+      }
       on_uploaded(u);  // a no-op by default (IgnoreUpload)
     }
   }

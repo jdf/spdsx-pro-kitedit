@@ -348,10 +348,11 @@ private:
     std::vector<UploadPlan> uploads;
     bool pulled = false;  // device-side changes landed locally
 
-    // Uploads that reached the device this push, held until the batch
-    // flash commit CONFIRMS. Recording them (pool entry, cached audio)
-    // only on a confirmed commit is what lets a failed sync re-upload
-    // instead of trusting a sample that may be partial on the device.
+    // Uploads recorded this push. Each is written into the document
+    // (pool entry, cached audio, and the layers that referenced the file
+    // repointed at the new index) the moment ExecutePush reports it,
+    // which it does only after reading it back off the device — so a
+    // sync interrupted later resumes instead of uploading again.
     struct Landed {
       UploadPlan plan;
       juce::MemoryBlock wav;

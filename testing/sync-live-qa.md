@@ -98,35 +98,39 @@ mode), relaunch, push. The conflict is the SAME field changed to
 DIFFERENT values on both sides, the one thing the three-way merge cannot
 decide for itself.
 
-- [ ] **Device's wins.** App: kit 199 pad 5 mode → XFADE. Device: SWITCH.
-      Push. The dialog shows **one row** naming both values, ticked, with
-      the outcome "Mine". Click **Keep Device's** (outcome becomes
-      "Device's"), then **Sync**. After: the app's pad 5 reads SWITCH, the
-      device still reads SWITCH, the button is hidden.
-- [ ] **Mine wins.** Re-stage (app XFADE, device ALTERNATE). Push, leave
-      the row as it comes up ("Mine"), **Sync**. After: the unit reads
-      XFADE.
-- [ ] **Do Nothing.** Re-stage (app FADE1, device ALTERNATE). Push, click
-      **Do Nothing**, **Sync**. Status says `synced (skipped conflicts remain)`,
-      the button STAYS visible, and pushing again re-shows the same
-      conflict — the skipped pad's base is deliberately not advanced.
-- [ ] **Escape.** Re-stage (app FADE2, device ALTERNATE). Push, then press **escape**
-      on the dialog. The sync aborts: nothing changes on either side and
-      the button is re-enabled.
-- [ ] **Bulk controls** (needs more than one conflict — edit pads 5, 6 and
-      7 in the app and have all three staged differently on the device):
-      every row starts ticked and "Mine"; **Select all** clears/ticks them
-      all; untick one and the Select all box shows a **dash** (mixed);
-      with only some ticked, **Keep Device's** changes ONLY those rows'
-      outcomes; with none ticked the three bulk buttons are disabled.
+- [x] **Device's wins.** PASSED 2026-07-26. App XFADE vs device SWITCH,
+      base MIX. Keep Device's → Sync: the device was NOT written (still
+      SWITCH), the document's current AND base both became SWITCH, and
+      the rest of pad 5 was untouched — the merge is field-wise.
+- [x] **Mine wins.** PASSED 2026-07-26. App XFADE vs device ALTERNATE,
+      base SWITCH. Left as "Mine" → Sync: the device was written to
+      XFADE and both snapshots advanced.
+- [x] **Do Nothing.** PASSED 2026-07-26. App FADE1 vs device ALTERNATE,
+      base XFADE. Do Nothing → Sync: all three stayed different, base
+      deliberately NOT advanced, the button stayed visible, and pushing
+      again re-showed the same conflict.
+- [x] **Escape.** PASSED 2026-07-26. Escape on the dialog aborted the
+      sync outright — device, current and base all unchanged.
+- [x] **Bulk controls.** PASSED 2026-07-26. Three conflicts (pads 5-7):
+      all rows start ticked and "Mine"; Select all clears and re-ticks;
+      with none ticked the three bulk buttons disable; unticking one
+      shows the dash (mixed) state; with two ticked, Keep Device's
+      changed ONLY those two. Syncing that mix pushed pad 5 (Mine) and
+      pulled pads 6-7 (Device's), each advancing its base.
 
 ## 8. Pull the cable mid-push (failure honesty)
 
-- [ ] Stage a multi-pad edit, push, and yank USB during `saving to
-      device…`. Expect an error alert; the doc unchanged (still dirty).
-- [ ] Replug, wait for green, push again → succeeds. If the failed run got
-      far enough to upload a file first: confirm `spdutil samples` shows it
-      **once**, not twice (uploads are recorded as they land).
+- [x] PASSED (with a fix) 2026-07-26. Staged an upload plus pad edits on
+      kit 199, yanked USB during "saving to device". The error surfaced,
+      the document stayed dirty, and a push after replugging succeeded.
+      **But the sample was uploaded TWICE** (pool 1678 and 1679): uploads
+      were held until the batch commit confirmed, so an interrupted sync
+      recorded nothing and the retry uploaded again, leaking a pool slot
+      each time. Fixed: ExecutePush now reads each upload back off the
+      device and compares before reporting it, and the report records it
+      at once — so a retry resumes instead of re-uploading, and a partial
+      upload is detected rather than assumed. **Re-run this test to
+      confirm the sample lands once.**
 
 ## 9. Wrap-up
 

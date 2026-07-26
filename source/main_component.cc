@@ -1357,9 +1357,19 @@ void MainComponent::CancelSync() {
 void MainComponent::OnWaveUploaded(UploadPlan plan,
                                    juce::MemoryBlock wav,
                                    int frames) {
-  // Hold the result until the batch commit confirms — do NOT touch the
-  // document yet. If the commit fails, none of this is recorded, so the
-  // retry re-uploads rather than trusting a possibly-partial sample.
+  // ExecutePush reads every upload back before reporting it, so this one
+  // is known to be on the device intact. Record it now — pool entry,
+  // cached audio, and the layers that referenced the file repointed at
+  // the new index — so a sync that dies later resumes from here rather
+  // than uploading the same file to a second pool slot.
+  device::SampleRecord record;
+  record.index = plan.index;
+  record.wavename = plan.wavename;
+  record.filename = plan.filename;
+  record.frames = static_cast<uint32_t>(frames);
+  document_.AddPoolRecord(record);
+  document_.StoreWaveAudio(plan.index, wav);
+  document_.ReplaceFileLayers(plan.file, plan.index);
   if (sync_ != nullptr) {
     sync_->landed.push_back({std::move(plan), std::move(wav), frames});
   }
@@ -1393,18 +1403,9 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
   }
   AppLog::Note("sync push committed: " + juce::String(sync_->landed.size())
                + " upload(s) landed");
-  // The commit confirmed: now record every landed upload (pool entry +
-  // cached audio) and advance the kits. ApplySyncedKit installs the
+  // The uploads recorded themselves as they landed; the commit makes
+  // them durable. Advance the kits: ApplySyncedKit installs the
   // device-wave layers the plan already substituted.
-  for (const auto& l : sync_->landed) {
-    device::SampleRecord record;
-    record.index = l.plan.index;
-    record.wavename = l.plan.wavename;
-    record.filename = l.plan.filename;
-    record.frames = static_cast<uint32_t>(l.frames);
-    document_.AddPoolRecord(record);
-    document_.StoreWaveAudio(l.plan.index, l.wav);
-  }
   for (const auto& [kit, plan] : sync_->plans) {
     document_.ApplySyncedKit(kit, plan.new_current, plan.new_base);
   }
