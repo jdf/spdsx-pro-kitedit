@@ -44,13 +44,6 @@ void DeviceSamplePanel::Refresh() {
   repaint();
 }
 
-void DeviceSamplePanel::SetStatus(const juce::String& status) {
-  if (status_ != status) {
-    status_ = status;
-    repaint();
-  }
-}
-
 void DeviceSamplePanel::RebuildRows() {
   const auto& pool = device_.sample_pool();
   const juce::String query = filter_.getText().trim();
@@ -75,10 +68,7 @@ const device::SampleRecord* DeviceSamplePanel::RecordForRow(int row) const {
 void DeviceSamplePanel::paint(juce::Graphics& g) {
   g.setColour(kMeta);
   g.setFont(13.0f);
-  if (status_.isNotEmpty()) {
-    g.drawFittedText(
-        status_, getLocalBounds().reduced(12), juce::Justification::centred, 4);
-  } else if (device_.sample_pool().empty()) {
+  if (device_.sample_pool().empty()) {
     g.drawFittedText("no device samples\n\nFile > Load Samples from Device",
                      getLocalBounds().reduced(12),
                      juce::Justification::centred,

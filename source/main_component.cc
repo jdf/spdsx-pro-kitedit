@@ -29,6 +29,7 @@ constexpr int kMidiChannel = 10;
 constexpr int kMidiNoteBase = 60;
 
 constexpr int kHeaderHeight = 44;
+constexpr int kStatusHeight = 22;
 constexpr int kBrowserWidth = 260;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
@@ -70,6 +71,14 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   panel_tabs_.setOutline(0);
   panel_tabs_.setVisible(browser_visible_);
   addChildComponent(panel_tabs_);
+
+  // A quiet strip along the bottom: device and sync narration, where it
+  // stays visible whatever panel or tab is showing.
+  status_bar_.setFont(juce::FontOptions(12.0f));
+  status_bar_.setColour(juce::Label::textColourId, juce::Colour(0xff8b949e));
+  status_bar_.setJustificationType(juce::Justification::centredLeft);
+  status_bar_.setInterceptsMouseClicks(false, false);
+  addAndMakeVisible(status_bar_);
 
   setWantsKeyboardFocus(true);
   for (int i = 0; i < kSlotCount; ++i) {
@@ -569,6 +578,10 @@ void ReportCliInstall(bool ok) {
 
 }  // namespace
 
+void MainComponent::SetStatus(const juce::String& status) {
+  status_bar_.setText(status, juce::dontSendNotification);
+}
+
 void MainComponent::MaybeShowDisclaimer() {
   if (settings_.getUserSettings()->getIntValue(kDisclaimerAcceptedKey, 0)
       >= kDisclaimerVersion) {
@@ -791,11 +804,11 @@ void MainComponent::DownloadKitSamples() {
     }
   }
   if (want.empty()) {
-    device_samples_.SetStatus("kit samples already cached");
+    SetStatus("kit samples already cached");
     juce::Timer::callAfterDelay(
         1500, [safe = juce::Component::SafePointer<MainComponent>(this)] {
           if (safe != nullptr) {
-            safe->device_samples_.SetStatus({});
+            safe->SetStatus({});
           }
         });
     return;
@@ -810,8 +823,7 @@ void MainComponent::DownloadKitSamples() {
   download_current_ = std::make_shared<std::atomic<int>>(0);
   download_permille_ = std::make_shared<std::atomic<int>>(0);
   UpdateDownloadIndicators();
-  device_samples_.SetStatus(
-      juce::String::fromUTF8("downloading samples\xe2\x80\xa6"));
+  SetStatus(juce::String::fromUTF8("downloading samples\xe2\x80\xa6"));
   juce::Component::SafePointer<MainComponent> safe(this);
   auto current = download_current_;
   auto permille = download_permille_;
@@ -1129,7 +1141,7 @@ void MainComponent::FinishSyncFetch(std::vector<device::KitRecord> kits,
                                     std::vector<device::SampleRecord> pool,
                                     const juce::String& error) {
   if (error.isNotEmpty()) {
-    device_samples_.SetStatus({});
+    SetStatus({});
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon,
         "Sync Changes with Device",
@@ -1177,7 +1189,7 @@ void MainComponent::FinishSyncFetch(std::vector<device::KitRecord> kits,
       },
       [safe] {
         if (safe != nullptr) {
-          safe->device_samples_.SetStatus({});
+          safe->SetStatus({});
           safe->CancelSync();
         }
       });
@@ -1357,7 +1369,7 @@ void MainComponent::OnWaveUploaded(UploadPlan plan,
 void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
   sync_phase_ = SyncPhase::kNone;
   HideProgress();
-  device_samples_.SetStatus({});
+  SetStatus({});
   if (sync_ == nullptr) {
     CancelSync();
     return;
@@ -1417,12 +1429,12 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
   RefreshKitSelector();
   RefreshDocumentState();
   UpdateSyncButton();
-  device_samples_.SetStatus(skipped ? "synced (skipped conflicts remain)"
-                                    : "synced with device");
+  SetStatus(skipped ? "synced (skipped conflicts remain)"
+                    : "synced with device");
   juce::Timer::callAfterDelay(
       2000, [safe = juce::Component::SafePointer<MainComponent>(this)] {
         if (safe != nullptr) {
-          safe->device_samples_.SetStatus({});
+          safe->SetStatus({});
         }
       });
 }
@@ -1481,7 +1493,7 @@ void MainComponent::FinishKitSampleDownload(const juce::String& error,
                                             int done,
                                             int failed) {
   device_fetching_ = false;
-  device_samples_.SetStatus({});
+  SetStatus({});
   commands_.commandStatusChanged();
   // Clear indicators and settle every affected slot to its final state
   // (playable if cached, "on device" if it was skipped or failed).
@@ -1508,11 +1520,11 @@ void MainComponent::FinishKitSampleDownload(const juce::String& error,
     const juce::String note = juce::String(failed)
         + (failed == 1 ? " sample couldn't be downloaded"
                        : " samples couldn't be downloaded");
-    device_samples_.SetStatus(note);
+    SetStatus(note);
     juce::Timer::callAfterDelay(
         3000, [safe = juce::Component::SafePointer<MainComponent>(this)] {
           if (safe != nullptr) {
-            safe->device_samples_.SetStatus({});
+            safe->SetStatus({});
           }
         });
   }
@@ -1620,6 +1632,12 @@ void MainComponent::LoadAudioIntoSlot(int idx,
 void MainComponent::paint(juce::Graphics& g) {
   g.fillAll(kWindowBg);
 
+  const auto strip = getLocalBounds().removeFromBottom(kStatusHeight);
+  g.setColour(juce::Colour(0xff0d1117));
+  g.fillRect(strip);
+  g.setColour(juce::Colour(0xff222831));
+  g.fillRect(strip.withHeight(1));
+
   const auto now = juce::Time::getMillisecondCounter();
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
@@ -1655,6 +1673,7 @@ void MainComponent::paint(juce::Graphics& g) {
 juce::Rectangle<int> MainComponent::GridArea() const {
   auto area = getLocalBounds();
   area.removeFromTop(kHeaderHeight);
+  area.removeFromBottom(kStatusHeight);
   if (browser_visible_) {
     area.removeFromLeft(kBrowserWidth);
   }
@@ -1701,8 +1720,12 @@ void MainComponent::resized() {
   // what keeps the chooser clear of the save/transfer buttons.
   kit_chooser_.setBounds(header.withSizeKeepingCentre(
       juce::jmin(500, header.getWidth() - 16), 28));
-  panel_tabs_.setBounds(
-      0, kHeaderHeight, kBrowserWidth, getHeight() - kHeaderHeight);
+  status_bar_.setBounds(
+      getLocalBounds().removeFromBottom(kStatusHeight).withTrimmedLeft(10));
+  panel_tabs_.setBounds(0,
+                        kHeaderHeight,
+                        kBrowserWidth,
+                        getHeight() - kHeaderHeight - kStatusHeight);
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto inner = PadBounds(r, c).reduced(kPadPadding);

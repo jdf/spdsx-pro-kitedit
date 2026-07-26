@@ -31,10 +31,6 @@ public:
   // Call after the pool changes (device fetch, open, new).
   void Refresh();
 
-  // A transient status line ("connecting…", "loading… N blocks") shown
-  // in place of the empty-pool hint; empty clears it.
-  void SetStatus(const juce::String& status);
-
   void paint(juce::Graphics& g) override;
   void resized() override;
 
@@ -60,7 +56,6 @@ private:
   // Positions into sample_pool() passing the current filter.
   std::vector<size_t> rows_;
   juce::ListBox list_;
-  juce::String status_;
 };
 
 }  // namespace spdsx

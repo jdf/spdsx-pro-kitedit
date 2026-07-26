@@ -83,6 +83,11 @@ public:
   // Shared by File > Open and Finder (double-clicking a .spdsx).
   void OpenDocument(const juce::File& file);
 
+  // A line of device/sync narration in the strip along the bottom of the
+  // window — where it stays visible whatever panel or tab is showing.
+  // Empty clears it.
+  void SetStatus(const juce::String& status);
+
   // Shows the first-launch clickwrap risk acknowledgment unless this
   // settings profile already accepted the current version; declining
   // quits the app.
@@ -311,6 +316,7 @@ private:
   // The version as the unit reports it ("2.00"), and the same plus the
   // build for display ("2.00 (0094)"). The firmware gate compares the
   // bare version; the display string is for bug reports.
+  juce::Label status_bar_;
   juce::String device_firmware_version_;
   juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};
