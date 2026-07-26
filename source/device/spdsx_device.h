@@ -43,9 +43,35 @@ std::string FindDevicePort(PortBackend& ports = PlatformPorts());
 
 class SpdsxDevice {
 public:
+  // The one firmware every write path has been verified against. The
+  // protocol here was mapped by watching this firmware and checked
+  // byte-for-byte against captures of it; another version may lay its
+  // records out differently, and a wrong write lands in flash. So reads
+  // work on anything, and every write refuses unless the unit reports
+  // exactly this.
+  static constexpr const char* kSupportedFirmware = "2.00";
+
   // Borrows the port: it must outlive the device. Taking the channel rather
   // than a path is what lets a test drive every op against a fake.
   explicit SpdsxDevice(SerialPort* port);
+
+  // Records the unit's firmware without asking it, for callers that
+  // already read it (and for tests). Skips the query the first write
+  // would otherwise make.
+  void AssumeFirmware(std::string version);
+
+  // The firmware this device is known to run: what AssumeFirmware was
+  // told, or what the first write's check read. Empty until then.
+  const std::string& firmware() const { return firmware_; }
+
+  // Whether writes are allowed — false when the unit reports anything
+  // but kSupportedFirmware. Queries the unit if it has not been asked.
+  bool WritesAllowed();
+
+  // Throws unless the unit runs kSupportedFirmware. Every write op calls
+  // this first, so a new one cannot quietly skip it; call it yourself to
+  // refuse before a long read rather than after.
+  void RequireSupportedFirmware();
 
   // Writes a framed payload and waits for the device's framed reply. Use for
   // messages that reply (kit-select, object-focus, reads).
@@ -125,6 +151,7 @@ public:
     int group = 0;
     double pace_seconds = 0.02;
   };
+
   void SetPadLink(const PadLinkWrite& w);
 
   // Selects the kit, then writes its 16-char name (space-padded/truncated).
@@ -143,6 +170,7 @@ public:
     int decay = 127;
     double pace_seconds = 0.02;
   };
+
   void SetPadLayerMix(const PadLayerMixWrite& w);
 
   // Assigns a wave (sample number) to one of a pad's slots, and sets the
@@ -155,6 +183,7 @@ public:
     int sample = 0;  // pool index; 0 clears the layer
     double pace_seconds = 0.02;
   };
+
   void SetPadWave(const PadWaveWrite& w);
 
   // Focuses the pad, then writes its hit-response params (mode, fades,
@@ -167,6 +196,7 @@ public:
     PadDeviceParams params;
     double pace_seconds = 0.02;
   };
+
   void SetPadLayerParams(const PadParamsWrite& w);
 
   using ProgressCallback = std::function<void(size_t done, size_t total)>;
@@ -205,6 +235,14 @@ public:
                  double block_timeout = 15.0);
 
 private:
+  // Frames and writes with no firmware check — for the DT1s that only
+  // move focus (kit select, object select), which change nothing stored.
+  void SendRaw(const Bytes& payload);
+
+  // What the unit reports (or was assumed), once known.
+  std::string firmware_;
+  bool firmware_known_ = false;
+
   // Reads one transport frame's payload; empty on idle/malformed.
   Bytes ReadBulkFrame(double idle_timeout, double body_timeout);
 

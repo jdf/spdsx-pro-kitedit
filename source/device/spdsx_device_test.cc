@@ -40,9 +40,82 @@ Bytes CommitPoll(uint8_t status) {
 
 class SpdsxDeviceTest : public ::testing::Test {
 protected:
+  SpdsxDeviceTest() {
+    // Writes refuse on unrecognized firmware; these tests exercise the
+    // wire bytes, so tell the device what it is running rather than
+    // queueing a version reply ahead of every expectation.
+    dev.AssumeFirmware(SpdsxDevice::kSupportedFirmware);
+  }
+
   FakeSerialPort port;
   SpdsxDevice dev {&port};
 };
+
+// ---- The firmware gate ----
+
+// A write against firmware the protocol was never verified on could land
+// a differently-laid-out record in flash, which is not undoable.
+TEST(FirmwareGate, AWriteRefusesWhenTheUnitReportsAnotherVersion) {
+  FakeSerialPort port;
+  SpdsxDevice dev {&port};
+  dev.AssumeFirmware("1.50");
+
+  EXPECT_FALSE(dev.WritesAllowed());
+  EXPECT_THROW(dev.SetKitName(1, "NOPE", 0.0), std::runtime_error);
+  EXPECT_TRUE(port.writes().empty());
+}
+
+TEST(FirmwareGate, AWriteRefusesWhenTheUnitDoesNotAnswer) {
+  FakeSerialPort port;  // nothing queued: the version query comes back empty
+  SpdsxDevice dev {&port};
+
+  EXPECT_FALSE(dev.WritesAllowed());
+  EXPECT_THROW(dev.Commit(), std::runtime_error);
+}
+
+TEST(FirmwareGate, TheRefusalNamesBothVersions) {
+  FakeSerialPort port;
+  SpdsxDevice dev {&port};
+  dev.AssumeFirmware("1.50");
+  try {
+    dev.SetKitName(1, "NOPE", 0.0);
+    FAIL() << "expected a refusal";
+  } catch (const std::runtime_error& e) {
+    const std::string what = e.what();
+    EXPECT_NE(what.find("1.50"), std::string::npos) << what;
+    EXPECT_NE(what.find(SpdsxDevice::kSupportedFirmware), std::string::npos)
+        << what;
+  }
+}
+
+TEST(FirmwareGate, TheSupportedVersionWrites) {
+  FakeSerialPort port;
+  SpdsxDevice dev {&port};
+  dev.AssumeFirmware(SpdsxDevice::kSupportedFirmware);
+
+  EXPECT_TRUE(dev.WritesAllowed());
+  dev.SetKitName(1, "FINE", 0.0);
+  EXPECT_FALSE(port.writes().empty());
+}
+
+// Reads have to keep working on any firmware — that is how you find out
+// what a strange unit is running.
+TEST(FirmwareGate, ReadsAndFocusAreNotGated) {
+  FakeSerialPort port;
+  SpdsxDevice dev {&port};
+  dev.AssumeFirmware("9.99");
+
+  EXPECT_NO_THROW(dev.SelectKit(5));
+  EXPECT_NO_THROW(dev.SelectObject(ObjectKind::kPad, 3));
+  EXPECT_NO_THROW((void)dev.Ping());
+}
+
+TEST(FirmwareGate, AssumeFirmwareIsWhatTheDeviceReports) {
+  FakeSerialPort port;
+  SpdsxDevice dev {&port};
+  dev.AssumeFirmware("2.00");
+  EXPECT_EQ(dev.firmware(), "2.00");
+}
 
 // ---- The transport frame ----
 
@@ -279,9 +352,9 @@ TEST_F(SpdsxDeviceTest, SetPadLayerMixWritesVolumeFadeInAndDecay) {
   const PadLayerRef layer {.kit = 199, .pad = 1, .slot = PadSlot::kTop};
   const std::vector<Bytes> sent = port.payloads();
   ASSERT_EQ(sent.size(), 3u);
-  EXPECT_EQ(sent[0],
-            Dt1(PadLayerAddr(layer, kLayerVolumeOffset),
-                NibbleEncode(-35 & 0xFFFF)));
+  EXPECT_EQ(
+      sent[0],
+      Dt1(PadLayerAddr(layer, kLayerVolumeOffset), NibbleEncode(-35 & 0xFFFF)));
   EXPECT_EQ(sent[1], Dt1(PadLayerAddr(layer, kLayerFadeInOffset), {10}));
   EXPECT_EQ(sent[2], Dt1(PadLayerAddr(layer, kLayerDecayOffset), {100}));
 }
@@ -793,8 +866,7 @@ TEST_F(SpdsxDeviceTest, CurrentKitReadsTheHeadOfTheKitsBank) {
   }
   // A properly-headed block frame: the 14-byte block header CleanBulkImage
   // strips, the clean data (current kit first), the trailing f7.
-  Bytes block = {
-      0xF0, 0x41, 0x6C, 0x02, 0, 0, 0, 0, 0x10, 0x40, 0, 0, 0, 0};
+  Bytes block = {0xF0, 0x41, 0x6C, 0x02, 0, 0, 0, 0, 0x10, 0x40, 0, 0, 0, 0};
   block.push_back(0x0B);  // kit 12, 0-based, u16 LE
   block.push_back(0x00);
   block.insert(block.end(), 8, 0x00);

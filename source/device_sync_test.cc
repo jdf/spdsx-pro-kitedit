@@ -516,6 +516,7 @@ Bytes SyncCommitDone() {
 TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
+  dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
 
   KitWrite kw;
   kw.kit = 199;
@@ -571,6 +572,7 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
 TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
+  dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
 
   EXPECT_TRUE(ExecutePush(dev, {}, {}, IgnoreUpload, 0.0));
   EXPECT_TRUE(port.writes().empty());
@@ -581,6 +583,7 @@ TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {
 TEST(DeviceSyncPush, AnAbortedCommitReportsNotCommitted) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
+  dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
 
   KitWrite kw;
   kw.kit = 1;
@@ -594,6 +597,7 @@ TEST(DeviceSyncPush, AnAbortedCommitReportsNotCommitted) {
 TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
+  dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
 
   SmpUpload upload;
   upload.index = 1587;
@@ -660,6 +664,7 @@ TEST(DeviceSyncPush, EndToEndFromPlanToWire) {
 
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
+  dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
   port.QueueReply({0x7a});  // commit begin ack
   port.QueueReply(SyncCommitDone());
 

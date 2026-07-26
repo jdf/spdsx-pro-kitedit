@@ -798,6 +798,7 @@ int RunSetLayer(const SetLayerArgs& args) {
   // SetPadLayerMix writes all three, so anything the user left out has to
   // be read back first or it would be overwritten with a default.
   if (!complete) {
+    dev.RequireSupportedFirmware();  // before the bank read, not after
     std::printf("opened %s, reading kit %d's current layer mix...\n",
                 port.c_str(),
                 args.kit);
@@ -900,6 +901,7 @@ int RunSetMode(const SetModeArgs& args) {
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
+  dev.RequireSupportedFirmware();  // before the bank read, not after
   std::printf("opened %s, reading the kits bank...\n", port.c_str());
   const auto kits = spdsx::device::ParseKits(
       spdsx::device::CleanBulkImage(dev.DumpBank(spdsx::device::kBankKits)));

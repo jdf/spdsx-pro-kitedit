@@ -1045,6 +1045,26 @@ void MainComponent::SyncChangesWithDevice() {
     UpdateSyncButton();
     return;
   }
+  // The write paths were only ever verified against one firmware, and a
+  // wrong write lands in flash. The connection poll already read the
+  // version, so refuse here rather than partway through the push.
+  if (device_firmware_ != device::SpdsxDevice::kSupportedFirmware) {
+    device_fetching_ = false;
+    UpdateSyncButton();
+    AppLog::Note("sync refused: firmware " + device_firmware_);
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::MessageBoxIconType::WarningIcon,
+        "Sync Changes with Device",
+        "This unit reports firmware "
+            + (device_firmware_.isEmpty() ? juce::String("(unknown)")
+                                          : "\"" + device_firmware_ + "\"")
+            + ", and writing has only been verified against \""
+            + device::SpdsxDevice::kSupportedFirmware
+            + juce::String::fromUTF8(
+                "\". Your edits are safe in this document — reading the "
+                "device still works, but nothing will be written to it."));
+    return;
+  }
   AppLog::Note("sync started: " + juce::String(dirty.size()) + " dirty kit(s)");
   // Uploads need a trustworthy picture of which pool indices are free,
   // so a sync that will upload also re-reads the pool directory.

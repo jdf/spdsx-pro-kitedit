@@ -122,8 +122,39 @@ Bytes SpdsxDevice::Command(const Bytes& payload, double timeout_seconds) {
   return ReadFrame(timeout_seconds);
 }
 
-void SpdsxDevice::Send(const Bytes& payload) {
+void SpdsxDevice::SendRaw(const Bytes& payload) {
   port_->Write(Wrap(payload));
+}
+
+void SpdsxDevice::Send(const Bytes& payload) {
+  RequireSupportedFirmware();
+  SendRaw(payload);
+}
+
+void SpdsxDevice::AssumeFirmware(std::string version) {
+  firmware_ = std::move(version);
+  firmware_known_ = true;
+}
+
+bool SpdsxDevice::WritesAllowed() {
+  if (!firmware_known_) {
+    firmware_ = FirmwareField(0);
+    firmware_known_ = true;
+  }
+  return firmware_ == kSupportedFirmware;
+}
+
+void SpdsxDevice::RequireSupportedFirmware() {
+  if (WritesAllowed()) {
+    return;
+  }
+  throw std::runtime_error(
+      "this unit reports firmware \""
+      + (firmware_.empty() ? std::string("(no answer)") : firmware_)
+      + "\", and every write here has only been verified against \""
+      + kSupportedFirmware
+      + "\". Refusing to write: a record laid out differently would be "
+        "corrupted, and flash writes are not undoable. Reading is fine.");
 }
 
 Bytes SpdsxDevice::Ping() {
@@ -189,11 +220,13 @@ Bytes ShortControl(uint8_t sub) {
 }  // namespace
 
 bool SpdsxDevice::Commit(absl::FunctionRef<bool()> should_abort) {
+  RequireSupportedFirmware();
   Command(ShortControl(0x21));  // begin; device acks 6a 7a
   return PollCommitted(should_abort);
 }
 
 bool SpdsxDevice::CommitUploadBatch(absl::FunctionRef<bool()> should_abort) {
+  RequireSupportedFirmware();
   // The import commit carries two extra control messages between begin and
   // the poll — 6a 0c arg 1 and 6a 02 — in every capture of the official
   // app's import (synthupload-1.log, import-multi-1.log). A plain WRITE or
@@ -225,6 +258,7 @@ bool SpdsxDevice::PollCommitted(absl::FunctionRef<bool()> should_abort) {
 }
 
 void SpdsxDevice::DeleteWave(int sample_index) {
+  RequireSupportedFirmware();
   // The official app's full delete (fileops-1.log): query the slot and the
   // last registered index, delete inside a session bracket, then two status
   // queries before the session close and the commit.
@@ -236,8 +270,7 @@ void SpdsxDevice::DeleteWave(int sample_index) {
   // with unsolicited DT1 notifications (a kit-select echo, the assignments
   // being cleared). Drain until quiet, or the next command reads one as its
   // own ack and the stream desyncs.
-  while (!ReadFrame(0.3).empty()) {
-  }
+  while (!ReadFrame(0.3).empty()) {}
   Command(ShortControl(0x18));
   Command(ShortControl(0x23));
   Command(ControlFrame(0x09, 0));  // end session
@@ -246,12 +279,13 @@ void SpdsxDevice::DeleteWave(int sample_index) {
 
 void SpdsxDevice::SelectKit(int kit) {
   // A DT1 like any other: the device never acks it (no capture has a reply
-  // on the DT1 channel), so waiting would just stall the caller.
-  Send(Dt1(kKitSelectAddr, EncodeKit(kit)));
+  // on the DT1 channel), so waiting would just stall the caller. Moves
+  // playback only, so it needs no firmware check.
+  SendRaw(Dt1(kKitSelectAddr, EncodeKit(kit)));
 }
 
 void SpdsxDevice::SelectObject(ObjectKind kind, int index) {
-  Send(Dt1(kObjectSelectAddr, {SelectValue(kind, index)}));
+  SendRaw(Dt1(kObjectSelectAddr, {SelectValue(kind, index)}));  // focus only
 }
 
 void SpdsxDevice::SetPadLink(const PadLinkWrite& w) {
@@ -516,8 +550,8 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
   constexpr uint32_t kReadChunk = 512 * 1024;
   Command(FileRequest(0x07, SeptetBody(kRfwvHeaderSize)));  // SEEK past it
   while (smp.size() < total) {
-    const uint32_t want = static_cast<uint32_t>(
-        std::min<size_t>(kReadChunk, total - smp.size()));
+    const uint32_t want =
+        static_cast<uint32_t>(std::min<size_t>(kReadChunk, total - smp.size()));
     if (read_chunk(want) == 0) {
       break;  // device stopped sending; avoid an infinite loop
     }
@@ -532,6 +566,7 @@ Bytes SpdsxDevice::ReadRemoteWave(int sample_index,
 }
 
 void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
+  RequireSupportedFirmware();
   if (smp.size() <= kRfwvHeaderSize) {
     throw std::runtime_error("smp too small to have header + PCM");
   }
@@ -641,6 +676,7 @@ void SpdsxDevice::RegisterWave(int sample_index,
                                int frames,
                                const std::string& wavename,
                                const std::string& filename) {
+  RequireSupportedFirmware();
   // Replays the official app's post-write register sequence (synthupload-1
   // + import-multi-1.log): finalize the temp file, open a register slot for
   // N, write the base directory record, close the session (6a 09 arg 0),
@@ -682,6 +718,7 @@ void SpdsxDevice::UploadWave(int sample_index,
                              const Bytes& smp,
                              const std::string& wavename,
                              const std::string& filename) {
+  RequireSupportedFirmware();
   // Writes the wave file and registers it in the pool directory (writing
   // without registering leaves an orphan file no UI can see, so the two are
   // never done separately). Both land in WORKING state only — the caller
@@ -709,6 +746,7 @@ void SpdsxDevice::UploadWave(int sample_index,
 }
 
 void SpdsxDevice::PrepareUploadBatch() {
+  RequireSupportedFirmware();
   // The official app opens an import batch with one 6a 0d query — the last
   // registered wave index, which it uses to pick slots (ours come from the
   // bulk image, so the answer is drained and dropped). The per-file session
