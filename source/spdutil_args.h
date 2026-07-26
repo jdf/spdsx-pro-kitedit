@@ -1,10 +1,11 @@
 // Which flags each spdutil command accepts, and the commands themselves.
 //
 // spdutil parses every flag into one flat set of locals and each command
-// reads the ones it cares about. That made a flag meaningless to the
-// chosen command parse cleanly and vanish: "setmode --pad 9" swept all
-// nine pads, and "--dry-run" on a write command wrote. The parser now
-// records which flags it saw and rejects any the command does not use.
+// reads the ones it cares about, so nothing stops a flag meaningless to
+// the chosen command from parsing cleanly and vanishing — "setmode --pad
+// 9" would sweep all nine pads, "--dry-run" on a write would write. The
+// parser records which flags it saw and rejects any the command does not
+// use, which is what these tables are for.
 //
 // JUCE-free and device-free so it can be tested without hardware.
 #ifndef SPDSX_PATCHEDIT_SOURCE_SPDUTIL_ARGS_H_
@@ -56,9 +57,8 @@ std::vector<std::string> AllowedFlags(std::string_view command);
 // True if command accepts a positional kit/index number.
 bool TakesPositionalNumber(std::string_view command);
 
-// True if command writes to kits and so requires --kits. Leaving the kit
-// out used to mean kit 1 — or, for the sweeps, every kit — so a
-// forgotten argument wrote somewhere the user never named.
+// True if command writes to kits and so requires --kits: a write never
+// guesses which kits it touches.
 bool RequiresKitSpec(std::string_view command);
 
 // True if command writes exactly one kit, so its --kits spec may name

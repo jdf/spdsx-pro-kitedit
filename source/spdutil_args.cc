@@ -40,7 +40,7 @@ const std::map<std::string, std::vector<std::string>, std::less<>>& Table() {
 }
 
 // Commands that read a bare number after the command word: a kit to
-// show or select, or a sample index. Everything that WRITES kits takes
+// show or select, or a sample index. Everything that writes kits takes
 // --kits instead, so there is one spelling for "which kits".
 const std::vector<std::string>& PositionalNumberCommands() {
   static const std::vector<std::string> kCommands = {

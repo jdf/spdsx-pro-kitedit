@@ -25,8 +25,7 @@ TEST(SpdutilCommands, StaysQuietWhenNothingIsClose) {
   EXPECT_EQ(NearestCommand("frobnicate"), "");
 }
 
-// The bug this table exists to prevent: --pad parsed fine for setmode and
-// was dropped, so a sweep meant for one pad hit all nine.
+// Dropping this flag would turn a one-pad sweep into a nine-pad one.
 TEST(UnacceptedFlag, SetmodeTakesThePadFilter) {
   EXPECT_EQ(UnacceptedFlag("setmode", {"mode", "pad", "kits"}), "");
 }
@@ -35,8 +34,7 @@ TEST(UnacceptedFlag, PingTakesNoPad) {
   EXPECT_EQ(UnacceptedFlag("ping", {"pad"}), "pad");
 }
 
-// --dry-run used to parse and be ignored by every write command but
-// setmode and padlink, so rehearsing a write performed it.
+// A rehearsal that writes is worse than no rehearsal.
 TEST(UnacceptedFlag, DryRunIsAcceptedByTheWriteCommandsThatHonorIt) {
   for (const char* command :
        {"assign", "setname", "setparams", "setlayer", "setmode", "padlink"}) {
@@ -70,8 +68,8 @@ TEST(UnacceptedFlag, KitsBelongsToTheKitWrites) {
   EXPECT_EQ(UnacceptedFlag("ping", {"kits"}), "kits");
 }
 
-// --range was the old sweep-only spelling; --kits replaced it everywhere.
-TEST(UnacceptedFlag, RangeIsGoneEverywhere) {
+// --kits is the only spelling; --range is not a flag.
+TEST(UnacceptedFlag, RangeIsNotAFlag) {
   EXPECT_EQ(UnacceptedFlag("setmode", {"range"}), "range");
   EXPECT_EQ(UnacceptedFlag("padlink", {"range"}), "range");
 }
@@ -93,7 +91,6 @@ TEST(AllowedFlags, UnknownCommandAllowsNothing) {
   EXPECT_TRUE(AllowedFlags("nonesuch").empty());
 }
 
-// setmode ignored a positional kit and swept all 200 kits instead.
 TEST(TakesPositionalNumber, TheKitWritesTakeNoneTheyUseKits) {
   for (const char* command :
        {"setmode", "assign", "setname", "setparams", "setlayer", "padlink"}) {
@@ -114,8 +111,7 @@ TEST(TakesPositionalNumber, FalseForCommandsWithoutOne) {
   }
 }
 
-// Omitting the kit used to mean kit 1 for the single-kit writes and
-// every kit for the sweeps — a forgotten argument wrote unasked.
+// A write with no kit named must not pick one.
 TEST(RequiresKitSpec, TrueForEveryCommandThatWritesToKits) {
   for (const char* command :
        {"assign", "setname", "setparams", "setlayer", "setmode", "padlink"}) {

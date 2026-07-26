@@ -167,8 +167,7 @@ int Usage() {
       "                  and report MATCH/FAIL (use a fresh index; --name\n"
       "                  applies only to a single file)\n"
       "  assign --kits K --sample N --pad P.S   assign pool sample N to\n"
-      "                  kit K,\n"
-      "                  pad P (1-9), slot S (0 top/1 bottom);\n"
+      "                  kit K, pad P (1-9), slot S (0 top/1 bottom);\n"
       "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
       "                  not committed (revert with a power cycle)\n"
       "  setname --kits K --name TEXT   set kit K's name (16 chars,\n"
@@ -743,8 +742,8 @@ struct SetLayerArgs {
   int fade_in = 0;
   int decay = 127;
   // Which of the three the user actually gave. The rest are read off the
-  // device and written back unchanged; they used to be silently replaced
-  // with the defaults above.
+  // device and written back unchanged, so naming one does not reset the
+  // other two.
   bool have_volume = false;
   bool have_fade_in = false;
   bool have_decay = false;
@@ -1270,8 +1269,8 @@ int main(int argc, char** argv) {
   bool dry_run = false;
   bool verbose = false;
 
-  // Every flag the parse loop saw, so the command can reject the ones it
-  // would otherwise silently drop.
+  // Every flag the parse loop saw, so the command can reject any it does
+  // not read.
   std::vector<std::string> seen_flags;
 
   try {
@@ -1393,9 +1392,8 @@ int main(int argc, char** argv) {
                      kit_arg);
         return 2;
       }
-      // Say which kits, always. This used to default to kit 1 for the
-      // single-kit writes and to every kit for the sweeps, so a
-      // forgotten argument wrote somewhere nobody named.
+      // Say which kits, always: a forgotten argument must not write
+      // somewhere nobody named.
       if (spdsx::spdutil::RequiresKitSpec(command) && ranges.empty()) {
         std::fprintf(
             stderr,
@@ -1472,7 +1470,7 @@ int main(int argc, char** argv) {
       return RunCurrentKit(port);
     }
     if (command == "setmode") {
-      // A dotted --pad P.S lands in pad_spec, where setmode never looks —
+      // A dotted --pad P.S lands in pad_spec, where setmode never looks;
       // it would read as "no filter" and sweep every pad.
       if (!pad_spec.empty()) {
         std::fprintf(stderr,
@@ -1480,9 +1478,7 @@ int main(int argc, char** argv) {
                      pad_spec.c_str());
         return 2;
       }
-      // --pad N is repeatable and lands in `objects`; without this the
-      // flag parsed fine and was silently ignored, so a sweep meant for
-      // one pad hit all nine.
+      // --pad N is repeatable and lands in `objects`.
       std::vector<int> mode_pads;
       for (const auto& [kind, index] : objects) {
         if (kind == ObjectKind::kPad) {

@@ -29,17 +29,14 @@ Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
 
 ## Flags are checked against the command
 
-Every flag is rejected by any command that would not act on it, rather than
-parsed and dropped. `spdutil ping --dry-run` and `spdutil kits --kits 1-5`
-are errors, and so is a bare number for a command that takes none
-(`spdutil kits 5`). This exists because a silently ignored flag caused
-a real accident: `setmode --pad 9` swept all nine pads, and `setmode 108`
-swept all 200 kits.
+Every flag is rejected by any command that would not act on it. `spdutil
+ping --dry-run` and `spdutil kits --kits 1-5` are errors, and so is a bare
+number for a command that takes none (`spdutil kits 5`). A flag that
+parses but does nothing is how a sweep ends up somewhere you did not mean.
 
 `--dry-run` is honored by `assign`, `setname`, `setparams`, `setlayer`,
 `setmode`, and `padlink`; the other write commands reject it rather than
-pretend. (`--range` was replaced by `--kits`; it now errors with a
-pointer rather than being accepted.)
+pretend.
 
 ## Working state vs. commit
 
@@ -101,8 +98,7 @@ Some factory preloads have no exportable file and fail cleanly.
 ## Kit and pad writes
 
 Every command that writes to kits says which with **`--kits SPEC`**, and
-it is required — nothing is implied, because omitting the kit used to mean
-kit 1 (or, for the sweeps, all 200).
+it is required. Which kits a write touches is never implied.
 
 A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST`
 inclusive:
@@ -112,12 +108,12 @@ inclusive:
 | `--kits 108` | just 108 |
 | `--kits 108-200` | 108 through 200 |
 | `--kits 1,5,10-20` | 1, 5, and 10 through 20 |
-| `--kits 1-200` | every kit — the only way to say it |
+| `--kits 1-200` | every kit |
 
 `setname`, `assign`, `setparams`, and `setlayer` write one kit, so their
 spec must name exactly one. `setmode` and `padlink` sweep and take any
-spec. All six also honor `--commit` and `--dry-run`. `selectkit` and
-`kit` are reads of a single kit and keep their positional number
+spec. All six also honor `--commit` and `--dry-run`. `kit` and `selectkit`
+read or select a single kit and take a positional number instead
 (`spdutil kit 108`).
 
 ### `selectkit <N>`
@@ -141,8 +137,7 @@ Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in
 0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave
 out keep their current values — the command reads the kit first to fill
 them in, so naming only `--fadein` costs a bank read but changes nothing
-else. (Before 2026-07-26 the unnamed ones were silently overwritten with
-0.0 dB / 0 / 127.)
+else.
 
 ### `setmode --kits SPEC --mode M [--pad N] [--if-mode M] [--dry-run]`
 Bulk layer-mode writes across kits. Reads the kits bank first and writes
@@ -176,7 +171,7 @@ Puts triggers/pads into a pad-link group across kits.
 | `--dry-run` | print the messages, send nothing |
 | `--verbose` | show device replies |
 
-Back the unit up before a full-range padlink run.
+Back the unit up before a padlink run across many kits.
 
 ## Sample pool writes
 
