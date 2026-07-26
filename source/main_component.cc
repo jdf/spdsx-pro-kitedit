@@ -319,7 +319,9 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kToggleAutoplay,
                 commands::kSendFeedback,
                 commands::kInstallCli,
-                commands::kAbout});
+                commands::kAbout,
+                commands::kShowMainWindow,
+                commands::kShowBulkOps});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id,
@@ -422,6 +424,17 @@ void MainComponent::getCommandInfo(juce::CommandID id,
                    "Version and dependency credits",
                    "Application",
                    0);
+      break;
+    case commands::kShowMainWindow:
+      info.setInfo("Kit Editor", "Bring the kit grid forward", "Window", 0);
+      info.addDefaultKeypress('1', juce::ModifierKeys::commandModifier);
+      break;
+    case commands::kShowBulkOps:
+      info.setInfo("Bulk Operations",
+                   "Run a device operation across many kits",
+                   "Window",
+                   0);
+      info.addDefaultKeypress('2', juce::ModifierKeys::commandModifier);
       break;
     default:
       break;
@@ -548,6 +561,14 @@ bool MainComponent::perform(const InvocationInfo& info) {
     case commands::kInstallCli:
       InstallCli();
       return true;
+    case commands::kShowMainWindow:
+      if (auto* window = getTopLevelComponent()) {
+        window->toFront(true);
+      }
+      return true;
+    case commands::kShowBulkOps:
+      ShowBulkOps();
+      return true;
     case commands::kAbout: {
       auto* app = juce::JUCEApplication::getInstance();
       AboutPanel::Show(app != nullptr ? app->getApplicationVersion()
@@ -577,6 +598,14 @@ void ReportCliInstall(bool ok) {
 }
 
 }  // namespace
+
+void MainComponent::ShowBulkOps() {
+  if (bulk_ops_ == nullptr) {
+    bulk_ops_ = std::make_unique<BulkOpsWindow>();
+  }
+  bulk_ops_->setVisible(true);
+  bulk_ops_->toFront(true);
+}
 
 void MainComponent::SetStatus(const juce::String& status) {
   status_bar_.setText(status, juce::dontSendNotification);

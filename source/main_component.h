@@ -12,6 +12,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "audio.h"
+#include "bulk_ops_window.h"
 #include "device_document.h"
 #include "device_model.h"
 #include "device_samples.h"
@@ -82,6 +83,10 @@ public:
   // Opens a specific device document and refreshes the UI around it.
   // Shared by File > Open and Finder (double-clicking a .spdsx).
   void OpenDocument(const juce::File& file);
+
+  // Window menu: brings the main window forward, and opens (or fronts)
+  // the bulk-operations window, creating it the first time.
+  void ShowBulkOps();
 
   // A line of device/sync narration in the strip along the bottom of the
   // window — where it stays visible whatever panel or tab is showing.
@@ -317,6 +322,7 @@ private:
   // build for display ("2.00 (0094)"). The firmware gate compares the
   // bare version; the display string is for bug reports.
   juce::Label status_bar_;
+  std::unique_ptr<BulkOpsWindow> bulk_ops_;
   juce::String device_firmware_version_;
   juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};
