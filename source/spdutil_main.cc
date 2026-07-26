@@ -214,11 +214,14 @@ int Usage() {
       "                  to persist\n"
       "  selectkit <N>   switch the device's playback kit (1-200)\n"
       "  currentkit      print the device's active kit\n"
-      "  setmode --mode M [--if-mode M] [--range A[-B]] [--dry-run]\n"
-      "                  set every pad's layer mode in the given kits\n"
-      "                  (names: MIX FADE1 FADE2 XFADE SWITCH SW(MONO)\n"
-      "                  ALTERNATE HI-HAT); --if-mode touches only pads\n"
-      "                  currently in that mode; --commit to persist\n"
+      "  setmode --mode M [--pad N] [--if-mode M] [--range A[-B]]\n"
+      "          [--dry-run]\n"
+      "                  set pads' layer mode in the given kits (names:\n"
+      "                  MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE\n"
+      "                  HI-HAT); --pad restricts to those pads 1-9\n"
+      "                  (repeatable, default all nine); --if-mode\n"
+      "                  touches only pads currently in that mode;\n"
+      "                  --commit to persist\n"
       "  deletewave <N>  delete sample N from the pool + commit\n"
       "                  (DESTRUCTIVE, not undoable on the device)\n"
       "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
@@ -815,13 +818,15 @@ struct SetModeArgs {
   std::string mode;  // target layer mode name (MIX, FADE1, ... HI-HAT)
   std::string if_mode;  // only touch pads currently in this mode; "" = any
   std::vector<KitRange> ranges;  // default: all kits
+  std::vector<int> pads;  // 1-9, repeatable; empty = every pad
   bool dry_run = false;
   bool commit = false;
 };
 
-// Sets the layer mode of every pad in the given kits, optionally only
-// pads currently in --if-mode. Reads the kits bank first, so untouched
-// pads stay exactly as they are, then writes one DT1 per changed pad.
+// Sets the layer mode of pads in the given kits: every pad unless --pad
+// names some, and optionally only pads currently in --if-mode. Reads the
+// kits bank first, so untouched pads stay exactly as they are, then
+// writes one DT1 per changed pad.
 int RunSetMode(const SetModeArgs& args) {
   using spdsx::LayerMode;
   const auto parse_mode = [](const std::string& name, LayerMode* out) {
@@ -848,6 +853,16 @@ int RunSetMode(const SetModeArgs& args) {
   std::vector<KitRange> ranges = args.ranges;
   if (ranges.empty()) {
     ranges.push_back({1, 200});
+  }
+  // No --pad means every pad; naming pads restricts the sweep to them.
+  std::array<bool, 9> wanted {};
+  wanted.fill(args.pads.empty());
+  for (const int pad : args.pads) {
+    if (pad < 1 || pad > 9) {
+      std::fprintf(stderr, "bad --pad %d (pads are 1-9)\n", pad);
+      return 2;
+    }
+    wanted[static_cast<size_t>(pad - 1)] = true;
   }
 
   const std::string port = ResolvePort(args.port);
@@ -876,6 +891,9 @@ int RunSetMode(const SetModeArgs& args) {
       }
       const auto& rec = kits[static_cast<size_t>(kit - 1)];
       for (int pad = 1; pad <= 9; ++pad) {
+        if (!wanted[static_cast<size_t>(pad - 1)]) {
+          continue;
+        }
         const auto cur = static_cast<LayerMode>(std::clamp(
             static_cast<int>(rec.pads[static_cast<size_t>(pad - 1)].layer_mode),
             0,
@@ -1354,10 +1372,20 @@ int main(int argc, char** argv) {
       return RunCurrentKit(port);
     }
     if (command == "setmode") {
+      // --pad N is repeatable and lands in `objects`; without this the
+      // flag parsed fine and was silently ignored, so a sweep meant for
+      // one pad hit all nine.
+      std::vector<int> mode_pads;
+      for (const auto& [kind, index] : objects) {
+        if (kind == ObjectKind::kPad) {
+          mode_pads.push_back(index);
+        }
+      }
       return RunSetMode({.port = port,
                          .mode = mode_arg,
                          .if_mode = if_mode_arg,
                          .ranges = ranges,
+                         .pads = mode_pads,
                          .dry_run = dry_run,
                          .commit = commit_flag});
     }
