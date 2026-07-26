@@ -30,15 +30,16 @@ Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
 ## Flags are checked against the command
 
 Every flag is rejected by any command that would not act on it, rather than
-parsed and dropped. `spdutil ping --dry-run` and `spdutil setname --range
-1-5 --name X` are errors, and so is a bare number for a command that takes
-none (`spdutil kits 5`). This exists because a silently ignored flag caused
+parsed and dropped. `spdutil ping --dry-run` and `spdutil kits --kits 1-5`
+are errors, and so is a bare number for a command that takes none
+(`spdutil kits 5`). This exists because a silently ignored flag caused
 a real accident: `setmode --pad 9` swept all nine pads, and `setmode 108`
 swept all 200 kits.
 
 `--dry-run` is honored by `assign`, `setname`, `setparams`, `setlayer`,
 `setmode`, and `padlink`; the other write commands reject it rather than
-pretend.
+pretend. (`--range` was replaced by `--kits`; it now errors with a
+pointer rather than being accepted.)
 
 ## Working state vs. commit
 
@@ -99,30 +100,43 @@ Some factory preloads have no exportable file and fail cleanly.
 
 ## Kit and pad writes
 
-`setname`, `assign`, `setparams`, and `setlayer` take a **required** kit
-number `<K>`, plus `--commit` and `--dry-run`. `setmode` and `padlink`
-take `<K>` or `--range` instead, also required. Nothing is implied: a
-command that writes to kits will not guess which, because omitting the
-kit used to mean kit 1 (or, for the sweeps, all 200). `selectkit` is its
-own shape, below.
+Every command that writes to kits says which with **`--kits SPEC`**, and
+it is required — nothing is implied, because omitting the kit used to mean
+kit 1 (or, for the sweeps, all 200).
+
+A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST`
+inclusive:
+
+| spec | kits |
+| --- | --- |
+| `--kits 108` | just 108 |
+| `--kits 108-200` | 108 through 200 |
+| `--kits 1,5,10-20` | 1, 5, and 10 through 20 |
+| `--kits 1-200` | every kit — the only way to say it |
+
+`setname`, `assign`, `setparams`, and `setlayer` write one kit, so their
+spec must name exactly one. `setmode` and `padlink` sweep and take any
+spec. All six also honor `--commit` and `--dry-run`. `selectkit` and
+`kit` are reads of a single kit and keep their positional number
+(`spdutil kit 108`).
 
 ### `selectkit <N>`
 Switches the device's playback kit (1-200). Instant, not a stored edit —
 nothing to commit.
 
-### `setname [K] --name TEXT`
+### `setname --kits K --name TEXT`
 Sets kit K's name (16 characters, space-padded/truncated).
 
-### `assign [K] --sample N --pad P.S`
+### `assign --kits K --sample N --pad P.S`
 Assigns pool sample N to a pad layer. `--pad P.S` is pad 1-9 dot slot
 (0 = top layer, 1 = bottom): `--pad 2.1` is pad 2's bottom layer.
 Sample 0 clears the layer.
 
-### `setparams [K] --pad N --params ...`
+### `setparams --kits K --pad N --params ...`
 Writes one pad's ten hit-response parameters as a comma list, in order:
 `mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,hhFadeIn,hhDecay,trigRsv`.
 
-### `setlayer [K] --pad P.S [--volume dB] [--fadein N] [--decay N]`
+### `setlayer --kits K --pad P.S [--volume dB] [--fadein N] [--decay N]`
 Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in
 0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave
 out keep their current values — the command reads the kit first to fill
@@ -130,26 +144,25 @@ them in, so naming only `--fadein` costs a bank read but changes nothing
 else. (Before 2026-07-26 the unnamed ones were silently overwritten with
 0.0 dB / 0 / 127.)
 
-### `setmode [K] --mode M [--pad N] [--if-mode M] [--range A[-B]] [--dry-run]`
+### `setmode --kits SPEC --mode M [--pad N] [--if-mode M] [--dry-run]`
 Bulk layer-mode writes across kits. Reads the kits bank first and writes
 **only** the pads that need changing, so everything else about a pad is
 untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
 HI-HAT`.
 
 Scope it deliberately: with no `--pad` this touches **all nine pads** of
-every kit you name. A kit or `--range` is required — `--range 1-200` is how
-you ask for all of them, on purpose.
+every kit `--kits` names.
 
 | option | meaning |
 | --- | --- |
 | `--pad N` | only pad N, 1-9 (repeatable; default all nine) |
-| `K` or `--range A[-B]` | one kit, or kit ranges (repeatable); one or the other, and one is required |
+| `--kits SPEC` | which kits (required) |
 | `--if-mode M` | only pads currently in mode M |
 | `--dry-run` | print the count, send nothing |
 
 ```sh
 # pad 9 of kits 108-200 becomes HI-HAT, leaving pads 1-8 alone
-spdutil setmode --mode HI-HAT --pad 9 --range 108-200 --commit
+spdutil setmode --kits 108-200 --mode HI-HAT --pad 9 --commit
 ```
 
 ### `padlink`
@@ -159,7 +172,7 @@ Puts triggers/pads into a pad-link group across kits.
 | --- | --- |
 | `--group N` | link group (required) |
 | `--trigger N` / `--pad N` | which objects to link (repeatable) |
-| `--range A[-B]` | kits to touch (repeatable; **required**) |
+| `--kits SPEC` | kits to touch (**required**) |
 | `--dry-run` | print the messages, send nothing |
 | `--verbose` | show device replies |
 

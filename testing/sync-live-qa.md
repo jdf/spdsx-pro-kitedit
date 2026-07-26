@@ -81,7 +81,7 @@ hand, but only scratch kits keep that cheap.
 
 ## 6. Pull: a device-only change rides along
 
-- [ ] With everything clean: `./build/spdutil setname 199 --name "UNIT SIDE" --commit`
+- [ ] With everything clean: `./build/spdutil setname --kits 199 --name "UNIT SIDE" --commit`
       (app quit while you do it). Relaunch app — button stays hidden (the
       app can't see device changes without a sync).
 - [ ] Make any small edit on kit **198** so the button appears. Push.
@@ -95,7 +95,7 @@ hand, but only scratch kits keep that cheap.
       unit's own UI** (that guarantees a one-field change; `spdutil
       setparams` works too but wants all 10 values). An easier CLI
       alternative that conflicts on the kit NAME instead:
-      `./build/spdutil setname 199 --name "DEVICE NAME" --commit` after
+      `./build/spdutil setname --kits 199 --name "DEVICE NAME" --commit` after
       renaming the kit differently in the app. Relaunch, push.
 - [ ] Dialog appears with **one row**: kit 199, pad 5, "fade point (yours
       60, device 90)" (or the two names, if you staged the name variant).
