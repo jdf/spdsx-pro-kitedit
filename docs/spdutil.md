@@ -27,6 +27,19 @@ Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
   active device operation, and its 2-second connection poll retries around
   short collisions.
 
+## Flags are checked against the command
+
+Every flag is rejected by any command that would not act on it, rather than
+parsed and dropped. `spdutil ping --dry-run` and `spdutil setname --range
+1-5 --name X` are errors, and so is a bare number for a command that takes
+none (`spdutil kits 5`). This exists because a silently ignored flag caused
+a real accident: `setmode --pad 9` swept all nine pads, and `setmode 108`
+swept all 200 kits.
+
+`--dry-run` is honored by `assign`, `setname`, `setparams`, `setlayer`,
+`setmode`, and `padlink`; the other write commands reject it rather than
+pretend.
+
 ## Working state vs. commit
 
 Device writes land in **working state**: audible immediately, gone on power
@@ -86,9 +99,10 @@ Some factory preloads have no exportable file and fail cleanly.
 
 ## Kit and pad writes
 
-`setname`, `assign`, `setparams`, and `setlayer` take an optional kit
-number `[K]` (default 1) and `--commit`; `selectkit` and `setmode` are
-their own shapes, below.
+`setname`, `assign`, `setparams`, `setlayer`, and `setmode` take an
+optional kit number `[K]` and `--commit`. **Omitting `[K]` means kit 1**
+for the first four, and *every kit* for `setmode` — say the kit you mean.
+All five also honor `--dry-run`. `selectkit` is its own shape, below.
 
 ### `selectkit <N>`
 Switches the device's playback kit (1-200). Instant, not a stored edit —
@@ -108,20 +122,31 @@ Writes one pad's ten hit-response parameters as a comma list, in order:
 
 ### `setlayer [K] --pad P.S [--volume dB] [--fadein N] [--decay N]`
 Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in
-0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Unspecified options
-write their defaults (0.0 dB / 0 / 127).
+0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave
+out keep their current values — the command reads the kit first to fill
+them in, so naming only `--fadein` costs a bank read but changes nothing
+else. (Before 2026-07-26 the unnamed ones were silently overwritten with
+0.0 dB / 0 / 127.)
 
-### `setmode --mode M [--if-mode M] [--range A[-B]] [--dry-run]`
+### `setmode [K] --mode M [--pad N] [--if-mode M] [--range A[-B]] [--dry-run]`
 Bulk layer-mode writes across kits. Reads the kits bank first and writes
 **only** the pads that need changing, so everything else about a pad is
 untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
-HI-HAT`. `--if-mode` restricts to pads currently in that mode; `--range`
-picks kits (repeatable, default all); `--dry-run` prints the count and
-sends nothing.
+HI-HAT`.
+
+Scope it deliberately — with no `--pad` this touches **all nine pads**, and
+with no kit and no `--range` it touches **all 200 kits**:
+
+| option | meaning |
+| --- | --- |
+| `--pad N` | only pad N, 1-9 (repeatable; default all nine) |
+| `K` or `--range A[-B]` | one kit, or kit ranges (repeatable); one or the other, not both. Default: every kit |
+| `--if-mode M` | only pads currently in mode M |
+| `--dry-run` | print the count, send nothing |
 
 ```sh
-# every MIX pad in kits 107-200 becomes HI-HAT, durably
-spdutil setmode --mode HI-HAT --if-mode MIX --range 107-200 --commit
+# pad 9 of kits 108-200 becomes HI-HAT, leaving pads 1-8 alone
+spdutil setmode --mode HI-HAT --pad 9 --range 108-200 --commit
 ```
 
 ### `padlink`
