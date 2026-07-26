@@ -34,6 +34,11 @@ std::vector<std::string> AllowedFlags(std::string_view command);
 // True if command accepts a positional kit/index number.
 bool TakesPositionalNumber(std::string_view command);
 
+// True if command writes to kits and must be told which ones. Leaving
+// the kit out used to mean kit 1 — or, for the sweeps, every kit — so a
+// forgotten argument wrote somewhere the user never named.
+bool RequiresExplicitKit(std::string_view command);
+
 // The first flag in `seen` (names without dashes) that `command` does
 // not accept, or "" when they are all fine. Callers report this as an
 // error rather than silently dropping the flag.

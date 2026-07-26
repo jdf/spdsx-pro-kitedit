@@ -99,10 +99,12 @@ Some factory preloads have no exportable file and fail cleanly.
 
 ## Kit and pad writes
 
-`setname`, `assign`, `setparams`, `setlayer`, and `setmode` take an
-optional kit number `[K]` and `--commit`. **Omitting `[K]` means kit 1**
-for the first four, and *every kit* for `setmode` — say the kit you mean.
-All five also honor `--dry-run`. `selectkit` is its own shape, below.
+`setname`, `assign`, `setparams`, and `setlayer` take a **required** kit
+number `<K>`, plus `--commit` and `--dry-run`. `setmode` and `padlink`
+take `<K>` or `--range` instead, also required. Nothing is implied: a
+command that writes to kits will not guess which, because omitting the
+kit used to mean kit 1 (or, for the sweeps, all 200). `selectkit` is its
+own shape, below.
 
 ### `selectkit <N>`
 Switches the device's playback kit (1-200). Instant, not a stored edit —
@@ -134,13 +136,14 @@ Bulk layer-mode writes across kits. Reads the kits bank first and writes
 untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
 HI-HAT`.
 
-Scope it deliberately — with no `--pad` this touches **all nine pads**, and
-with no kit and no `--range` it touches **all 200 kits**:
+Scope it deliberately: with no `--pad` this touches **all nine pads** of
+every kit you name. A kit or `--range` is required — `--range 1-200` is how
+you ask for all of them, on purpose.
 
 | option | meaning |
 | --- | --- |
 | `--pad N` | only pad N, 1-9 (repeatable; default all nine) |
-| `K` or `--range A[-B]` | one kit, or kit ranges (repeatable); one or the other, not both. Default: every kit |
+| `K` or `--range A[-B]` | one kit, or kit ranges (repeatable); one or the other, and one is required |
 | `--if-mode M` | only pads currently in mode M |
 | `--dry-run` | print the count, send nothing |
 
@@ -156,7 +159,7 @@ Puts triggers/pads into a pad-link group across kits.
 | --- | --- |
 | `--group N` | link group (required) |
 | `--trigger N` / `--pad N` | which objects to link (repeatable) |
-| `--range A[-B]` | kits to touch (repeatable; default all) |
+| `--range A[-B]` | kits to touch (repeatable; **required**) |
 | `--dry-run` | print the messages, send nothing |
 | `--verbose` | show device replies |
 

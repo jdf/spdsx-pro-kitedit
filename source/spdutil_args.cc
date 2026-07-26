@@ -128,6 +128,13 @@ bool TakesPositionalNumber(std::string_view command) {
   return std::find(commands.begin(), commands.end(), command) != commands.end();
 }
 
+bool RequiresExplicitKit(std::string_view command) {
+  static const std::vector<std::string> kNeedsKit = {
+      "assign", "setname", "setparams", "setlayer", "setmode", "padlink"};
+  return std::find(kNeedsKit.begin(), kNeedsKit.end(), command)
+      != kNeedsKit.end();
+}
+
 std::string UnacceptedFlag(std::string_view command,
                            const std::vector<std::string>& seen) {
   const auto allowed = AllowedFlags(command);

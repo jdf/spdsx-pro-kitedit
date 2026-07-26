@@ -110,6 +110,22 @@ TEST(TakesPositionalNumber, FalseForCommandsWithoutOne) {
   }
 }
 
+// Omitting the kit used to mean kit 1 for the single-kit writes and
+// every kit for the sweeps — a forgotten argument wrote unasked.
+TEST(RequiresExplicitKit, TrueForEveryCommandThatWritesToKits) {
+  for (const char* command :
+       {"assign", "setname", "setparams", "setlayer", "setmode", "padlink"}) {
+    EXPECT_TRUE(RequiresExplicitKit(command)) << command;
+  }
+}
+
+TEST(RequiresExplicitKit, FalseForReadsAndPoolCommands) {
+  for (const char* command :
+       {"ping", "kits", "kit", "dump", "selectkit", "sendwave", "deletewave"}) {
+    EXPECT_FALSE(RequiresExplicitKit(command)) << command;
+  }
+}
+
 TEST(FlagRejectionHint, SaysWhyRatherThanJustNo) {
   // A read-only command is not "about to write" — say the true reason.
   EXPECT_NE(FlagRejectionHint("ping", "dry-run").find("only reads"),

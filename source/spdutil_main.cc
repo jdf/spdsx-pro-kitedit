@@ -163,13 +163,14 @@ int Usage() {
       "              directory only — the dump carries no audio)\n"
       "  readwave <N> read wave N's audio off the device (--out FILE:\n"
       "              .wav = converted, else raw .SMP)\n"
-      "  setlayer [K] --pad P.S [--volume dB] [--fadein N] [--decay N]\n"
+      "  setlayer <K> --pad P.S [--volume dB] [--fadein N] [--decay N]\n"
       "                  write one layer's volume (dB, e.g. -3.5), fade-in\n"
-      "                  (0-127) and decay (0-127, 127 = none); --commit\n"
+      "                  (0-127) and decay (0-127, 127 = none); whatever\n"
+      "                  you leave out keeps its current value; --commit\n"
       "                  to persist\n"
       "  selectkit <N>   switch the device's playback kit (1-200)\n"
       "  currentkit      print the device's active kit\n"
-      "  setmode --mode M [--pad N] [--if-mode M] [--range A[-B]]\n"
+      "  setmode <K>|--range A[-B] --mode M [--pad N] [--if-mode M]\n"
       "          [--dry-run]\n"
       "                  set pads' layer mode in the given kits (names:\n"
       "                  MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE\n"
@@ -185,13 +186,13 @@ int Usage() {
       "                  register it in the pool, then read every one back\n"
       "                  and report MATCH/FAIL (use a fresh index; --name\n"
       "                  applies only to a single file)\n"
-      "  assign [K] --sample N --pad P.S   assign pool sample N to kit K\n"
-      "                  (default 1), pad P (1-9), slot S (0 top/1 bottom);\n"
+      "  assign <K> --sample N --pad P.S   assign pool sample N to kit K,\n"
+      "                  pad P (1-9), slot S (0 top/1 bottom);\n"
       "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
       "                  not committed (revert with a power cycle)\n"
-      "  setname [K] --name TEXT   set kit K's name (16 chars,\n"
+      "  setname <K> --name TEXT   set kit K's name (16 chars,\n"
       "                  space-padded); --commit to persist\n"
-      "  setparams [K] --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
+      "  setparams <K> --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
       "                  hhvol,hhfadein,hhdecay,trig   write pad N's ten\n"
       "                  hit-response params; --commit to persist\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
@@ -199,10 +200,12 @@ int Usage() {
       "                --trigger N      link trigger N\n"
       "                --pad N          link pad N\n"
       "                --range A[-B]    kits to touch (repeatable;\n"
-      "                                 default all, 1-200)\n"
+      "                                 required; 1-200 = all)\n"
       "                --dry-run        print, send nothing\n"
       "                --verbose        show device replies\n"
       "\n"
+      "the kit to write to is never implied: <K> or --range is required\n"
+      "for assign, setname, setparams, setlayer, setmode and padlink.\n"
       "with no --port, scans /dev/cu.usbmodem* and pings each node\n");
   return 2;
 }
@@ -1399,6 +1402,29 @@ int main(int argc, char** argv) {
                      "\"%s\" takes no number (got %d)\n",
                      command.c_str(),
                      kit_arg);
+        return 2;
+      }
+      // Say which kits, always. This used to default to kit 1 for the
+      // single-kit writes and to every kit for the sweeps, so a
+      // forgotten argument wrote somewhere nobody named.
+      if (spdsx::spdutil::RequiresExplicitKit(command) && kit_arg <= 0
+          && ranges.empty()) {
+        std::string how;
+        if (!spdsx::spdutil::TakesPositionalNumber(command)) {
+          how =
+              "--range A[-B], repeatable (--range 1-200 really does mean "
+              "every kit)";
+        } else if (command == "setmode") {
+          how =
+              "a kit number, e.g. \"spdutil setmode 108 ...\", or --range "
+              "A[-B] (--range 1-200 really does mean every kit)";
+        } else {
+          how = "a kit number, e.g. \"spdutil " + command + " 108 ...\"";
+        }
+        std::fprintf(stderr,
+                     "\"%s\" needs to be told which kits: %s\n",
+                     command.c_str(),
+                     how.c_str());
         return 2;
       }
     }
