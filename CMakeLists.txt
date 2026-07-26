@@ -146,7 +146,8 @@ endif()
 # spdutil: CLI for the device — ping/info/dump/kits/samples, the wave
 # read/write ops, and padlink. The protocol itself is verified by the
 # source/device/*_test.cc suites, byte-for-byte against the captures.
-add_executable(spdutil source/spdutil_main.cc source/layers.cc)
+add_executable(spdutil source/spdutil_main.cc source/spdutil_args.cc
+    source/layers.cc)
 target_link_libraries(spdutil PRIVATE spdsx_device)
 target_compile_definitions(spdutil PRIVATE SPDSX_VERSION="${PROJECT_VERSION}")
 
@@ -195,6 +196,7 @@ if(SPDSX_TESTS)
         source/kit_model_test.cc
         source/layers_test.cc
         source/sample_upload_test.cc
+        source/spdutil_args_test.cc
     )
     # The production translation units under test.
     target_sources(spdsx_tests PRIVATE
@@ -217,6 +219,7 @@ if(SPDSX_TESTS)
         source/sample_browser.cc
         source/sample_slot.cc
         source/sample_upload.cc
+        source/spdutil_args.cc
         source/spectro.cc
         source/sync_dialog.cc
     )

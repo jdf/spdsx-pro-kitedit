@@ -42,6 +42,7 @@
 #include "device/sample_image.h"
 #include "device/spdsx_device.h"
 #include "layers.h"
+#include "spdutil_args.h"
 
 namespace {
 
@@ -132,55 +133,9 @@ KitRange ParseRange(const std::string& s) {
   return r;
 }
 
-// Plain edit distance, for did-you-mean on a mistyped command.
-size_t EditDistance(const std::string& a, const std::string& b) {
-  std::vector<size_t> row(b.size() + 1);
-  for (size_t j = 0; j <= b.size(); ++j) {
-    row[j] = j;
-  }
-  for (size_t i = 1; i <= a.size(); ++i) {
-    size_t diag = row[0];
-    row[0] = i;
-    for (size_t j = 1; j <= b.size(); ++j) {
-      const size_t next = std::min(
-          {row[j] + 1, row[j - 1] + 1, diag + (a[i - 1] == b[j - 1] ? 0 : 1)});
-      diag = row[j];
-      row[j] = next;
-    }
-  }
-  return row[b.size()];
-}
-
-// Every command the dispatcher understands, for the unknown-command path.
-constexpr std::array<std::string_view, 17> kCommands = {"ping",
-                                                        "info",
-                                                        "dump",
-                                                        "kits",
-                                                        "kit",
-                                                        "samples",
-                                                        "readwave",
-                                                        "setlayer",
-                                                        "selectkit",
-                                                        "currentkit",
-                                                        "setmode",
-                                                        "deletewave",
-                                                        "sendwave",
-                                                        "assign",
-                                                        "setname",
-                                                        "setparams",
-                                                        "padlink"};
-
 int UnknownCommand(const std::string& command) {
   std::fprintf(stderr, "unknown command \"%s\"", command.c_str());
-  std::string best;
-  size_t best_d = 3;  // suggest only a plausible slip, not a stretch
-  for (const std::string_view c : kCommands) {
-    const size_t d = EditDistance(command, std::string(c));
-    if (d < best_d) {
-      best_d = d;
-      best = c;
-    }
-  }
+  const std::string best = spdsx::spdutil::NearestCommand(command);
   if (!best.empty()) {
     std::fprintf(stderr, " — did you mean \"%s\"?", best.c_str());
   }
@@ -609,6 +564,7 @@ struct AssignArgs {
   int kit = 1;
   int sample = -1;
   std::string pad_spec;
+  bool dry_run = false;
   bool commit = false;
 };
 
@@ -627,6 +583,14 @@ int RunAssign(const AssignArgs& args) {
                  "/1(bottom)\n",
                  args.pad_spec.c_str());
     return 2;
+  }
+  if (args.dry_run) {
+    std::printf("dry run: kit %d pad %d %s <- sample %d (nothing sent)\n",
+                args.kit,
+                pad,
+                slot == PadSlot::kTop ? "top" : "bottom",
+                args.sample);
+    return 0;
   }
   const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
@@ -685,6 +649,7 @@ struct SetParamsArgs {
   int kit = 1;
   int pad = 0;
   std::string params_spec;
+  bool dry_run = false;
   bool commit = false;
 };
 
@@ -699,6 +664,25 @@ int RunSetParams(const SetParamsArgs& args) {
   if (!ParseParamList(args.params_spec, &p)) {
     std::fprintf(stderr, "--params needs 10 comma-separated values\n");
     return 2;
+  }
+  if (args.dry_run) {
+    std::printf(
+        "dry run: kit %d pad %d params <- mode=%d fp=%d fe=%d "
+        "dyn=%d curve=%d fixvel=%d hh(%d,%d,%d) trig=%d "
+        "(nothing sent)\n",
+        args.kit,
+        args.pad,
+        p.layer_mode,
+        p.fade_point,
+        p.fade_end,
+        p.dynamics,
+        p.dynamics_curve,
+        p.fixed_velocity,
+        p.hi_hat_volume,
+        p.hi_hat_fade_in,
+        p.hi_hat_decay,
+        p.trigger_reserve);
+    return 0;
   }
   const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
@@ -733,6 +717,7 @@ struct SetNameArgs {
   std::string port;
   int kit = 1;
   std::string name;
+  bool dry_run = false;
   bool commit = false;
 };
 
@@ -740,6 +725,12 @@ int RunSetName(const SetNameArgs& args) {
   if (args.name.empty()) {
     std::fprintf(stderr, "setname needs --name <text>\n");
     return 2;
+  }
+  if (args.dry_run) {
+    std::printf("dry run: kit %d name <- \"%s\" (nothing sent)\n",
+                args.kit,
+                args.name.c_str());
+    return 0;
   }
   const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
@@ -765,6 +756,13 @@ struct SetLayerArgs {
   double volume_db = 0.0;
   int fade_in = 0;
   int decay = 127;
+  // Which of the three the user actually gave. The rest are read off the
+  // device and written back unchanged; they used to be silently replaced
+  // with the defaults above.
+  bool have_volume = false;
+  bool have_fade_in = false;
+  bool have_decay = false;
+  bool dry_run = false;
   bool commit = false;
 };
 
@@ -782,28 +780,79 @@ int RunSetLayer(const SetLayerArgs& args) {
     return 2;
   }
   // The device stores volume as a signed 16-bit in 0.1 dB units.
-  const int volume_db10 = static_cast<int>(std::lround(args.volume_db * 10.0));
+  int volume_db10 = static_cast<int>(std::lround(args.volume_db * 10.0));
+  int fade_in = args.fade_in;
+  int decay = args.decay;
+  const bool complete =
+      args.have_volume && args.have_fade_in && args.have_decay;
+  if (args.dry_run) {
+    char buf[64];
+    std::string wanted;
+    if (args.have_volume) {
+      std::snprintf(buf, sizeof(buf), " volume %.1f dB", volume_db10 / 10.0);
+      wanted += buf;
+    }
+    if (args.have_fade_in) {
+      wanted += " fade-in " + std::to_string(fade_in);
+    }
+    if (args.have_decay) {
+      wanted += " decay " + std::to_string(decay);
+    }
+    std::printf("dry run: kit %d pad %d %s <-%s%s (nothing sent)\n",
+                args.kit,
+                pad,
+                slot == PadSlot::kTop ? "top" : "bottom",
+                wanted.c_str(),
+                complete ? "" : ", other fields left as they are");
+    return 0;
+  }
   const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
+  // SetPadLayerMix writes all three, so anything the user left out has to
+  // be read back first or it would be overwritten with a default.
+  if (!complete) {
+    std::printf("opened %s, reading kit %d's current layer mix...\n",
+                port.c_str(),
+                args.kit);
+    const auto kits = spdsx::device::ParseKits(
+        spdsx::device::CleanBulkImage(dev.DumpBank(spdsx::device::kBankKits)));
+    if (static_cast<size_t>(args.kit) > kits.size() || args.kit < 1) {
+      std::fprintf(stderr, "couldn't read kit %d\n", args.kit);
+      return 1;
+    }
+    const auto& pad_rec = kits[static_cast<size_t>(args.kit - 1)]
+                              .pads[static_cast<size_t>(pad - 1)];
+    const auto& mix =
+        slot == PadSlot::kTop ? pad_rec.mix_top : pad_rec.mix_bottom;
+    if (!args.have_volume) {
+      volume_db10 = mix.volume_db10;
+    }
+    if (!args.have_fade_in) {
+      fade_in = mix.fade_in;
+    }
+    if (!args.have_decay) {
+      decay = mix.decay;
+    }
+  }
   std::printf(
-      "opened %s: kit %d pad %d %s <- volume %.1f dB, fade-in %d, "
+      "%s: kit %d pad %d %s <- volume %.1f dB, fade-in %d, "
       "decay %d%s\n",
       port.c_str(),
       args.kit,
       pad,
       slot == PadSlot::kTop ? "top" : "bottom",
       volume_db10 / 10.0,
-      args.fade_in,
-      args.decay,
+      fade_in,
+      decay,
       args.commit ? " (committing)" : " (working state)");
   dev.SetPadLayerMix({.kit = args.kit,
                       .pad = pad,
                       .slot = slot,
                       .volume_db10 = volume_db10,
-                      .fade_in = args.fade_in,
-                      .decay = args.decay});
+                      .fade_in = fade_in,
+                      .decay = decay});
   if (args.commit) {
     dev.Commit();
   } else {
@@ -1241,6 +1290,10 @@ int main(int argc, char** argv) {
   bool dry_run = false;
   bool verbose = false;
 
+  // Every flag the parse loop saw, so the command can reject the ones it
+  // would otherwise silently drop.
+  std::vector<std::string> seen_flags;
+
   try {
     for (int i = 1; i < argc; ++i) {
       const std::string arg = argv[i];
@@ -1250,6 +1303,9 @@ int main(int argc, char** argv) {
         }
         return argv[++i];
       };
+      if (arg.rfind("--", 0) == 0) {
+        seen_flags.push_back(arg.substr(2));
+      }
       if (arg == "--version") {
         std::printf("spdutil %s (SPD-SX PROgram)\n", SPDSX_VERSION);
         return 0;
@@ -1319,6 +1375,34 @@ int main(int argc, char** argv) {
       }
     }
 
+    const auto flag_given = [&seen_flags](const char* name) {
+      return std::find(seen_flags.begin(), seen_flags.end(), name)
+          != seen_flags.end();
+    };
+
+    // Reject flags this command does not read, rather than dropping them:
+    // a flag that parses and vanishes is how "setmode --pad 9" came to
+    // sweep all nine pads.
+    if (!command.empty() && spdsx::spdutil::IsCommand(command)) {
+      const std::string bad =
+          spdsx::spdutil::UnacceptedFlag(command, seen_flags);
+      if (!bad.empty()) {
+        std::fprintf(stderr,
+                     "--%s does nothing for \"%s\": %s\n",
+                     bad.c_str(),
+                     command.c_str(),
+                     spdsx::spdutil::FlagRejectionHint(command, bad).c_str());
+        return 2;
+      }
+      if (kit_arg > 0 && !spdsx::spdutil::TakesPositionalNumber(command)) {
+        std::fprintf(stderr,
+                     "\"%s\" takes no number (got %d)\n",
+                     command.c_str(),
+                     kit_arg);
+        return 2;
+      }
+    }
+
     if (command == "ping") {
       return RunPing(port);
     }
@@ -1352,13 +1436,16 @@ int main(int argc, char** argv) {
           {.port = port, .index = kit_arg, .out_path = out_path});
     }
     if (command == "setlayer") {
-      (void)have_volume;  // all three fields always write; defaults apply
       return RunSetLayer({.port = port,
                           .kit = kit_arg > 0 ? kit_arg : 1,
                           .pad_spec = pad_spec,
                           .volume_db = volume_arg,
                           .fade_in = fadein_arg,
                           .decay = decay_arg,
+                          .have_volume = have_volume,
+                          .have_fade_in = flag_given("fadein"),
+                          .have_decay = flag_given("decay"),
+                          .dry_run = dry_run,
                           .commit = commit_flag});
     }
     if (command == "selectkit") {
@@ -1372,6 +1459,14 @@ int main(int argc, char** argv) {
       return RunCurrentKit(port);
     }
     if (command == "setmode") {
+      // A dotted --pad P.S lands in pad_spec, where setmode never looks —
+      // it would read as "no filter" and sweep every pad.
+      if (!pad_spec.empty()) {
+        std::fprintf(stderr,
+                     "setmode wants --pad N (a pad, 1-9), not \"%s\"\n",
+                     pad_spec.c_str());
+        return 2;
+      }
       // --pad N is repeatable and lands in `objects`; without this the
       // flag parsed fine and was silently ignored, so a sweep meant for
       // one pad hit all nine.
@@ -1381,10 +1476,22 @@ int main(int argc, char** argv) {
           mode_pads.push_back(index);
         }
       }
+      // A positional kit is single-kit shorthand. It used to be ignored,
+      // so "setmode 108 --mode MIX" silently swept all 200 kits.
+      std::vector<KitRange> mode_ranges = ranges;
+      if (kit_arg > 0) {
+        if (!mode_ranges.empty()) {
+          std::fprintf(stderr,
+                       "setmode takes a kit number or --range, "
+                       "not both\n");
+          return 2;
+        }
+        mode_ranges.push_back({kit_arg, kit_arg});
+      }
       return RunSetMode({.port = port,
                          .mode = mode_arg,
                          .if_mode = if_mode_arg,
-                         .ranges = ranges,
+                         .ranges = mode_ranges,
                          .pads = mode_pads,
                          .dry_run = dry_run,
                          .commit = commit_flag});
@@ -1411,12 +1518,14 @@ int main(int argc, char** argv) {
                         .kit = kit_arg > 0 ? kit_arg : 1,
                         .sample = sample_arg,
                         .pad_spec = pad_spec,
+                        .dry_run = dry_run,
                         .commit = commit_flag});
     }
     if (command == "setname") {
       return RunSetName({.port = port,
                          .kit = kit_arg > 0 ? kit_arg : 1,
                          .name = name_arg,
+                         .dry_run = dry_run,
                          .commit = commit_flag});
     }
     if (command == "setparams") {
@@ -1424,6 +1533,7 @@ int main(int argc, char** argv) {
                            .kit = kit_arg > 0 ? kit_arg : 1,
                            .pad = pad_num,
                            .params_spec = params_spec,
+                           .dry_run = dry_run,
                            .commit = commit_flag});
     }
     if (command == "padlink") {
