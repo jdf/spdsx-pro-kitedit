@@ -41,6 +41,7 @@
 #include "device/protocol.h"
 #include "device/sample_image.h"
 #include "device/spdsx_device.h"
+#include "device_ops.h"
 #include "layers.h"
 #include "spdutil_args.h"
 
@@ -701,9 +702,15 @@ int RunSetName(const SetNameArgs& args) {
               args.kit,
               args.name.c_str(),
               args.commit ? " (committing)" : " (working state)");
-  dev.SetKitName(args.kit, args.name);
-  if (args.commit) {
-    dev.Commit();
+  const spdsx::ops::SetNameResult result =
+      spdsx::ops::SetName(dev,
+                          {.kit = args.kit,
+                           .name = args.name,
+                           .commit = args.commit,
+                           .dry_run = false});
+  if (args.commit && !result.committed) {
+    std::fprintf(stderr, "commit did not confirm\n");
+    return 1;
   }
   std::printf("done\n");
   return 0;
@@ -833,10 +840,9 @@ struct SetModeArgs {
   bool commit = false;
 };
 
-// Sets the layer mode of pads in the given kits: every pad unless --pad
-// names some, and optionally only pads currently in --if-mode. Reads the
-// kits bank first, so untouched pads stay exactly as they are, then
-// writes one DT1 per changed pad.
+// Sets the layer mode of pads in the given kits. The planning and the
+// writing live in device_ops, shared with the bulk-operations window, so
+// the two front ends cannot drift.
 int RunSetMode(const SetModeArgs& args) {
   using spdsx::LayerMode;
   const auto parse_mode = [](const std::string& name, LayerMode* out) {
@@ -847,30 +853,28 @@ int RunSetMode(const SetModeArgs& args) {
     *out = m;
     return true;
   };
-  LayerMode target = LayerMode::kMix;
-  if (!parse_mode(args.mode, &target)) {
+  spdsx::ops::SetModeRequest request;
+  if (!parse_mode(args.mode, &request.target)) {
     std::fprintf(stderr,
                  "setmode needs --mode of MIX, FADE1, FADE2, XFADE, SWITCH, "
                  "SW(MONO), ALTERNATE or HI-HAT\n");
     return 2;
   }
-  LayerMode only = LayerMode::kMix;
-  const bool filtered = !args.if_mode.empty();
-  if (filtered && !parse_mode(args.if_mode, &only)) {
+  request.has_if_mode = !args.if_mode.empty();
+  if (request.has_if_mode && !parse_mode(args.if_mode, &request.if_mode)) {
     std::fprintf(stderr, "bad --if-mode \"%s\"\n", args.if_mode.c_str());
     return 2;
   }
-  const std::vector<KitRange>& ranges = args.ranges;
-  // No --pad means every pad; naming pads restricts the sweep to them.
-  std::array<bool, 9> wanted {};
-  wanted.fill(args.pads.empty());
   for (const int pad : args.pads) {
     if (pad < 1 || pad > 9) {
       std::fprintf(stderr, "bad --pad %d (pads are 1-9)\n", pad);
       return 2;
     }
-    wanted[static_cast<size_t>(pad - 1)] = true;
   }
+  request.kits = args.ranges;
+  request.pads = args.pads;
+  request.commit = args.commit;
+  request.dry_run = args.dry_run;
 
   const std::string port = ResolvePort(args.port);
   const std::unique_ptr<spdsx::device::SerialPort> serial =
@@ -878,83 +882,32 @@ int RunSetMode(const SetModeArgs& args) {
   spdsx::device::SpdsxDevice dev(serial.get());
   dev.RequireSupportedFirmware();  // before the bank read, not after
   std::printf("opened %s, reading the kits bank...\n", port.c_str());
-  const auto kits = spdsx::device::ParseKits(
-      spdsx::device::CleanBulkImage(dev.DumpBank(spdsx::device::kBankKits)));
-  if (kits.empty()) {
-    std::fprintf(stderr, "couldn't read the kits bank\n");
-    return 1;
-  }
-
-  struct Change {
-    int kit;  // 1-based
-    int pad;  // 1-based
-    LayerMode from;
-  };
-
-  std::vector<Change> plan;
-  for (const KitRange& r : ranges) {
-    for (int kit = r.first; kit <= r.last; ++kit) {
-      if (static_cast<size_t>(kit) > kits.size()) {
-        break;
-      }
-      const auto& rec = kits[static_cast<size_t>(kit - 1)];
-      for (int pad = 1; pad <= 9; ++pad) {
-        if (!wanted[static_cast<size_t>(pad - 1)]) {
-          continue;
+  int last_done = -1;
+  const spdsx::ops::SetModeResult result = spdsx::ops::SetMode(
+      dev, request, [&last_done](const spdsx::ops::Progress& p) {
+        if (p.total <= 0 || p.done == last_done) {
+          return;
         }
-        const auto cur = static_cast<LayerMode>(std::clamp(
-            static_cast<int>(rec.pads[static_cast<size_t>(pad - 1)].layer_mode),
-            0,
-            spdsx::kLayerModeCount - 1));
-        if (cur == target || (filtered && cur != only)) {
-          continue;
-        }
-        plan.push_back({.kit = kit, .pad = pad, .from = cur});
-      }
-    }
-  }
-  std::printf("%zu pad(s) to set to %s%s\n",
-              plan.size(),
-              args.mode.c_str(),
-              args.dry_run ? " (dry run, nothing sent)" : "");
-  if (args.dry_run || plan.empty()) {
+        last_done = p.done;
+        std::printf("\r  %d/%d written", p.done, p.total);
+        std::fflush(stdout);
+      });
+  if (request.dry_run) {
+    std::printf("%d pad(s) to set to %s (dry run, nothing sent)\n",
+                result.changed,
+                args.mode.c_str());
     return 0;
   }
-
-  // Focus once per pad number (the write address is kit-absolute), then
-  // stream the one-byte mode writes.
-  constexpr double kPace = 0.02;
-  int focused = 0;
-  for (int pad = 1; pad <= 9; ++pad) {
-    bool any = false;
-    for (const Change& c : plan) {
-      if (c.pad != pad) {
-        continue;
-      }
-      if (!any) {
-        dev.SelectObject(spdsx::device::ObjectKind::kPad, pad);
-        std::this_thread::sleep_for(std::chrono::duration<double>(kPace));
-        any = true;
-        ++focused;
-      }
-      dev.Send(spdsx::device::Dt1(
-          spdsx::device::PadParamAddr({.kit = c.kit, .pad = c.pad}, 0x00),
-          {static_cast<uint8_t>(target)}));
-      std::this_thread::sleep_for(std::chrono::duration<double>(kPace));
-    }
-    std::printf("\r  pad %d/9 done", pad);
-    std::fflush(stdout);
+  if (result.changed == 0) {
+    std::printf("0 pad(s) to set to %s\n", args.mode.c_str());
+    return 0;
   }
   std::printf("\n");
-  (void)focused;
-  if (args.commit) {
-    std::printf("committing to flash...\n");
-    if (!dev.Commit()) {
-      std::fprintf(stderr, "commit did not confirm\n");
-      return 1;
-    }
-  } else {
-    dev.Ping();  // delivery barrier for the fire-and-forget tail
+  if (args.commit && !result.committed) {
+    std::fprintf(stderr, "commit did not confirm\n");
+    return 1;
+  }
+  if (!args.commit) {
     std::printf("working state only (power cycle reverts; --commit to keep)\n");
   }
   std::printf("done\n");
