@@ -8,7 +8,19 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "device/protocol.h"  // kKitNameLength
+
 namespace spdsx {
+
+// A Label whose in-place editor cannot hold more than the device can: kit
+// names are a fixed 16-character field, and anything longer is silently
+// truncated on the way to the hardware.
+class KitNameLabel : public juce::Label {
+public:
+  void editorShown(juce::TextEditor* editor) override {
+    editor->setInputRestrictions(device::kKitNameLength);
+  }
+};
 
 class KitChooser : public juce::Component {
 public:
@@ -41,7 +53,7 @@ private:
   juce::ShapeButton prev_;
   juce::ShapeButton next_;
   juce::ShapeButton pencil_;
-  juce::Label name_label_;
+  KitNameLabel name_label_;
   // The chip between the arrows: chrome painted by us, clicks open the
   // kit menu.
   juce::Rectangle<int> chip_;
