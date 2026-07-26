@@ -1,9 +1,11 @@
 // The sync conflict-resolution dialog: one row per conflicted item (a
-// pad, or a kit name), each with a real choice control — my copy wins /
-// device wins / do nothing. "Do nothing" leaves both sides as they are
-// and the item re-flags on the next sync. Pure view: Show() launches it
-// and reports the choices through the callbacks; closing the window any
-// other way (escape, the close button) cancels.
+// pad, or a kit name). Rows are selected with checkboxes and answered in
+// bulk — keep mine, keep the device's, or do nothing — because a sync
+// that conflicts on one pad usually conflicts on many, and the same
+// answer applies to all of them. "Do nothing" leaves both sides as they
+// are and the item re-flags on the next sync. Pure view: Show() launches
+// it and reports the choices through the callbacks; closing the window
+// any other way (escape, the close button) cancels.
 #ifndef SPDSX_PATCHEDIT_SOURCE_SYNC_DIALOG_H_
 #define SPDSX_PATCHEDIT_SOURCE_SYNC_DIALOG_H_
 
@@ -16,6 +18,25 @@
 #include "device_sync.h"
 
 namespace spdsx {
+
+// A checkbox with the third state a select-all needs: some but not all of
+// what it governs is checked. JUCE has no such button, so the mixed state
+// paints a dash over the (unticked) box.
+class TriStateToggle : public juce::ToggleButton {
+public:
+  using juce::ToggleButton::ToggleButton;
+
+  void SetMixed(bool mixed);
+
+  bool mixed() const { return mixed_; }
+
+  void paintButton(juce::Graphics& g,
+                   bool should_draw_highlighted,
+                   bool should_draw_down) override;
+
+private:
+  bool mixed_ = false;
+};
 
 class SyncConflictPanel : public juce::Component {
 public:
@@ -37,14 +58,29 @@ public:
 
 private:
   struct Row {
+    juce::ToggleButton check;
     juce::Label label;
-    juce::ComboBox choice;
+    juce::Label outcome;  // what this row will do, in words
+    SyncResolution resolution = SyncResolution::kMine;
   };
+
+  // Sets every checked row's resolution and redraws their outcomes.
+  void ApplyToChecked(SyncResolution resolution);
+  // Checks or clears every row.
+  void CheckAll(bool checked);
+  // Re-reads the checkboxes into the select-all's state, and enables the
+  // bulk buttons only when they would do something.
+  void RefreshSelection();
+  void ShowOutcome(Row& row);
 
   std::vector<SyncResolution> Resolutions() const;
   void CloseDialog();
 
   juce::Label heading_;
+  TriStateToggle select_all_ {"Select all"};
+  juce::TextButton keep_mine_ {"Keep Mine"};
+  juce::TextButton keep_theirs_ {"Keep Device's"};
+  juce::TextButton keep_neither_ {"Do Nothing"};
   juce::Viewport viewport_;
   juce::Component row_holder_;
   std::vector<std::unique_ptr<Row>> rows_;
