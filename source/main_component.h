@@ -308,6 +308,10 @@ private:
   std::atomic<bool> device_connected_ {false};
   // The unit's firmware version, read once per connection (message
   // thread only); shown in bug reports.
+  // The version as the unit reports it ("2.00"), and the same plus the
+  // build for display ("2.00 (0094)"). The firmware gate compares the
+  // bare version; the display string is for bug reports.
+  juce::String device_firmware_version_;
   juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};
   juce::uint32 last_conn_check_ms_ = 0;

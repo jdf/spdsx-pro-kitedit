@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "layers.h"
+
 namespace spdsx::spdutil {
 namespace {
 
@@ -207,6 +209,100 @@ TEST(ParseKitSpec, ErrorsSayWhatWasWrong) {
   std::string error;
   ParseKitSpec("999", &ranges, &error);
   EXPECT_NE(error.find("999"), std::string::npos);
+}
+
+// A name read as a number writes the wrong thing in silence: "SWITCH"
+// through atoi is 0, which is MIX.
+TEST(ParsePadParams, TakesModeAndCurveByName) {
+  device::PadDeviceParams p;
+  std::string error;
+  ASSERT_TRUE(
+      ParsePadParams("SWITCH,80,127,ON,LOUD2,127,80,25,75,OFF", &p, &error))
+      << error;
+  EXPECT_EQ(p.layer_mode, static_cast<uint8_t>(LayerMode::kSwitch));
+  EXPECT_EQ(p.dynamics_curve, static_cast<uint8_t>(DynamicsCurve::kLoud2));
+  EXPECT_EQ(p.dynamics, 1);
+  EXPECT_EQ(p.trigger_reserve, 0);
+  EXPECT_EQ(p.fade_point, 80);
+  EXPECT_EQ(p.fade_end, 127);
+}
+
+// The ordinal behind a mode is an implementation detail; typing 4 for
+// SWITCH is a coincidence waiting to break.
+TEST(ParsePadParams, RefusesModeAndCurveAsNumbers) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(
+      ParsePadParams("4,80,127,ON,LINEAR,127,80,25,75,OFF", &p, &error));
+  EXPECT_FALSE(ParsePadParams("MIX,80,127,ON,2,127,80,25,75,OFF", &p, &error));
+}
+
+TEST(ParsePadParams, RefusesTheSwitchesAsNumbers) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(
+      ParsePadParams("MIX,80,127,1,LINEAR,127,80,25,75,OFF", &p, &error));
+  EXPECT_NE(error.find("dynamics"), std::string::npos) << error;
+  EXPECT_FALSE(
+      ParsePadParams("MIX,80,127,ON,LINEAR,127,80,25,75,0", &p, &error));
+  EXPECT_NE(error.find("trigger reserve"), std::string::npos) << error;
+}
+
+TEST(ParsePadParams, TheErrorListsTheNamesItKnows) {
+  device::PadDeviceParams p;
+  std::string error;
+  ParsePadParams("SWTICH,80,127,ON,LINEAR,127,80,25,75,OFF", &p, &error);
+  EXPECT_NE(error.find("HI-HAT"), std::string::npos) << error;
+  ParsePadParams("MIX,80,127,ON,LOWD1,127,80,25,75,OFF", &p, &error);
+  EXPECT_NE(error.find("LOUD3"), std::string::npos) << error;
+}
+
+TEST(ParsePadParams, TakesHiHatByName) {
+  device::PadDeviceParams p;
+  std::string error;
+  ASSERT_TRUE(
+      ParsePadParams("HI-HAT,80,127,ON,LINEAR,127,80,25,75,ON", &p, &error))
+      << error;
+  EXPECT_EQ(p.layer_mode, static_cast<uint8_t>(LayerMode::kHiHat));
+  EXPECT_EQ(p.trigger_reserve, 1);
+}
+
+TEST(ParsePadParams, RejectsAnUnknownName) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(
+      ParsePadParams("SWTICH,80,127,ON,LINEAR,127,80,25,75,OFF", &p, &error));
+  EXPECT_NE(error.find("SWTICH"), std::string::npos) << error;
+}
+
+TEST(ParsePadParams, RejectsAValueOverOneTwentySeven) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(
+      ParsePadParams("MIX,200,127,ON,LINEAR,127,80,25,75,OFF", &p, &error));
+  EXPECT_NE(error.find("fade point"), std::string::npos) << error;
+}
+
+TEST(ParsePadParams, RejectsJunkInANumericField) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(
+      ParsePadParams("MIX,8O,127,ON,LINEAR,127,80,25,75,OFF", &p, &error));
+}
+
+TEST(ParsePadParams, RejectsTheWrongCount) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(ParsePadParams("MIX,80,127", &p, &error));
+  EXPECT_NE(error.find("10"), std::string::npos) << error;
+}
+
+TEST(ParsePadParams, RejectsANonsenseFlag) {
+  device::PadDeviceParams p;
+  std::string error;
+  EXPECT_FALSE(
+      ParsePadParams("MIX,80,127,YES,LINEAR,127,80,25,75,OFF", &p, &error));
+  EXPECT_NE(error.find("dynamics"), std::string::npos) << error;
 }
 
 }  // namespace

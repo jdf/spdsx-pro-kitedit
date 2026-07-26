@@ -970,7 +970,8 @@ void MainComponent::PollConnection() {
   std::thread([safe, was_connected] {
     bool connected = false;
     int device_kit = 0;  // 1-based; 0 = not read
-    juce::String firmware;
+    juce::String firmware;  // version + build, for display
+    juce::String version;  // bare, what the firmware gate compares
     try {
       const std::string path = device::FindDevicePort();
       connected = !path.empty();
@@ -983,7 +984,8 @@ void MainComponent::PollConnection() {
             device::PlatformPorts().Open(path);
         device::SpdsxDevice dev(serial.get());
         device_kit = dev.CurrentKit();
-        firmware = juce::String(dev.FirmwareField(0));
+        version = juce::String(dev.FirmwareField(0));
+        firmware = version;
         const std::string build = dev.FirmwareField(3);
         if (!build.empty()) {
           firmware << " (" << juce::String(build) << ")";
@@ -992,7 +994,11 @@ void MainComponent::PollConnection() {
     } catch (const std::exception&) {
       connected = false;  // no node, or nothing answered
     }
-    juce::MessageManager::callAsync([safe, connected, device_kit, firmware] {
+    juce::MessageManager::callAsync([safe,
+                                     connected,
+                                     device_kit,
+                                     firmware,
+                                     version] {
       if (safe == nullptr) {
         return;
       }
@@ -1005,6 +1011,7 @@ void MainComponent::PollConnection() {
         safe->UpdateSyncButton();  // enable/disable with connection
         if (connected) {
           safe->device_firmware_ = firmware;
+          safe->device_firmware_version_ = version;
           AppLog::Note("device connected, firmware "
                        + (firmware.isEmpty() ? "?" : firmware) + ", kit "
                        + juce::String(device_kit));
@@ -1048,16 +1055,17 @@ void MainComponent::SyncChangesWithDevice() {
   // The write paths were only ever verified against one firmware, and a
   // wrong write lands in flash. The connection poll already read the
   // version, so refuse here rather than partway through the push.
-  if (device_firmware_ != device::SpdsxDevice::kSupportedFirmware) {
+  if (device_firmware_version_ != device::SpdsxDevice::kSupportedFirmware) {
     device_fetching_ = false;
     UpdateSyncButton();
-    AppLog::Note("sync refused: firmware " + device_firmware_);
+    AppLog::Note("sync refused: firmware " + device_firmware_version_);
     juce::AlertWindow::showMessageBoxAsync(
         juce::MessageBoxIconType::WarningIcon,
         "Sync Changes with Device",
         "This unit reports firmware "
-            + (device_firmware_.isEmpty() ? juce::String("(unknown)")
-                                          : "\"" + device_firmware_ + "\"")
+            + (device_firmware_version_.isEmpty()
+                   ? juce::String("(unknown)")
+                   : "\"" + device_firmware_version_ + "\"")
             + ", and writing has only been verified against \""
             + device::SpdsxDevice::kSupportedFirmware
             + juce::String::fromUTF8(

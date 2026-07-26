@@ -1,10 +1,14 @@
 #include "spdutil_args.h"
 
 #include <algorithm>
+#include <array>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "layers.h"
 
 namespace spdsx::spdutil {
 namespace {
@@ -81,6 +85,143 @@ size_t EditDistance(std::string_view a, std::string_view b) {
 }
 
 }  // namespace
+
+namespace {
+
+// A whole number, or nothing. atoi would read "SWITCH" as 0.
+std::optional<int> WholeNumber(std::string_view text) {
+  if (text.empty() || text.size() > 5) {
+    return std::nullopt;
+  }
+  int n = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') {
+      return std::nullopt;
+    }
+    n = n * 10 + (c - '0');
+  }
+  return n;
+}
+
+std::vector<std::string_view> SplitOnCommas(std::string_view spec) {
+  std::vector<std::string_view> parts;
+  size_t start = 0;
+  while (start <= spec.size()) {
+    const size_t comma = spec.find(',', start);
+    parts.push_back(spec.substr(start,
+                                comma == std::string_view::npos
+                                    ? std::string_view::npos
+                                    : comma - start));
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  return parts;
+}
+
+}  // namespace
+
+bool ParsePadParams(std::string_view spec,
+                    device::PadDeviceParams* out,
+                    std::string* error) {
+  const auto parts = SplitOnCommas(spec);
+  if (parts.size() != 10) {
+    *error = "--params wants 10 comma-separated values, got "
+        + std::to_string(parts.size())
+        + " (mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,"
+          "hhFadeIn,hhDecay,trigReserve)";
+    return false;
+  }
+  // A named field takes its name and nothing else: the number behind a
+  // mode or curve is an implementation detail nobody should have to
+  // know, and a wrong one writes a plausible value in silence.
+  const auto named = [&](std::string_view token,
+                         std::string_view what,
+                         int count,
+                         auto name_of,
+                         int* value) {
+    std::string known;
+    for (int i = 0; i < count; ++i) {
+      if (name_of(i) == token) {
+        *value = i;
+        return true;
+      }
+      known += (i == 0 ? "" : " ");
+      known += std::string(name_of(i));
+    }
+    *error = "\"" + std::string(token) + "\" is not a " + std::string(what)
+        + " (" + known + ")";
+    return false;
+  };
+  const auto ranged =
+      [&](std::string_view token, std::string_view what, int* value) {
+        const auto n = WholeNumber(token);
+        if (!n || *n > 127) {
+          *error = "\"" + std::string(token) + "\" is not a "
+              + std::string(what) + " (0-127)";
+          return false;
+        }
+        *value = *n;
+        return true;
+      };
+  const auto flag =
+      [&](std::string_view token, std::string_view what, int* value) {
+        if (token == "ON" || token == "on") {
+          *value = 1;
+        } else if (token == "OFF" || token == "off") {
+          *value = 0;
+        } else {
+          // ON/OFF only, for the same reason as the named fields: 1 and
+          // 0 are the storage, not the vocabulary.
+          *error = "\"" + std::string(token) + "\" is not " + std::string(what)
+              + " (ON OFF)";
+          return false;
+        }
+        return true;
+      };
+
+  int mode = 0;
+  int curve = 0;
+  int dynamics = 0;
+  int reserve = 0;
+  std::array<int, 6> numbers {};
+  if (!named(
+          parts[0],
+          "layer mode",
+          kLayerModeCount,
+          [](int i) { return LayerModeName(static_cast<LayerMode>(i)); },
+          &mode)
+      || !ranged(parts[1], "fade point", &numbers[0])
+      || !ranged(parts[2], "fade end", &numbers[1])
+      || !flag(parts[3], "dynamics", &dynamics)
+      || !named(
+          parts[4],
+          "dynamics curve",
+          kDynamicsCurveCount,
+          [](int i) {
+            return DynamicsCurveName(static_cast<DynamicsCurve>(i));
+          },
+          &curve)
+      || !ranged(parts[5], "fixed velocity", &numbers[2])
+      || !ranged(parts[6], "hi-hat volume", &numbers[3])
+      || !ranged(parts[7], "hi-hat fade-in", &numbers[4])
+      || !ranged(parts[8], "hi-hat decay", &numbers[5])
+      || !flag(parts[9], "trigger reserve", &reserve)) {
+    return false;
+  }
+  out->layer_mode = static_cast<uint8_t>(mode);
+  out->fade_point = static_cast<uint8_t>(numbers[0]);
+  out->fade_end = static_cast<uint8_t>(numbers[1]);
+  out->dynamics = static_cast<uint8_t>(dynamics);
+  out->dynamics_curve = static_cast<uint8_t>(curve);
+  out->fixed_velocity = static_cast<uint8_t>(numbers[2]);
+  out->hi_hat_volume = static_cast<uint8_t>(numbers[3]);
+  out->hi_hat_fade_in = static_cast<uint8_t>(numbers[4]);
+  out->hi_hat_decay = static_cast<uint8_t>(numbers[5]);
+  out->trigger_reserve = static_cast<uint8_t>(reserve);
+  return true;
+}
 
 bool ParseKitSpec(std::string_view spec,
                   std::vector<KitRange>* out,

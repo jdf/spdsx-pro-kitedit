@@ -174,7 +174,11 @@ int Usage() {
       "                  space-padded); --commit to persist\n"
       "  setparams --kits K --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
       "                  hhvol,hhfadein,hhdecay,trig   write pad N's ten\n"
-      "                  hit-response params; --commit to persist\n"
+      "                  hit-response params. Mode and curve are NAMES\n"
+      "                  (MIX FADE1 FADE2 XFADE SWITCH SW(MONO)\n"
+      "                  ALTERNATE HI-HAT; LINEAR LOUD1 LOUD2 LOUD3);\n"
+      "                  dynamics and trig are ON or OFF; --commit\n"
+      "                  to persist\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
@@ -599,36 +603,6 @@ int RunAssign(const AssignArgs& args) {
 
 // Parses a comma list "mode,fp,fe,dyn,curve,fixvel,hhvol,hhfadein,hhdecay,
 // trig" into pad params. Returns false if the count is wrong.
-bool ParseParamList(const std::string& spec,
-                    spdsx::device::PadDeviceParams* p) {
-  std::vector<int> v;
-  size_t start = 0;
-  while (start <= spec.size()) {
-    const size_t comma = spec.find(',', start);
-    const std::string tok = spec.substr(
-        start, comma == std::string::npos ? std::string::npos : comma - start);
-    v.push_back(std::atoi(tok.c_str()));
-    if (comma == std::string::npos) {
-      break;
-    }
-    start = comma + 1;
-  }
-  if (v.size() != 10) {
-    return false;
-  }
-  p->layer_mode = static_cast<uint8_t>(v[0]);
-  p->fade_point = static_cast<uint8_t>(v[1]);
-  p->fade_end = static_cast<uint8_t>(v[2]);
-  p->dynamics = static_cast<uint8_t>(v[3]);
-  p->dynamics_curve = static_cast<uint8_t>(v[4]);
-  p->fixed_velocity = static_cast<uint8_t>(v[5]);
-  p->hi_hat_volume = static_cast<uint8_t>(v[6]);
-  p->hi_hat_fade_in = static_cast<uint8_t>(v[7]);
-  p->hi_hat_decay = static_cast<uint8_t>(v[8]);
-  p->trigger_reserve = static_cast<uint8_t>(v[9]);
-  return true;
-}
-
 struct SetParamsArgs {
   std::string port;
   int kit = 1;
@@ -646,8 +620,9 @@ int RunSetParams(const SetParamsArgs& args) {
     return 2;
   }
   spdsx::device::PadDeviceParams p;
-  if (!ParseParamList(args.params_spec, &p)) {
-    std::fprintf(stderr, "--params needs 10 comma-separated values\n");
+  std::string params_error;
+  if (!spdsx::spdutil::ParsePadParams(args.params_spec, &p, &params_error)) {
+    std::fprintf(stderr, "--params: %s\n", params_error.c_str());
     return 2;
   }
   if (args.dry_run) {

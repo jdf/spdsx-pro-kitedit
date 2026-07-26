@@ -149,6 +149,19 @@ Sample 0 clears the layer.
 Writes one pad's ten hit-response parameters as a comma list, in order:
 `mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,hhFadeIn,hhDecay,trigRsv`.
 
+Mode and curve are **names** — `MIX FADE1 FADE2 XFADE SWITCH SW(MONO)
+ALTERNATE HI-HAT` and `LINEAR LOUD1 LOUD2 LOUD3` — never the number behind
+one, which nobody should have to know. Dynamics and trigger reserve are
+`ON` or `OFF`. Only the plain counts — fade point/end, fixed velocity, the
+hi-hat trio — are numbers, 0-127. A token it does not
+recognize is an error that names the token and lists the names it knows,
+so a slip cannot be read as zero and write MIX in silence.
+
+```sh
+spdutil setparams --kits 199 --pad 5 \
+  --params SWITCH,80,127,ON,LINEAR,127,80,25,75,OFF --commit
+```
+
 ### `setlayer --kits K --pad P.S [--volume dB] [--fadein N] [--decay N]`
 Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in
 0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave

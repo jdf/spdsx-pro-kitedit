@@ -14,13 +14,11 @@ makes changes durable, so mistakes on scratch kits are still reversible by
 hand, but only scratch kits keep that cheap.
 
 **Watch items** (the two things the fake port could not prove):
-- **(A) Clearing a layer**: we write wave `0` with the enable flag still `1`.
-  The official app may write enable `0` instead. Symptom would be a pad that
-  shows something odd on the unit's wave screen or still plays the old wave.
-- **(B) Uploaded audio plays**: registration was live-verified last session,
-  but this is the first time `SmpFromAudioFile` output (resampled PCM +
-  checksum) goes through the full GUI path. Silent playback = checksum or
-  resample bug.
+- ~~**(A) Clearing a layer**~~ RESOLVED 2026-07-26: writing wave `0` with the
+  enable flag still `1` clears it; the unit shows "0 OFF".
+- ~~**(B) Uploaded audio plays**~~ RESOLVED 2026-07-26: `SmpFromAudioFile`
+  output through the full GUI path uploads, registers, and plays on the pad
+  at the right pitch.
 
 ## 0. Pre-flight
 
@@ -59,25 +57,26 @@ hand, but only scratch kits keep that cheap.
 - [x] Device tab → drag any pool wave onto kit 199 pad 6 top. Push.
 - [x] Hit pad 6 on the unit → plays that wave.
 
-## 4. Clear a layer — watch item (A)
+## 4. Clear a layer — watch item (A) — PASSED 2026-07-26
 
-- [ ] If the GUI lets you empty that slot, do it, push, then on the UNIT:
-      pad 6's wave screen should show OFF/empty and the pad should be
-      silent. If it shows garbage or still plays: capture the official
-      app clearing a wave with `re/frida-scripts/paramlog.js` — we likely
-      need enable=0 — and note it in CLAUDE.md.
+- [x] Cleared kit 199 pad 6 top (right-click ▸ Clear layer), pushed. The
+      device reads wave 0 on both layers, neighbours untouched, and the
+      document's current AND base both advanced. On the unit both layers
+      read "0 OFF". **Writing wave 0 with the enable flag left at 1 does
+      clear a layer** — no enable=0 needed. Watch item (A) closed.
 
-## 5. Local file upload — watch item (B)
+## 5. Local file upload — watch item (B) — PASSED 2026-07-26
 
-- [ ] Drag a small **44.1 kHz** WAV from the Files tab onto kit 199 pad 1
-      top. Push. (This sync also re-reads the pool directory — bank 0x20 —
-      so expect it to take noticeably longer than tests 1–3.)
-- [ ] After: the slot shows a device wave (not a file), still plays in-app;
-      Device tab lists the new wavename.
-- [ ] `spdutil samples | tail` → the record sits at the lowest free index.
-- [ ] **Hit the pad on the unit** → audible, correct pitch/speed (pitch or
-      speed off = resample bug; silence = checksum bug).
-- [ ] Repeat once with a stereo file and once with an mp3 if handy.
+- [x] Dragged specgram/test.wav (44.1 kHz mono, 4.000 s) onto kit 199 pad 6
+      top and pushed. Landed at 1677, the lowest free index, named
+      test/test.wav; kit 199 pad 6 top points at it; the app shows a device
+      wave, the Device tab lists it.
+- [x] **Audible on the pad**, correct pitch and speed. `readwave 1677` comes
+      back `valid=1  48000 Hz  1 ch  16-bit  384000 PCM bytes (4.00 s)` —
+      192000 samples is exactly 4.000 s at 48k, so the resample kept the
+      duration (a reinterpret would have given 3.67 s) and the MD5 header
+      checksum verifies. Watch item (B) closed.
+- [ ] Still untried: a stereo file, and an mp3.
 
 ## 6. Pull: a device-only change rides along
 
@@ -90,23 +89,36 @@ hand, but only scratch kits keep that cheap.
 
 ## 7. The conflict dance
 
-- [ ] Clean state. In the app: kit 199 pad 5 fade point → 60. Quit app.
-      On the device: change the SAME pad's fade point to 90 **on the
-      unit's own UI** (that guarantees a one-field change; `spdutil
-      setparams` works too but wants all 10 values). An easier CLI
-      alternative that conflicts on the kit NAME instead:
-      `./build/spdutil setname --kits 199 --name "DEVICE NAME" --commit` after
-      renaming the kit differently in the app. Relaunch, push.
-- [ ] Dialog appears with **one row**: kit 199, pad 5, "fade point (yours
-      60, device 90)" (or the two names, if you staged the name variant).
-- [ ] Choose **Device wins** → ends clean; the app's pad 5 now shows 90;
-      nothing written to the device for that pad.
-- [ ] Re-stage the same conflict; choose **My copy wins** → unit ends at 60.
-- [ ] Re-stage; choose **Do nothing** → status says `synced (skipped
-      conflicts remain)`, button STAYS visible, and pushing again re-shows
-      the same conflict.
-- [ ] Re-stage; hit **escape** on the dialog → sync aborts, nothing changed
-      anywhere, button re-enabled.
+Conflict on the pad's **layer mode** — the combo in every pad header.
+(Fade point would do too, but it is hidden on MIX pads, which is what
+kit 199's pads are.) Each round: make the app-side edit, quit, let Claude
+stage the device side (`spdutil setparams --kits 199 --pad 5 --params
+<MODE>,80,127,1,LINEAR,127,80,25,75,0 --commit`, which moves only the
+mode), relaunch, push. The conflict is the SAME field changed to
+DIFFERENT values on both sides, the one thing the three-way merge cannot
+decide for itself.
+
+- [ ] **Device's wins.** App: kit 199 pad 5 mode → XFADE. Device: SWITCH.
+      Push. The dialog shows **one row** naming both values, ticked, with
+      the outcome "Mine". Click **Keep Device's** (outcome becomes
+      "Device's"), then **Sync**. After: the app's pad 5 reads SWITCH, the
+      device still reads SWITCH, the button is hidden.
+- [ ] **Mine wins.** Re-stage (app XFADE, device ALTERNATE). Push, leave
+      the row as it comes up ("Mine"), **Sync**. After: the unit reads
+      XFADE.
+- [ ] **Do Nothing.** Re-stage (app FADE1, device ALTERNATE). Push, click
+      **Do Nothing**, **Sync**. Status says `synced (skipped conflicts remain)`,
+      the button STAYS visible, and pushing again re-shows the same
+      conflict — the skipped pad's base is deliberately not advanced.
+- [ ] **Escape.** Re-stage (app FADE2, device ALTERNATE). Push, then press **escape**
+      on the dialog. The sync aborts: nothing changes on either side and
+      the button is re-enabled.
+- [ ] **Bulk controls** (needs more than one conflict — edit pads 5, 6 and
+      7 in the app and have all three staged differently on the device):
+      every row starts ticked and "Mine"; **Select all** clears/ticks them
+      all; untick one and the Select all box shows a **dash** (mixed);
+      with only some ticked, **Keep Device's** changes ONLY those rows'
+      outcomes; with none ticked the three bulk buttons are disabled.
 
 ## 8. Pull the cable mid-push (failure honesty)
 

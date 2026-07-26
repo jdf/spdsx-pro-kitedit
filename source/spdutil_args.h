@@ -7,13 +7,19 @@
 // parser records which flags it saw and rejects any the command does not
 // use, which is what these tables are for.
 //
-// JUCE-free and device-free so it can be tested without hardware.
+// Also home to the --params grammar, for the same reason: a token read
+// as a number when it is a name ("SWITCH" as 0) writes the wrong thing
+// and says nothing.
+//
+// JUCE-free (and hardware-free) so it can be tested without a device.
 #ifndef SPDSX_PATCHEDIT_SOURCE_SPDUTIL_ARGS_H_
 #define SPDSX_PATCHEDIT_SOURCE_SPDUTIL_ARGS_H_
 
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "device/kit_image.h"  // PadDeviceParams
 
 namespace spdsx::spdutil {
 
@@ -70,6 +76,20 @@ bool TakesSingleKit(std::string_view command);
 // error rather than silently dropping the flag.
 std::string UnacceptedFlag(std::string_view command,
                            const std::vector<std::string>& seen);
+
+// Parses a --params list: the ten pad hit-response values in order,
+// comma separated —
+//   mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,hhFadeIn,
+//   hhDecay,trigReserve
+// Every field with a vocabulary takes its word and nothing else: mode
+// and curve by name (MIX, HI-HAT, LINEAR, LOUD3 …), dynamics and trigger
+// reserve as ON/OFF. The numbers behind them are storage, not something
+// anyone should have to know. Only plain counts — fades, velocities —
+// are numbers, 0-127. Returns false and fills *error, listing the words
+// it knows, on anything else.
+bool ParsePadParams(std::string_view spec,
+                    device::PadDeviceParams* out,
+                    std::string* error);
 
 // A one-line explanation for rejecting flag on command — why it does
 // nothing here, and what to reach for instead.
