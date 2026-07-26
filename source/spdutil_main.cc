@@ -50,6 +50,7 @@ using spdsx::device::BulkBlock;
 using spdsx::device::Bytes;
 using spdsx::device::ObjectKind;
 using spdsx::device::PadSlot;
+using spdsx::spdutil::KitRange;
 
 std::string ToHex(const Bytes& b) {
   std::string s;
@@ -111,28 +112,6 @@ std::string ResolvePort(const std::string& requested) {
       "no port answered the ping (official app closed? device on?)");
 }
 
-// A closed kit range; --range 126 is {126,126}, --range 129-134 is
-// {129,134}.
-struct KitRange {
-  int first;
-  int last;
-};
-
-KitRange ParseRange(const std::string& s) {
-  const auto dash = s.find('-');
-  KitRange r {};
-  if (dash == std::string::npos) {
-    r.first = r.last = std::atoi(s.c_str());
-  } else {
-    r.first = std::atoi(s.substr(0, dash).c_str());
-    r.last = std::atoi(s.substr(dash + 1).c_str());
-  }
-  if (r.first < 1 || r.last > 200 || r.first > r.last) {
-    throw std::runtime_error("bad --range '" + s + "' (kits are 1-200)");
-  }
-  return r;
-}
-
 int UnknownCommand(const std::string& command) {
   std::fprintf(stderr, "unknown command \"%s\"", command.c_str());
   const std::string best = spdsx::spdutil::NearestCommand(command);
@@ -163,14 +142,15 @@ int Usage() {
       "              directory only — the dump carries no audio)\n"
       "  readwave <N> read wave N's audio off the device (--out FILE:\n"
       "              .wav = converted, else raw .SMP)\n"
-      "  setlayer <K> --pad P.S [--volume dB] [--fadein N] [--decay N]\n"
+      "  setlayer --kits K --pad P.S [--volume dB] [--fadein N]\n"
+      "           [--decay N]\n"
       "                  write one layer's volume (dB, e.g. -3.5), fade-in\n"
       "                  (0-127) and decay (0-127, 127 = none); whatever\n"
       "                  you leave out keeps its current value; --commit\n"
       "                  to persist\n"
       "  selectkit <N>   switch the device's playback kit (1-200)\n"
       "  currentkit      print the device's active kit\n"
-      "  setmode <K>|--range A[-B] --mode M [--pad N] [--if-mode M]\n"
+      "  setmode --kits SPEC --mode M [--pad N] [--if-mode M]\n"
       "          [--dry-run]\n"
       "                  set pads' layer mode in the given kits (names:\n"
       "                  MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE\n"
@@ -186,26 +166,29 @@ int Usage() {
       "                  register it in the pool, then read every one back\n"
       "                  and report MATCH/FAIL (use a fresh index; --name\n"
       "                  applies only to a single file)\n"
-      "  assign <K> --sample N --pad P.S   assign pool sample N to kit K,\n"
+      "  assign --kits K --sample N --pad P.S   assign pool sample N to\n"
+      "                  kit K,\n"
       "                  pad P (1-9), slot S (0 top/1 bottom);\n"
       "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
       "                  not committed (revert with a power cycle)\n"
-      "  setname <K> --name TEXT   set kit K's name (16 chars,\n"
+      "  setname --kits K --name TEXT   set kit K's name (16 chars,\n"
       "                  space-padded); --commit to persist\n"
-      "  setparams <K> --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
+      "  setparams --kits K --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
       "                  hhvol,hhfadein,hhdecay,trig   write pad N's ten\n"
       "                  hit-response params; --commit to persist\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
       "                --trigger N      link trigger N\n"
       "                --pad N          link pad N\n"
-      "                --range A[-B]    kits to touch (repeatable;\n"
-      "                                 required; 1-200 = all)\n"
+      "                --kits SPEC      kits to touch (required)\n"
       "                --dry-run        print, send nothing\n"
       "                --verbose        show device replies\n"
       "\n"
-      "the kit to write to is never implied: <K> or --range is required\n"
-      "for assign, setname, setparams, setlayer, setmode and padlink.\n"
+      "\n"
+      "--kits SPEC is comma-separated ranges: 108, 108-200, 1,5,10-20\n"
+      "(1-200 is every kit). It is REQUIRED by assign, setname,\n"
+      "setparams, setlayer, setmode and padlink -- which kits a write\n"
+      "touches is never implied. The first four take exactly one kit.\n"
       "with no --port, scans /dev/cu.usbmodem* and pings each node\n");
   return 2;
 }
@@ -902,10 +885,7 @@ int RunSetMode(const SetModeArgs& args) {
     std::fprintf(stderr, "bad --if-mode \"%s\"\n", args.if_mode.c_str());
     return 2;
   }
-  std::vector<KitRange> ranges = args.ranges;
-  if (ranges.empty()) {
-    ranges.push_back({1, 200});
-  }
+  const std::vector<KitRange>& ranges = args.ranges;
   // No --pad means every pad; naming pads restricts the sweep to them.
   std::array<bool, 9> wanted {};
   wanted.fill(args.pads.empty());
@@ -1168,10 +1148,7 @@ int RunPadLink(const PadLinkArgs& args) {
   const auto& objects = args.objects;
   const bool dry_run = args.dry_run;
   const bool verbose = args.verbose;
-  std::vector<KitRange> ranges = args.ranges;
-  if (ranges.empty()) {
-    ranges.push_back({1, 200});
-  }
+  const std::vector<KitRange>& ranges = args.ranges;
 
   // Declared before the device so it outlives it: the device only borrows.
   std::unique_ptr<spdsx::device::SerialPort> serial;
@@ -1329,7 +1306,16 @@ int main(int argc, char** argv) {
           objects.emplace_back(ObjectKind::kPad, pad_num);
         }
       } else if (arg == "--range") {
-        ranges.push_back(ParseRange(next()));
+        throw std::runtime_error(
+            "--range is now --kits, which takes comma-separated ranges: "
+            "--kits 108-200, --kits 1,5,10-20");
+      } else if (arg == "--kits") {
+        std::string spec_error;
+        std::vector<KitRange> parsed;
+        if (!spdsx::spdutil::ParseKitSpec(next(), &parsed, &spec_error)) {
+          throw std::runtime_error("--kits: " + spec_error);
+        }
+        ranges.insert(ranges.end(), parsed.begin(), parsed.end());
       } else if (arg == "--bank") {
         banks.push_back(
             static_cast<uint8_t>(std::strtol(next().c_str(), nullptr, 0)));
@@ -1378,6 +1364,9 @@ int main(int argc, char** argv) {
       }
     }
 
+    // The one kit a single-kit write targets (validated just below).
+    const int single_kit = ranges.empty() ? 0 : ranges.front().first;
+
     const auto flag_given = [&seen_flags](const char* name) {
       return std::find(seen_flags.begin(), seen_flags.end(), name)
           != seen_flags.end();
@@ -1407,24 +1396,22 @@ int main(int argc, char** argv) {
       // Say which kits, always. This used to default to kit 1 for the
       // single-kit writes and to every kit for the sweeps, so a
       // forgotten argument wrote somewhere nobody named.
-      if (spdsx::spdutil::RequiresExplicitKit(command) && kit_arg <= 0
-          && ranges.empty()) {
-        std::string how;
-        if (!spdsx::spdutil::TakesPositionalNumber(command)) {
-          how =
-              "--range A[-B], repeatable (--range 1-200 really does mean "
-              "every kit)";
-        } else if (command == "setmode") {
-          how =
-              "a kit number, e.g. \"spdutil setmode 108 ...\", or --range "
-              "A[-B] (--range 1-200 really does mean every kit)";
-        } else {
-          how = "a kit number, e.g. \"spdutil " + command + " 108 ...\"";
-        }
+      if (spdsx::spdutil::RequiresKitSpec(command) && ranges.empty()) {
+        std::fprintf(
+            stderr,
+            "\"%s\" needs --kits: one or more kits as comma-separated "
+            "ranges,\ne.g. --kits 108, --kits 108-200, --kits 1,5,10-20 "
+            "(--kits 1-200 is every kit)\n",
+            command.c_str());
+        return 2;
+      }
+      // These write exactly one kit, so their spec may name only one.
+      if (spdsx::spdutil::TakesSingleKit(command)
+          && spdsx::spdutil::KitCount(ranges) != 1) {
         std::fprintf(stderr,
-                     "\"%s\" needs to be told which kits: %s\n",
+                     "\"%s\" writes one kit, but --kits named %d\n",
                      command.c_str(),
-                     how.c_str());
+                     spdsx::spdutil::KitCount(ranges));
         return 2;
       }
     }
@@ -1463,7 +1450,7 @@ int main(int argc, char** argv) {
     }
     if (command == "setlayer") {
       return RunSetLayer({.port = port,
-                          .kit = kit_arg > 0 ? kit_arg : 1,
+                          .kit = single_kit,
                           .pad_spec = pad_spec,
                           .volume_db = volume_arg,
                           .fade_in = fadein_arg,
@@ -1502,22 +1489,10 @@ int main(int argc, char** argv) {
           mode_pads.push_back(index);
         }
       }
-      // A positional kit is single-kit shorthand. It used to be ignored,
-      // so "setmode 108 --mode MIX" silently swept all 200 kits.
-      std::vector<KitRange> mode_ranges = ranges;
-      if (kit_arg > 0) {
-        if (!mode_ranges.empty()) {
-          std::fprintf(stderr,
-                       "setmode takes a kit number or --range, "
-                       "not both\n");
-          return 2;
-        }
-        mode_ranges.push_back({kit_arg, kit_arg});
-      }
       return RunSetMode({.port = port,
                          .mode = mode_arg,
                          .if_mode = if_mode_arg,
-                         .ranges = mode_ranges,
+                         .ranges = ranges,
                          .pads = mode_pads,
                          .dry_run = dry_run,
                          .commit = commit_flag});
@@ -1541,7 +1516,7 @@ int main(int argc, char** argv) {
     }
     if (command == "assign") {
       return RunAssign({.port = port,
-                        .kit = kit_arg > 0 ? kit_arg : 1,
+                        .kit = single_kit,
                         .sample = sample_arg,
                         .pad_spec = pad_spec,
                         .dry_run = dry_run,
@@ -1549,14 +1524,14 @@ int main(int argc, char** argv) {
     }
     if (command == "setname") {
       return RunSetName({.port = port,
-                         .kit = kit_arg > 0 ? kit_arg : 1,
+                         .kit = single_kit,
                          .name = name_arg,
                          .dry_run = dry_run,
                          .commit = commit_flag});
     }
     if (command == "setparams") {
       return RunSetParams({.port = port,
-                           .kit = kit_arg > 0 ? kit_arg : 1,
+                           .kit = single_kit,
                            .pad = pad_num,
                            .params_spec = params_spec,
                            .dry_run = dry_run,

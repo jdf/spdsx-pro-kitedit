@@ -16,6 +16,28 @@
 
 namespace spdsx::spdutil {
 
+// A closed kit range: {126, 126} for "126", {129, 134} for "129-134".
+struct KitRange {
+  int first = 0;
+  int last = 0;
+
+  bool operator==(const KitRange&) const = default;
+};
+
+inline constexpr int kFirstKit = 1;
+inline constexpr int kLastKit = 200;
+
+// Parses a --kits spec: comma-separated ranges, each a single kit or
+// FIRST-LAST inclusive ("108", "1,5,10-20", "108-200"). Returns false and
+// fills *error with a one-line explanation on anything malformed or out
+// of the 1-200 range. Ranges come back in the order written.
+bool ParseKitSpec(std::string_view spec,
+                  std::vector<KitRange>* out,
+                  std::string* error);
+
+// How many kits a parsed spec covers, counting overlaps once.
+int KitCount(const std::vector<KitRange>& ranges);
+
 // Every command the dispatcher understands.
 const std::vector<std::string>& Commands();
 
@@ -34,10 +56,14 @@ std::vector<std::string> AllowedFlags(std::string_view command);
 // True if command accepts a positional kit/index number.
 bool TakesPositionalNumber(std::string_view command);
 
-// True if command writes to kits and must be told which ones. Leaving
-// the kit out used to mean kit 1 — or, for the sweeps, every kit — so a
+// True if command writes to kits and so requires --kits. Leaving the kit
+// out used to mean kit 1 — or, for the sweeps, every kit — so a
 // forgotten argument wrote somewhere the user never named.
-bool RequiresExplicitKit(std::string_view command);
+bool RequiresKitSpec(std::string_view command);
+
+// True if command writes exactly one kit, so its --kits spec may name
+// only one (setmode and padlink sweep, and accept any spec).
+bool TakesSingleKit(std::string_view command);
 
 // The first flag in `seen` (names without dashes) that `command` does
 // not accept, or "" when they are all fine. Callers report this as an

@@ -27,31 +27,24 @@ const std::map<std::string, std::vector<std::string>, std::less<>>& Table() {
           // changes nothing.
           {"sendwave", {"from", "name", "commit"}},
           {"deletewave", {"commit"}},
-          {"assign", {"sample", "pad", "commit", "dry-run"}},
-          {"setname", {"name", "commit", "dry-run"}},
-          {"setparams", {"pad", "params", "commit", "dry-run"}},
+          {"assign", {"sample", "pad", "commit", "dry-run", "kits"}},
+          {"setname", {"name", "commit", "dry-run", "kits"}},
+          {"setparams", {"pad", "params", "commit", "dry-run", "kits"}},
           {"setlayer",
-           {"pad", "volume", "fadein", "decay", "commit", "dry-run"}},
-          {"setmode", {"mode", "if-mode", "pad", "range", "dry-run", "commit"}},
+           {"pad", "volume", "fadein", "decay", "commit", "dry-run", "kits"}},
+          {"setmode", {"mode", "if-mode", "pad", "kits", "dry-run", "commit"}},
           {"padlink",
-           {"group", "trigger", "pad", "range", "dry-run", "verbose"}},
+           {"group", "trigger", "pad", "kits", "dry-run", "verbose"}},
       };
   return kTable;
 }
 
-// Commands that read a bare number after the command word. setmode takes
-// one as single-kit shorthand; it used to ignore it and sweep all 200.
+// Commands that read a bare number after the command word: a kit to
+// show or select, or a sample index. Everything that WRITES kits takes
+// --kits instead, so there is one spelling for "which kits".
 const std::vector<std::string>& PositionalNumberCommands() {
-  static const std::vector<std::string> kCommands = {"kit",
-                                                     "readwave",
-                                                     "sendwave",
-                                                     "deletewave",
-                                                     "selectkit",
-                                                     "assign",
-                                                     "setname",
-                                                     "setparams",
-                                                     "setlayer",
-                                                     "setmode"};
+  static const std::vector<std::string> kCommands = {
+      "kit", "readwave", "sendwave", "deletewave", "selectkit"};
   return kCommands;
 }
 
@@ -88,6 +81,88 @@ size_t EditDistance(std::string_view a, std::string_view b) {
 }
 
 }  // namespace
+
+bool ParseKitSpec(std::string_view spec,
+                  std::vector<KitRange>* out,
+                  std::string* error) {
+  out->clear();
+  const auto fail = [&](const std::string& message) {
+    *error = message;
+    out->clear();
+    return false;
+  };
+  if (spec.empty()) {
+    return fail("empty kit spec; want e.g. 108, 1-20, or 1,5,10-20");
+  }
+  // A whole number, or nothing. std::stoi would accept "12abc".
+  const auto number = [](std::string_view text, int* value) {
+    if (text.empty() || text.size() > 3) {
+      return false;
+    }
+    int n = 0;
+    for (const char c : text) {
+      if (c < '0' || c > '9') {
+        return false;
+      }
+      n = n * 10 + (c - '0');
+    }
+    *value = n;
+    return true;
+  };
+
+  size_t start = 0;
+  while (start <= spec.size()) {
+    const size_t comma = spec.find(',', start);
+    const std::string_view part =
+        spec.substr(start,
+                    comma == std::string_view::npos ? std::string_view::npos
+                                                    : comma - start);
+    if (part.empty()) {
+      return fail("empty range in kit spec \"" + std::string(spec) + "\"");
+    }
+    KitRange range;
+    const size_t dash = part.find('-');
+    if (dash == std::string_view::npos) {
+      if (!number(part, &range.first)) {
+        return fail("\"" + std::string(part) + "\" is not a kit number");
+      }
+      range.last = range.first;
+    } else {
+      if (!number(part.substr(0, dash), &range.first)
+          || !number(part.substr(dash + 1), &range.last)) {
+        return fail("\"" + std::string(part) + "\" is not a kit range");
+      }
+    }
+    if (range.first < kFirstKit || range.last > kLastKit) {
+      return fail("kit range \"" + std::string(part) + "\" is outside 1-200");
+    }
+    if (range.first > range.last) {
+      return fail("kit range \"" + std::string(part) + "\" runs backwards");
+    }
+    out->push_back(range);
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  return true;
+}
+
+int KitCount(const std::vector<KitRange>& ranges) {
+  std::vector<bool> seen(kLastKit + 1, false);
+  int count = 0;
+  for (const KitRange& range : ranges) {
+    for (int kit = std::max(range.first, kFirstKit);
+         kit <= std::min(range.last, kLastKit);
+         ++kit) {
+      if (!seen[static_cast<size_t>(kit)]) {
+        seen[static_cast<size_t>(kit)] = true;
+        ++count;
+      }
+    }
+  }
+  return count;
+}
 
 const std::vector<std::string>& Commands() {
   static const std::vector<std::string> kNames = [] {
@@ -128,11 +203,17 @@ bool TakesPositionalNumber(std::string_view command) {
   return std::find(commands.begin(), commands.end(), command) != commands.end();
 }
 
-bool RequiresExplicitKit(std::string_view command) {
+bool RequiresKitSpec(std::string_view command) {
   static const std::vector<std::string> kNeedsKit = {
       "assign", "setname", "setparams", "setlayer", "setmode", "padlink"};
   return std::find(kNeedsKit.begin(), kNeedsKit.end(), command)
       != kNeedsKit.end();
+}
+
+bool TakesSingleKit(std::string_view command) {
+  static const std::vector<std::string> kSingle = {
+      "assign", "setname", "setparams", "setlayer"};
+  return std::find(kSingle.begin(), kSingle.end(), command) != kSingle.end();
 }
 
 std::string UnacceptedFlag(std::string_view command,
@@ -162,8 +243,8 @@ std::string FlagRejectionHint(std::string_view command, std::string_view flag) {
     }
     return std::string(command) + " does not write anything";
   }
-  if (flag == "range") {
-    return "only setmode and padlink work across a range of kits";
+  if (flag == "range" || flag == "kits") {
+    return std::string(command) + " does not write to kits";
   }
   if (flag == "pad") {
     return std::string(command) + " does not act on a pad";
