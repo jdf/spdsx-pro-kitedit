@@ -27,6 +27,23 @@ Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
   active device operation, and its 2-second connection poll retries around
   short collisions.
 
+## Firmware
+
+Writing requires firmware **2.00**. The protocol here was mapped from that
+firmware and is checked byte-for-byte against captures of it; another
+version may lay its records out differently, and a wrong write lands in
+flash, where it cannot be undone. So every write refuses unless the unit
+reports 2.00, naming what it found:
+
+```
+$ spdutil setname --kits 199 --name FOO --commit
+error: this unit reports firmware "1.50", and every write here has only
+been verified against "2.00". Refusing to write: ...
+```
+
+Reading is never gated — `info` tells you what a unit is running, and
+`dump`, `kits`, `kit`, `samples` and `readwave` work on anything.
+
 ## Flags are checked against the command
 
 Every flag is rejected by any command that would not act on it. `spdutil
