@@ -215,6 +215,15 @@ std::string CommandLine(const SetModeRequest& request) {
   return out;
 }
 
+std::string CommandLine(const PadLinkRequest& request) {
+  std::string out = "spdutil padlink --kits " + KitSpecText(request.kits)
+      + " --group " + std::to_string(request.group);
+  for (const int pad : request.pads) {
+    out += " --pad " + std::to_string(pad);
+  }
+  return out;
+}
+
 std::string CommandLine(const SetNameRequest& request) {
   std::string out = "spdutil setname --kits " + std::to_string(request.kit)
       + " --name " + Quoted(request.name);

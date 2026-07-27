@@ -327,6 +327,7 @@ private:
   // transaction (active kit stashed first). Returns the status line to
   // show.
   juce::String ApplyBulkSetMode(const ops::SetModeRequest& request);
+  juce::String ApplyBulkPadLink(const ops::PadLinkRequest& request);
   juce::String device_firmware_version_;
   juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};

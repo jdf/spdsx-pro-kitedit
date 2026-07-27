@@ -92,6 +92,31 @@ TEST(BulkSetMode, AlreadyThereMeansNoChange) {
   EXPECT_TRUE(plan.empty());
 }
 
+TEST(BulkPadLink, PlansOnlyPadsNotAlreadyInTheGroup) {
+  auto kits = Kits(3);
+  kits[0].pads[6].params.pad_link = 11;  // kit 1 pad 7 already there
+  ops::PadLinkRequest request;
+  request.kits = {{1, 3}};
+  request.pads = {7};
+  request.group = 11;
+  const auto plan = PlanPadLink(kits, request);
+  ASSERT_EQ(plan.size(), 2u);
+  EXPECT_EQ(plan[0].kit, 2);
+  EXPECT_EQ(plan[1].kit, 3);
+}
+
+TEST(BulkPadLink, GroupZeroUnlinks) {
+  auto kits = Kits(2);
+  kits[0].pads[0].params.pad_link = 5;
+  ops::PadLinkRequest request;
+  request.kits = {{1, 2}};
+  request.pads = {1};
+  request.group = 0;
+  const auto plan = PlanPadLink(kits, request);
+  ASSERT_EQ(plan.size(), 1u);  // only the linked pad changes
+  EXPECT_EQ(plan[0].from, 5);
+}
+
 // The action against a real (untitled) document: perform lands the modes
 // and dirties the kits; undo restores every prior mode exactly.
 class SetModeActionTest : public ::testing::Test {
@@ -162,6 +187,27 @@ TEST_F(SetModeActionTest, TheActiveKitReloadsIntoTheModel) {
   EXPECT_EQ(model.params(0).mode, LayerMode::kAlternate);
   undo.undo();
   EXPECT_EQ(model.params(0).mode, LayerMode::kMix);
+}
+
+TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
+  device.kit(2).pads[6].params.pad_link = 4;  // kit 3 pad 7, group 4
+  ops::PadLinkRequest request;
+  request.kits = {{3, 4}};
+  request.pads = {7};
+  request.group = 11;
+  std::vector<KitData> snapshot;
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    snapshot.push_back(device.kit(i));
+  }
+  juce::UndoManager undo;
+  undo.beginNewTransaction("pad link change");
+  ASSERT_TRUE(undo.perform(new PadLinkAction(
+      *document, device, PlanPadLink(snapshot, request), request.group)));
+  EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 11);
+  EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 11);
+  ASSERT_TRUE(undo.undo());
+  EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 4);
+  EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 0);
 }
 
 }  // namespace

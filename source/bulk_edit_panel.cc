@@ -269,6 +269,118 @@ private:
   juce::ComboBox if_mode_;
 };
 
+// ---- padlink ----
+
+class PadLinkPage : public BulkEditPage {
+public:
+  explicit PadLinkPage(
+      std::function<juce::String(const ops::PadLinkRequest&)> apply)
+      : apply_(std::move(apply)) {
+    kits_.on_changed = [this] { Changed(); };
+    addAndMakeVisible(kits_);
+
+    addAndMakeVisible(Caption(pads_caption_, "Pads"));
+    for (int pad = 1; pad <= 9; ++pad) {
+      auto button = std::make_unique<juce::ToggleButton>(juce::String(pad));
+      button->onClick = [this] { Changed(); };
+      addAndMakeVisible(*button);
+      pads_.push_back(std::move(button));
+    }
+    addAndMakeVisible(Caption(pads_note_, ""));
+
+    addAndMakeVisible(Caption(group_caption_, "Link group"));
+    group_.setRange(0, 32, 1);
+    group_.setSliderStyle(juce::Slider::IncDecButtons);
+    group_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 70, 32);
+    group_.setValue(1, juce::dontSendNotification);
+    group_.onValueChange = [this] { Changed(); };
+    addAndMakeVisible(group_);
+    addAndMakeVisible(
+        Caption(group_note_, "0 removes the pads from any group"));
+
+    Changed();
+  }
+
+  juce::String Problem() const override {
+    if (const juce::String kits = kits_.Problem(); kits.isNotEmpty()) {
+      return kits;
+    }
+    if (TickedPads().empty()) {
+      return "You must select at least one pad.";
+    }
+    return {};
+  }
+
+  juce::String CommandLine() const override {
+    return juce::String(ops::CommandLine(Request()));
+  }
+
+  juce::String Apply() override { return apply_(Request()); }
+
+  void resized() override {
+    auto area = getLocalBounds();
+    auto row = [&area](int h) { return area.removeFromTop(h); };
+    kits_.setBounds(row(KitSpecField::kHeight));
+    area.removeFromTop(12);
+
+    pads_caption_.setBounds(row(kCaptionRow));
+    auto pad_row = row(kControlRow);
+    for (auto& pad : pads_) {
+      pad->setBounds(pad_row.removeFromLeft(60));
+    }
+    pads_note_.setBounds(row(kHintRow));
+    area.removeFromTop(12);
+
+    group_caption_.setBounds(row(kCaptionRow));
+    group_.setBounds(row(kControlRow).removeFromLeft(170));
+    group_note_.setBounds(row(kHintRow));
+  }
+
+private:
+  void Changed() {
+    const std::vector<int> pads = TickedPads();
+    pads_note_.setText(
+        pads.size() == pads_.size()
+            ? "all nine pads"
+            : (pads.empty() ? "none selected"
+                            : juce::String(pads.size()) + " of nine"),
+        juce::dontSendNotification);
+    if (on_changed) {
+      on_changed();
+    }
+  }
+
+  std::vector<int> TickedPads() const {
+    std::vector<int> pads;
+    for (size_t i = 0; i < pads_.size(); ++i) {
+      if (pads_[i]->getToggleState()) {
+        pads.push_back(static_cast<int>(i) + 1);
+      }
+    }
+    return pads;
+  }
+
+  ops::PadLinkRequest Request() const {
+    ops::PadLinkRequest request;
+    std::string error;
+    kits_.Parse(&request.kits, &error);
+    if (std::vector<int> pads = TickedPads(); pads.size() < pads_.size()) {
+      request.pads = std::move(pads);
+    }
+    request.group = static_cast<int>(group_.getValue());
+    return request;
+  }
+
+  std::function<juce::String(const ops::PadLinkRequest&)> apply_;
+  KitSpecField kits_;
+  juce::Label pads_caption_;
+  juce::Label pads_note_;
+  std::vector<std::unique_ptr<juce::ToggleButton>> pads_;
+  juce::Label group_caption_;
+  juce::Slider group_;
+  juce::Label group_note_;
+};
+
 }  // namespace
 
 BulkEditPanel::BulkEditPanel(Handlers handlers) {
@@ -279,6 +391,11 @@ BulkEditPanel::BulkEditPanel(Handlers handlers) {
       {"Layer mode",
        "Set the layer mode of pads across a range of kits.",
        std::make_unique<SetModePage>(std::move(handlers.set_mode))});
+  operations_.push_back(
+      {"Pad link",
+       "Put pads into a link group: hitting one linked pad triggers the "
+       "others.",
+       std::make_unique<PadLinkPage>(std::move(handlers.pad_link))});
 
   nav_.setModel(this);
   nav_.setRowHeight(kRowHeight);

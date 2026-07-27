@@ -50,6 +50,7 @@ public:
   // How the pages reach the document; provided by the owner.
   struct Handlers {
     std::function<juce::String(const ops::SetModeRequest&)> set_mode;
+    std::function<juce::String(const ops::PadLinkRequest&)> pad_link;
   };
 
   explicit BulkEditPanel(Handlers handlers);

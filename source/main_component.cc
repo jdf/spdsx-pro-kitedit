@@ -65,9 +65,14 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
     , browser_(ConfigureSettings())
     , bulk_panel_(BulkEditPanel::Handlers {
-          .set_mode = [this](const ops::SetModeRequest& request) {
-            return ApplyBulkSetMode(request);
-          }}) {
+          .set_mode =
+              [this](const ops::SetModeRequest& request) {
+                return ApplyBulkSetMode(request);
+              },
+          .pad_link =
+              [this](const ops::PadLinkRequest& request) {
+                return ApplyBulkPadLink(request);
+              }}) {
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
   // The left panel: sample browser and device wave pool as tabs.
@@ -663,6 +668,34 @@ void MainComponent::SelectTab(int index) {
     UpdateTransferButton();
   }
   repaint();
+}
+
+juce::String MainComponent::ApplyBulkPadLink(
+    const ops::PadLinkRequest& request) {
+  document_.StashActiveKit();
+  std::vector<KitData> kits;
+  kits.reserve(DeviceModel::kKitCount);
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    kits.push_back(device_.kit(i));
+  }
+  const auto plan = bulk::PlanPadLink(kits, request);
+  if (plan.empty()) {
+    return "nothing to change";
+  }
+  std::set<int> touched;
+  for (const bulk::LinkChange& change : plan) {
+    touched.insert(change.kit);
+  }
+  undo().beginNewTransaction("pad link change");
+  undo().perform(
+      new bulk::PadLinkAction(document_, device_, plan, request.group));
+  MarkEdited();
+  UpdateSyncButton();
+  commands_.commandStatusChanged();
+  AppLog::Note("bulk pad link: " + juce::String(plan.size()) + " pad(s) across "
+               + juce::String(touched.size()) + " kit(s)");
+  return juce::String(plan.size()) + " pad(s) changed across "
+      + juce::String(touched.size()) + " kit(s); sync to push";
 }
 
 juce::String MainComponent::ApplyBulkSetMode(
@@ -2174,6 +2207,7 @@ void MainComponent::ShowPadSettings(int pad) {
     changed.curve = edited.curve;
     changed.fixed_velocity = edited.fixed_velocity;
     changed.trigger_reserve = edited.trigger_reserve;
+    changed.pad_link = edited.pad_link;
     changed.hi_hat_volume = edited.hi_hat_volume;
     changed.hi_hat_fade_in = edited.hi_hat_fade_in;
     changed.hi_hat_decay = edited.hi_hat_decay;

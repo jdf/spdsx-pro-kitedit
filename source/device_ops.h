@@ -96,6 +96,14 @@ SetModeResult SetMode(device::SpdsxDevice& dev,
                       ProgressFn progress = IgnoreProgress,
                       AbortFn should_abort = NeverAbort);
 
+// ---- padlink ----
+
+struct PadLinkRequest {
+  std::vector<spdutil::KitRange> kits;  // required: never implied
+  std::vector<int> pads;  // 1-9; empty = all nine
+  int group = 0;  // 0 = unlink
+};
+
 // ---- setname ----
 
 struct SetNameRequest {
@@ -121,6 +129,7 @@ SetNameResult SetName(device::SpdsxDevice& dev,
 // shows is what it does.
 std::string CommandLine(const InfoRequest& request);
 std::string CommandLine(const SetModeRequest& request);
+std::string CommandLine(const PadLinkRequest& request);
 std::string CommandLine(const SetNameRequest& request);
 
 // A --kits spec rendered back from parsed ranges ("108", "1,5,10-20").

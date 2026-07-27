@@ -25,6 +25,17 @@ std::vector<ops::ModeChange> PlanSetMode(const std::vector<KitData>& kits,
 std::vector<ops::ModeChange> ApplySetMode(std::vector<KitData>& kits,
                                           const ops::SetModeRequest& request);
 
+// One pad's link-group change.
+struct LinkChange {
+  int kit = 0;  // 1-based
+  int pad = 0;  // 1-based
+  int from = 0;  // the group it had (0 = unlinked)
+};
+
+// Which pads the request would change (those not already in the group).
+std::vector<LinkChange> PlanPadLink(const std::vector<KitData>& kits,
+                                    const ops::PadLinkRequest& request);
+
 // The undoable form of a bulk layer-mode edit: perform sets every pad in
 // the plan to the target, undo puts each back to what it was. Lands each
 // touched kit through DeviceDocument::ApplyBulkKit, so the active kit's
@@ -54,6 +65,30 @@ private:
   DeviceModel& device_;
   std::vector<ops::ModeChange> plan_;
   LayerMode target_;
+};
+
+// The undoable form of a bulk pad-link edit; same shape as SetModeAction.
+class PadLinkAction : public juce::UndoableAction {
+public:
+  PadLinkAction(DeviceDocument& document,
+                DeviceModel& device,
+                std::vector<LinkChange> plan,
+                int group)
+      : document_(document)
+      , device_(device)
+      , plan_(std::move(plan))
+      , group_(group) {}
+
+  bool perform() override;
+  bool undo() override;
+
+private:
+  void ApplyLinks(bool forward);
+
+  DeviceDocument& document_;
+  DeviceModel& device_;
+  std::vector<LinkChange> plan_;
+  int group_;
 };
 
 }  // namespace spdsx::bulk

@@ -46,6 +46,9 @@ private:
   juce::Label velocity_label_ {{}, "Fixed Velocity"};
   juce::Slider velocity_;
   juce::ToggleButton trigger_reserve_ {"Trigger Reserve"};
+  juce::Label pad_link_label_;
+  juce::Slider pad_link_;  // link group, 0 = unlinked
+
   // Per-layer mix (Layer A on top, Layer B below): three small knobs
   // side by side under a heading — volume in dB, fade-in, decay.
   struct MixControls {
@@ -57,6 +60,7 @@ private:
     juce::Label decay_label {{}, "Decay"};
     juce::Slider decay;
   };
+
   std::array<MixControls, 2> mix_;  // [0] = layer A/top, [1] = layer B
   // HI-HAT only: closed-pedal volume/attack/decay knobs.
   juce::Label pedal_heading_ {{}, "Closed Pedal"};

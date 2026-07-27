@@ -30,8 +30,8 @@ constexpr int kMixKnobHeight = kMixKnobSize + kKnobTextHeight;
 
 constexpr int kMixHeight =
     2 * (kRowGap + kRowHeight + kMixLabelHeight + kMixKnobHeight);
-constexpr int kBaseHeight = kPadding * 2 + kRowHeight * 3 + kRowGap * 3
-    + kKnobHeight + kMixHeight;
+constexpr int kBaseHeight = kPadding * 2 + kRowHeight * 4 + kRowGap * 3 + 18
+    + kKnobHeight + kMixHeight;  // +18 = the link-group caption row
 constexpr int kPedalHeight = kRowGap + kRowHeight + (kRowGap + kKnobHeight) * 3;
 
 // The dB range the volume knob offers; the device stores 0.1 dB steps in
@@ -41,7 +41,10 @@ constexpr double kMaxVolumeDb = 12.0;
 
 // What a knob's value means, and therefore its range and display: a plain
 // 0-127 device value, or decibels with a tenth's precision.
-enum class ControlMode { kLinear, kDecibels };
+enum class ControlMode {
+  kLinear,
+  kDecibels
+};
 
 }  // namespace
 
@@ -65,25 +68,35 @@ PadSettingsPanel::PadSettingsPanel() {
 
   // A knob with a value box doubling as direct entry: click the
   // number and type. Double-click returns the knob to its default.
-  auto init_knob = [this](juce::Slider& knob,
-                          juce::Label& label,
-                          int min,
-                          int default_value) {
-    knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    knob.setRange(min, 127, 1);
-    knob.setDoubleClickReturnValue(true, default_value);
-    knob.setTextBoxStyle(
-        juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
-    knob.setTextBoxIsEditable(true);
-    knob.onValueChange = [this] { Push(); };
-    label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
-    addAndMakeVisible(label);
-    addAndMakeVisible(knob);
-  };
+  auto init_knob =
+      [this](
+          juce::Slider& knob, juce::Label& label, int min, int default_value) {
+        knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob.setRange(min, 127, 1);
+        knob.setDoubleClickReturnValue(true, default_value);
+        knob.setTextBoxStyle(
+            juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
+        knob.setTextBoxIsEditable(true);
+        knob.onValueChange = [this] { Push(); };
+        label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+        addAndMakeVisible(label);
+        addAndMakeVisible(knob);
+      };
   init_knob(velocity_, velocity_label_, 1, kDefaultFixedVelocity);
 
   trigger_reserve_.onClick = [this] { Push(); };
   addAndMakeVisible(trigger_reserve_);
+
+  // Pad link: hits on one linked pad trigger the others. 0 = unlinked.
+  pad_link_label_.setText("Link Group (0 = none)", juce::dontSendNotification);
+  pad_link_label_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+  addAndMakeVisible(pad_link_label_);
+  pad_link_.setRange(0, 32, 1);
+  pad_link_.setSliderStyle(juce::Slider::IncDecButtons);
+  pad_link_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 22);
+  pad_link_.setTextBoxIsEditable(true);
+  pad_link_.onValueChange = [this] { Push(); };
+  addAndMakeVisible(pad_link_);
 
   const char* mix_headings[2] = {"Layer A", "Layer B"};
   for (size_t l = 0; l < mix_.size(); ++l) {
@@ -136,6 +149,7 @@ void PadSettingsPanel::SetParams(const PadParams& params) {
   curve_.setSelectedId(static_cast<int>(params.curve) + 1,
                        juce::dontSendNotification);
   velocity_.setValue(params.fixed_velocity, juce::dontSendNotification);
+  pad_link_.setValue(params.pad_link, juce::dontSendNotification);
   trigger_reserve_.setToggleState(params.trigger_reserve,
                                   juce::dontSendNotification);
   const PadParams::LayerMix* mixes[2] = {&params.mix_top, &params.mix_bottom};
@@ -193,6 +207,9 @@ void PadSettingsPanel::resized() {
   area.removeFromTop(kRowGap);
   knob_row(area, velocity_, velocity_label_);
   trigger_reserve_.setBounds(area.removeFromTop(kRowHeight));
+  pad_link_label_.setBounds(area.removeFromTop(18));
+  pad_link_.setBounds(
+      area.removeFromTop(kRowHeight).removeFromLeft(120).reduced(0, 2));
 
   // The two layer-mix triples: heading, then three knobs abreast with
   // their small labels above.
@@ -208,8 +225,8 @@ void PadSettingsPanel::resized() {
       const auto cell_label = labels.removeFromLeft(third);
       auto cell = knobs.removeFromLeft(third);
       names[i]->setBounds(cell_label);
-      sliders[i]->setBounds(cell.withWidth(kMixKnobSize).withX(
-          cell.getCentreX() - kMixKnobSize / 2));
+      sliders[i]->setBounds(cell.withWidth(kMixKnobSize)
+                                .withX(cell.getCentreX() - kMixKnobSize / 2));
     }
   }
 
@@ -233,6 +250,7 @@ void PadSettingsPanel::Push() {
   params.curve = static_cast<DynamicsCurve>(curve_.getSelectedId() - 1);
   params.fixed_velocity = static_cast<int>(velocity_.getValue());
   params.trigger_reserve = trigger_reserve_.getToggleState();
+  params.pad_link = static_cast<int>(pad_link_.getValue());
   params.hi_hat_volume = static_cast<int>(volume_.getValue());
   params.hi_hat_fade_in = static_cast<int>(fade_in_.getValue());
   params.hi_hat_decay = static_cast<int>(decay_.getValue());

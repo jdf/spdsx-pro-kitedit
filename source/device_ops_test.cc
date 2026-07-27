@@ -122,6 +122,15 @@ TEST(CommandLine, SetModeShowsTheFilterAndTheDryRun) {
             "--dry-run");
 }
 
+TEST(CommandLine, PadLinkReadsBackAsTheSpdutilInvocation) {
+  PadLinkRequest request;
+  request.kits = {{108, 200}};
+  request.pads = {7};
+  request.group = 11;
+  EXPECT_EQ(CommandLine(request),
+            "spdutil padlink --kits 108-200 --group 11 --pad 7");
+}
+
 TEST(CommandLine, SetNameQuotesANameWithSpaces) {
   SetNameRequest request;
   request.kit = 199;
