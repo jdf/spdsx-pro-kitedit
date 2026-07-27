@@ -79,7 +79,8 @@ target_sources(spdsx-patchedit PRIVATE
     source/app_log.cc
     source/audio.cc
     source/bug_report.cc
-    source/bulk_ops_window.cc
+    source/bulk_edit.cc
+    source/bulk_edit_panel.cc
     source/cli_install.cc
     source/device_ops.cc
     source/device_db.cc
@@ -187,6 +188,7 @@ if(SPDSX_TESTS)
         source/actions_test.cc
         source/app_log_test.cc
         source/bug_report_test.cc
+        source/bulk_edit_test.cc
         source/cli_install_test.cc
         source/device/kit_image_test.cc
         source/device/protocol_test.cc
@@ -208,7 +210,8 @@ if(SPDSX_TESTS)
         source/app_log.cc
         source/audio.cc
         source/bug_report.cc
-        source/bulk_ops_window.cc
+        source/bulk_edit.cc
+        source/bulk_edit_panel.cc
         source/cli_install.cc
         source/device_ops.cc
         source/device_db.cc

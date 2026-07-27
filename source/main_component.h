@@ -12,7 +12,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "audio.h"
-#include "bulk_ops_window.h"
+#include "bulk_edit_panel.h"
 #include "connection_dot.h"
 #include "device_document.h"
 #include "device_model.h"
@@ -56,12 +56,9 @@ public:
   // Shared by File > Open and Finder (double-clicking a .spdsx).
   void OpenDocument(const juce::File& file);
 
-  // Window menu: brings the main window forward, and opens (or fronts)
-  // the bulk-operations window, creating it the first time.
-  void ShowBulkOps();
-  // The connection line both windows show ("SPD-SX PRO connected,
-  // firmware 2.00 (0094)" / "no device connected").
-  juce::String ConnectionText() const;
+  // View menu: which tab fills the window — the kit editor, or Bulk
+  // Edit. 0 = Edit Kits, 1 = Bulk Edit.
+  void SelectTab(int index);
 
   // A line of device/sync narration in the strip along the bottom of the
   // window — where it stays visible whatever panel or tab is showing.
@@ -297,7 +294,33 @@ private:
   // build for display ("2.00 (0094)"). The firmware gate compares the
   // bare version; the display string is for bug reports.
   juce::Label status_bar_;
-  std::unique_ptr<BulkOpsWindow> bulk_ops_;
+
+  // The tab bar under the global header. A plain TabbedButtonBar (not a
+  // TabbedComponent): the Edit Kits "tab content" is this component's
+  // own children and painting, switched by visibility.
+  class TabsBar : public juce::TabbedButtonBar {
+  public:
+    using juce::TabbedButtonBar::TabbedButtonBar;
+    std::function<void(int)> on_change;
+
+    void currentTabChanged(int index, const juce::String&) override {
+      if (on_change) {
+        on_change(index);
+      }
+    }
+  };
+
+  TabsBar tabs_ {juce::TabbedButtonBar::TabsAtTop};
+  BulkEditPanel bulk_panel_;
+  // Every child that belongs to the Edit Kits tab (snapshot at the end
+  // of the constructor); hidden wholesale when Bulk Edit is showing.
+  std::vector<juce::Component*> edit_tab_children_;
+  bool on_edit_tab_ = true;
+
+  // Applies a bulk layer-mode edit to the document (all kits stashed
+  // first); preview only counts. Returns the status line to show.
+  juce::String ApplyBulkSetMode(const ops::SetModeRequest& request,
+                                bool preview);
   juce::String device_firmware_version_;
   juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};

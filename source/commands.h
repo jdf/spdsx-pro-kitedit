@@ -23,8 +23,8 @@ enum : juce::CommandID {
   kSendFeedback,
   kInstallCli,
   kAbout,
-  kShowMainWindow,
-  kShowBulkOps,
+  kShowEditKits,
+  kShowBulkEdit,
 };
 
 }  // namespace spdsx::commands

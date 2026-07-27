@@ -9,6 +9,7 @@
 #include "about_dialog.h"
 #include "actions.h"
 #include "app_log.h"
+#include "bulk_edit.h"
 #include "cli_install.h"
 #include "commands.h"
 #include "device/kit_image.h"
@@ -28,8 +29,9 @@ namespace {
 constexpr int kMidiChannel = 10;
 constexpr int kMidiNoteBase = 60;
 
-constexpr int kHeaderHeight = 44;
-constexpr int kStatusHeight = 22;
+constexpr int kHeaderHeight = 44;  // the kit-editor row (chooser, VEL)
+constexpr int kGlobalBarHeight = 36;  // connection dot, status, sync button
+constexpr int kTabBarHeight = 32;
 constexpr int kBrowserWidth = 260;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
@@ -61,7 +63,11 @@ juce::ApplicationProperties& MainComponent::ConfigureSettings() {
 
 MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
-    , browser_(ConfigureSettings()) {
+    , browser_(ConfigureSettings())
+    , bulk_panel_(BulkEditPanel::Handlers {
+          .set_mode = [this](const ops::SetModeRequest& request, bool preview) {
+            return ApplyBulkSetMode(request, preview);
+          }}) {
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
   // The left panel: sample browser and device wave pool as tabs.
@@ -247,6 +253,24 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   document_.ResetToUntitled();
   RefreshKitSelector();
   OpenMidiInputs();
+
+  // The tab bar and the Bulk Edit tab. Everything constructed above
+  // belongs to Edit Kits; snapshot the list now so switching tabs can
+  // hide and show it wholesale (with the conditional widgets re-fixed by
+  // SelectTab). The global-bar widgets stay visible on both tabs.
+  tabs_.addTab("Edit Kits", juce::Colour(0xff161b22), 0);
+  tabs_.addTab("Bulk Edit", juce::Colour(0xff161b22), 1);
+  tabs_.on_change = [this](int index) { SelectTab(index); };
+  for (int i = 0; i < getNumChildComponents(); ++i) {
+    juce::Component* child = getChildComponent(i);
+    if (child != &connection_dot_ && child != &status_bar_
+        && child != &sync_button_) {
+      edit_tab_children_.push_back(child);
+    }
+  }
+  addAndMakeVisible(tabs_);
+  addChildComponent(bulk_panel_);
+
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
   startTimerHz(30);
@@ -320,8 +344,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
                 commands::kSendFeedback,
                 commands::kInstallCli,
                 commands::kAbout,
-                commands::kShowMainWindow,
-                commands::kShowBulkOps});
+                commands::kShowEditKits,
+                commands::kShowBulkEdit});
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id,
@@ -425,14 +449,14 @@ void MainComponent::getCommandInfo(juce::CommandID id,
                    "Application",
                    0);
       break;
-    case commands::kShowMainWindow:
-      info.setInfo("Kit Editor", "Bring the kit grid forward", "Window", 0);
+    case commands::kShowEditKits:
+      info.setInfo("Edit Kits", "The kit editor tab", "View", 0);
       info.addDefaultKeypress('1', juce::ModifierKeys::commandModifier);
       break;
-    case commands::kShowBulkOps:
-      info.setInfo("Bulk Operations",
-                   "Run a device operation across many kits",
-                   "Window",
+    case commands::kShowBulkEdit:
+      info.setInfo("Bulk Edit",
+                   "Edit many kits at once; sync pushes the changes",
+                   "View",
                    0);
       info.addDefaultKeypress('2', juce::ModifierKeys::commandModifier);
       break;
@@ -561,13 +585,11 @@ bool MainComponent::perform(const InvocationInfo& info) {
     case commands::kInstallCli:
       InstallCli();
       return true;
-    case commands::kShowMainWindow:
-      if (auto* window = getTopLevelComponent()) {
-        window->toFront(true);
-      }
+    case commands::kShowEditKits:
+      SelectTab(0);
       return true;
-    case commands::kShowBulkOps:
-      ShowBulkOps();
+    case commands::kShowBulkEdit:
+      SelectTab(1);
       return true;
     case commands::kAbout: {
       auto* app = juce::JUCEApplication::getInstance();
@@ -599,25 +621,64 @@ void ReportCliInstall(bool ok) {
 
 }  // namespace
 
-juce::String MainComponent::ConnectionText() const {
-  if (!device_connected_.load()) {
-    return "no device connected";
+void MainComponent::SelectTab(int index) {
+  if (tabs_.getCurrentTabIndex() != index) {
+    tabs_.setCurrentTabIndex(index, false);
   }
-  return "SPD-SX PRO connected"
-      + (device_firmware_.isNotEmpty() ? ", firmware " + device_firmware_
-                                       : juce::String());
+  on_edit_tab_ = index == 0;
+  for (juce::Component* child : edit_tab_children_) {
+    child->setVisible(on_edit_tab_);
+  }
+  bulk_panel_.setVisible(!on_edit_tab_);
+  if (on_edit_tab_) {
+    // The wholesale show above is too blunt for the conditional widgets;
+    // re-apply their own rules.
+    panel_tabs_.setVisible(browser_visible_);
+    for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+      UpdatePadWidgets(pad);
+    }
+    UpdateTransferButton();
+  }
+  repaint();
 }
 
-void MainComponent::ShowBulkOps() {
-  if (bulk_ops_ == nullptr) {
-    bulk_ops_ = std::make_unique<BulkOpsWindow>();
+juce::String MainComponent::ApplyBulkSetMode(const ops::SetModeRequest& request,
+                                             bool preview) {
+  document_.StashActiveKit();
+  std::vector<KitData> kits;
+  kits.reserve(DeviceModel::kKitCount);
+  for (int i = 0; i < DeviceModel::kKitCount; ++i) {
+    kits.push_back(device_.kit(i));
   }
-  // The window learns the connection from this component's poller; hand
-  // it the current state so it does not open saying "no device" for the
-  // two seconds until the next poll.
-  bulk_ops_->SetConnection(device_connected_.load(), ConnectionText());
-  bulk_ops_->setVisible(true);
-  bulk_ops_->toFront(true);
+  if (preview) {
+    const auto plan = bulk::PlanSetMode(kits, request);
+    return juce::String(plan.size()) + " pad(s) would change";
+  }
+  const auto plan = bulk::ApplySetMode(kits, request);
+  if (plan.empty()) {
+    return "nothing to change";
+  }
+  std::set<int> touched;
+  for (const ops::ModeChange& change : plan) {
+    touched.insert(change.kit);
+  }
+  for (const int kit : touched) {
+    document_.ApplyBulkKit(kit - 1, kits[static_cast<size_t>(kit - 1)]);
+  }
+  // A cross-kit edit outside the undo system; stale histories would undo
+  // into nonsense.
+  for (auto& undo : undos_) {
+    if (undo != nullptr) {
+      undo->clearUndoHistory();
+    }
+  }
+  MarkEdited();
+  UpdateSyncButton();
+  commands_.commandStatusChanged();
+  AppLog::Note("bulk edit applied: " + juce::String(plan.size())
+               + " pad(s) across " + juce::String(touched.size()) + " kit(s)");
+  return juce::String(plan.size()) + " pad(s) changed across "
+      + juce::String(touched.size()) + " kit(s); sync to push";
 }
 
 void MainComponent::SetStatus(const juce::String& status) {
@@ -1057,16 +1118,6 @@ void MainComponent::PollConnection() {
         return;
       }
       safe->conn_check_running_ = false;
-      if (safe->bulk_ops_ != nullptr) {
-        // Every poll, not just changes: the window may have opened since.
-        safe->bulk_ops_->SetConnection(
-            connected,
-            connected ? "SPD-SX PRO connected"
-                    + (safe->device_firmware_.isNotEmpty()
-                           ? ", firmware " + safe->device_firmware_
-                           : juce::String())
-                      : juce::String("no device connected"));
-      }
       if (connected != safe->device_connected_.load()) {
         safe->device_connected_ = connected;
         safe->connection_dot_.SetConnected(connected);
@@ -1685,11 +1736,14 @@ void MainComponent::LoadAudioIntoSlot(int idx,
 void MainComponent::paint(juce::Graphics& g) {
   g.fillAll(kWindowBg);
 
-  const auto strip = getLocalBounds().removeFromBottom(kStatusHeight);
+  const auto bar = getLocalBounds().removeFromTop(kGlobalBarHeight);
   g.setColour(juce::Colour(0xff0d1117));
-  g.fillRect(strip);
+  g.fillRect(bar);
   g.setColour(juce::Colour(0xff222831));
-  g.fillRect(strip.withHeight(1));
+  g.fillRect(bar.withTop(bar.getBottom() - 1));
+  if (!on_edit_tab_) {
+    return;  // the Bulk Edit panel paints itself
+  }
 
   const auto now = juce::Time::getMillisecondCounter();
   for (int r = 0; r < 3; ++r) {
@@ -1725,8 +1779,7 @@ void MainComponent::paint(juce::Graphics& g) {
 
 juce::Rectangle<int> MainComponent::GridArea() const {
   auto area = getLocalBounds();
-  area.removeFromTop(kHeaderHeight);
-  area.removeFromBottom(kStatusHeight);
+  area.removeFromTop(kGlobalBarHeight + kTabBarHeight + kHeaderHeight);
   if (browser_visible_) {
     area.removeFromLeft(kBrowserWidth);
   }
@@ -1746,11 +1799,30 @@ juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const {
 }
 
 void MainComponent::resized() {
-  // Right edge of the header, laid out right-to-left: the compact
-  // velocity knob, then (when visible) the transfer button.
-  auto header = getLocalBounds().removeFromTop(kHeaderHeight);
-  // Connection light at the far left of the header.
-  connection_dot_.setBounds(header.removeFromLeft(24));
+  auto bounds = getLocalBounds();
+
+  // The global bar: connection dot, then the sync button at the right,
+  // status text in between. Visible on both tabs.
+  auto global_bar = bounds.removeFromTop(kGlobalBarHeight);
+  connection_dot_.setBounds(global_bar.removeFromLeft(28));
+  global_bar.removeFromRight(10);
+  if (sync_button_.isVisible()) {
+    // Wide enough for the "(N kits)" suffix when several kits are dirty.
+    const int w = juce::jmax(180, sync_button_.getBestWidthForHeight(26));
+    sync_button_.setBounds(
+        global_bar.removeFromRight(w).withSizeKeepingCentre(w, 26));
+    global_bar.removeFromRight(10);
+  }
+  status_bar_.setBounds(global_bar);
+
+  tabs_.setBounds(bounds.removeFromTop(kTabBarHeight));
+  bulk_panel_.setBounds(bounds);
+
+  // Everything below lays out the Edit Kits tab within `bounds`.
+  // Right edge of the kit header, right-to-left: the compact velocity
+  // knob, then (when visible) the transfer button.
+  auto header = bounds.removeFromTop(kHeaderHeight);
+  header.removeFromLeft(10);
   header.removeFromRight(10);
   auto vel = header.removeFromRight(96);
   velocity_slider_.setBounds(
@@ -1761,24 +1833,16 @@ void MainComponent::resized() {
     transfer_button_.setBounds(
         header.removeFromRight(120).withSizeKeepingCentre(120, 26));
   }
-  if (sync_button_.isVisible()) {
-    header.removeFromRight(8);
-    // Wide enough for the "(N kits)" suffix when several kits are dirty.
-    const int w = juce::jmax(180, sync_button_.getBestWidthForHeight(26));
-    sync_button_.setBounds(
-        header.removeFromRight(w).withSizeKeepingCentre(w, 26));
-  }
   // The kit chooser owns what's LEFT of the header — `header` has been
   // whittled down by everything laid out above, so sizing within it is
-  // what keeps the chooser clear of the save/transfer buttons.
+  // what keeps the chooser clear of the transfer button.
   kit_chooser_.setBounds(header.withSizeKeepingCentre(
       juce::jmin(500, header.getWidth() - 16), 28));
-  status_bar_.setBounds(
-      getLocalBounds().removeFromBottom(kStatusHeight).withTrimmedLeft(10));
-  panel_tabs_.setBounds(0,
-                        kHeaderHeight,
-                        kBrowserWidth,
-                        getHeight() - kHeaderHeight - kStatusHeight);
+  panel_tabs_.setBounds(
+      0,
+      kGlobalBarHeight + kTabBarHeight + kHeaderHeight,
+      kBrowserWidth,
+      getHeight() - kGlobalBarHeight - kTabBarHeight - kHeaderHeight);
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 3; ++c) {
       auto inner = PadBounds(r, c).reduced(kPadPadding);
@@ -1809,6 +1873,9 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
   // the command manager's key mappings instead of eating ⌘1 as a pad hit.
   if (key.getModifiers().isCommandDown()) {
     return false;
+  }
+  if (!on_edit_tab_) {
+    return false;  // the grid is not on screen; nothing here to trigger
   }
   // Delete/Backspace clears the layer under the cursor (same edit as the
   // slot's right-click Clear). The 30 Hz hover poll keeps hovered_ current.
@@ -1952,6 +2019,9 @@ void MainComponent::ApplyTransportAction(int idx, TransportAction action) {
 // slots) land here; clicks on a slot body arrive via on_click. Both are
 // whole-pad hits.
 void MainComponent::mouseDown(const juce::MouseEvent& event) {
+  if (!on_edit_tab_) {
+    return;
+  }
   const auto pos = event.getPosition();
   if (const int pad = PadAt(pos); pad >= 0) {
     TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
