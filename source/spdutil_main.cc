@@ -190,10 +190,11 @@ int Usage() {
       "\n"
       "\n"
       "--kits SPEC is comma-separated ranges: 108, 108-200, 1,5,10-20\n"
-      "(1-200 is every kit). It is REQUIRED by assign, setname,\n"
-      "setparams, setlayer, setmode and padlink -- which kits a write\n"
-      "touches is never implied. The first four take exactly one kit.\n"
-      "with no --port, scans /dev/cu.usbmodem* and pings each node\n");
+      "(1-200 is every kit). Required by assign, setname, setparams,\n"
+      "setlayer, setmode and padlink; the first four take exactly one\n"
+      "kit.\n"
+      "\n"
+      "With no --port, scans /dev/cu.usbmodem* and pings each node.\n");
   return 2;
 }
 
