@@ -346,6 +346,14 @@ void DeviceDocument::ApplySyncedKit(int index,
   }
 }
 
+void DeviceDocument::ApplyBulkKit(int index, const KitData& content) {
+  device_.kit(index) = content;
+  if (index == device_.current_kit()) {
+    LoadActiveKitIntoModel();
+  }
+  changed();
+}
+
 void DeviceDocument::PersistSync() {
   if (db_ == nullptr) {
     return;

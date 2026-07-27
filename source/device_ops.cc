@@ -59,8 +59,9 @@ InfoResult Info(device::SpdsxDevice& dev, ProgressFn progress) {
   return result;
 }
 
-std::vector<ModeChange> PlanSetMode(const std::vector<device::KitRecord>& kits,
-                                    const SetModeRequest& request) {
+std::vector<ModeChange> PlanModeChanges(
+    const std::vector<std::array<LayerMode, 9>>& kit_modes,
+    const SetModeRequest& request) {
   std::array<bool, 9> wanted {};
   wanted.fill(request.pads.empty());
   for (const int pad : request.pads) {
@@ -71,19 +72,15 @@ std::vector<ModeChange> PlanSetMode(const std::vector<device::KitRecord>& kits,
   std::vector<ModeChange> plan;
   for (const spdutil::KitRange& range : request.kits) {
     for (int kit = range.first; kit <= range.last; ++kit) {
-      if (kit < 1 || static_cast<size_t>(kit) > kits.size()) {
+      if (kit < 1 || static_cast<size_t>(kit) > kit_modes.size()) {
         continue;
       }
-      const auto& record = kits[static_cast<size_t>(kit - 1)];
+      const auto& modes = kit_modes[static_cast<size_t>(kit - 1)];
       for (int pad = 1; pad <= 9; ++pad) {
         if (!wanted[static_cast<size_t>(pad - 1)]) {
           continue;
         }
-        const auto current = static_cast<LayerMode>(std::clamp(
-            static_cast<int>(
-                record.pads[static_cast<size_t>(pad - 1)].layer_mode),
-            0,
-            kLayerModeCount - 1));
+        const LayerMode current = modes[static_cast<size_t>(pad - 1)];
         if (current == request.target
             || (request.has_if_mode && current != request.if_mode)) {
           continue;
@@ -93,6 +90,23 @@ std::vector<ModeChange> PlanSetMode(const std::vector<device::KitRecord>& kits,
     }
   }
   return plan;
+}
+
+std::vector<ModeChange> PlanSetMode(const std::vector<device::KitRecord>& kits,
+                                    const SetModeRequest& request) {
+  std::vector<std::array<LayerMode, 9>> kit_modes;
+  kit_modes.reserve(kits.size());
+  for (const device::KitRecord& record : kits) {
+    std::array<LayerMode, 9> modes {};
+    for (size_t pad = 0; pad < modes.size(); ++pad) {
+      modes[pad] = static_cast<LayerMode>(
+          std::clamp(static_cast<int>(record.pads[pad].layer_mode),
+                     0,
+                     kLayerModeCount - 1));
+    }
+    kit_modes.push_back(modes);
+  }
+  return PlanModeChanges(kit_modes, request);
 }
 
 SetModeResult SetMode(device::SpdsxDevice& dev,

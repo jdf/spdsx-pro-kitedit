@@ -10,6 +10,7 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_OPS_H_
 #define SPDSX_PATCHEDIT_SOURCE_DEVICE_OPS_H_
 
+#include <array>
 #include <functional>
 #include <string>
 #include <vector>
@@ -69,9 +70,15 @@ struct ModeChange {
   LayerMode from = LayerMode::kMix;
 };
 
-// Which pads a request would change, given the kits as read. Pure: no
-// device, no I/O — the dry run and the real run agree because they both
-// come through here.
+// Which pads a request would change, given each kit's current modes
+// (kits[i] is kit number i+1). Pure: no device, no I/O — the CLI, the
+// Bulk Edit tab, and every dry run agree because they all come through
+// here.
+std::vector<ModeChange> PlanModeChanges(
+    const std::vector<std::array<LayerMode, 9>>& kit_modes,
+    const SetModeRequest& request);
+
+// The same plan, read from parsed device records.
 std::vector<ModeChange> PlanSetMode(const std::vector<device::KitRecord>& kits,
                                     const SetModeRequest& request);
 

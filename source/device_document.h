@@ -82,6 +82,11 @@ public:
   // advances to. Reloads the model when the kit is active (a load, not
   // a user edit). PersistSync writes the batch.
   void ApplySyncedKit(int index, const KitData& current, const KitData& base);
+  // Lands a Bulk Edit on one kit's CURRENT content only — the base stays,
+  // so the kit reads dirty and the next sync pushes it. Reloads the model
+  // when the kit is active. Bulk edits are not undoable: the caller
+  // clears histories and marks the document edited.
+  void ApplyBulkKit(int index, const KitData& content);
   // Writes both snapshots to the DB after a batch of ApplySyncedKit.
   void PersistSync();
   // Replaces every current-snapshot layer holding `file` with the pool
