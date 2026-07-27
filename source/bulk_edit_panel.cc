@@ -147,7 +147,7 @@ void FillModes(juce::ComboBox& box) {
 class SetModePage : public BulkEditPage {
 public:
   explicit SetModePage(
-      std::function<juce::String(const ops::SetModeRequest&, bool)> apply)
+      std::function<juce::String(const ops::SetModeRequest&)> apply)
       : apply_(std::move(apply)) {
     kits_.on_changed = [this] { Changed(); };
     addAndMakeVisible(kits_);
@@ -193,9 +193,7 @@ public:
     return juce::String(ops::CommandLine(Request()));
   }
 
-  juce::String Apply(bool preview) override {
-    return apply_(Request(), preview);
-  }
+  juce::String Apply() override { return apply_(Request()); }
 
   void resized() override {
     auto area = getLocalBounds();
@@ -260,7 +258,7 @@ private:
     return request;
   }
 
-  std::function<juce::String(const ops::SetModeRequest&, bool)> apply_;
+  std::function<juce::String(const ops::SetModeRequest&)> apply_;
   KitSpecField kits_;
   juce::Label pads_caption_;
   juce::Label pads_note_;
@@ -299,9 +297,7 @@ BulkEditPanel::BulkEditPanel(Handlers handlers) {
   preview_.setMinimumHorizontalScale(1.0f);
   addAndMakeVisible(preview_);
 
-  preview_button_.onClick = [this] { Run(true); };
-  apply_button_.onClick = [this] { Run(false); };
-  addAndMakeVisible(preview_button_);
+  apply_button_.onClick = [this] { Run(); };
   addAndMakeVisible(apply_button_);
 
   status_.setColour(juce::Label::textColourId, kMeta);
@@ -369,11 +365,10 @@ void BulkEditPanel::RefreshPreview() {
   preview_.setText(ready ? page.CommandLine() : problem,
                    juce::dontSendNotification);
   preview_.setColour(juce::Label::textColourId, ready ? kText : kMeta);
-  preview_button_.setEnabled(ready);
   apply_button_.setEnabled(ready);
 }
 
-void BulkEditPanel::Run(bool preview) {
+void BulkEditPanel::Run() {
   if (current_ < 0) {
     return;
   }
@@ -381,10 +376,8 @@ void BulkEditPanel::Run(bool preview) {
   if (page.Problem().isNotEmpty()) {
     return;
   }
-  if (!preview) {
-    AppLog::Note("bulk edit: " + page.CommandLine());
-  }
-  status_.setText(page.Apply(preview), juce::dontSendNotification);
+  AppLog::Note("bulk edit: " + page.CommandLine());
+  status_.setText(page.Apply(), juce::dontSendNotification);
 }
 
 void BulkEditPanel::paint(juce::Graphics& g) {
@@ -401,8 +394,6 @@ void BulkEditPanel::resized() {
 
   auto buttons = area.removeFromBottom(38);
   apply_button_.setBounds(buttons.removeFromRight(120));
-  buttons.removeFromRight(10);
-  preview_button_.setBounds(buttons.removeFromRight(140));
   status_.setBounds(buttons.withTrimmedRight(8));
   area.removeFromBottom(12);
 

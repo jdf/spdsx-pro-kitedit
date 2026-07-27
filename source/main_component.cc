@@ -65,8 +65,8 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     : commands_(commands)
     , browser_(ConfigureSettings())
     , bulk_panel_(BulkEditPanel::Handlers {
-          .set_mode = [this](const ops::SetModeRequest& request, bool preview) {
-            return ApplyBulkSetMode(request, preview);
+          .set_mode = [this](const ops::SetModeRequest& request) {
+            return ApplyBulkSetMode(request);
           }}) {
   browser_visible_ =
       settings_.getUserSettings()->getBoolValue("browserVisible", true);
@@ -94,7 +94,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       LoadSample(idx, file);
     };
     slot.on_drop_device = [this](int idx, int sample) {
-      undo().beginNewTransaction("Assign device sample");
+      undo().beginNewTransaction("assign device sample");
       undo().perform(new SetSampleAction(model_,
                                          idx / KitModel::kLayersPerPad,
                                          idx % KitModel::kLayersPerPad,
@@ -108,7 +108,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
     };
     slot.on_clear = [this](int idx) {
-      undo().beginNewTransaction("Clear layer");
+      undo().beginNewTransaction("clear layer");
       undo().perform(new SetSampleAction(model_,
                                          idx / KitModel::kLayersPerPad,
                                          idx % KitModel::kLayersPerPad,
@@ -219,7 +219,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     }
   };
   kit_chooser_.on_rename = [this](const juce::String& name) {
-    undo().beginNewTransaction("Rename kit");
+    undo().beginNewTransaction("rename kit");
     undo().perform(new SetKitNameAction(model_, name));
   };
   addAndMakeVisible(kit_chooser_);
@@ -286,7 +286,7 @@ void MainComponent::LoadSample(int idx, const juce::File& file) {
     std::fprintf(stderr, "slot %d out of range (0..%d)\n", idx, kSlotCount - 1);
     return;
   }
-  undo().beginNewTransaction("Load " + file.getFileName());
+  undo().beginNewTransaction("load " + file.getFileName());
   undo().perform(new SetSampleAction(model_,
                                      idx / KitModel::kLayersPerPad,
                                      idx % KitModel::kLayersPerPad,
@@ -351,18 +351,29 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& ids) {
 void MainComponent::getCommandInfo(juce::CommandID id,
                                    juce::ApplicationCommandInfo& info) {
   switch (id) {
-    case commands::kUndo:
-      info.setInfo("Undo", "Undo the last change", "Edit", 0);
+    case commands::kUndo: {
+      // The menu names what it will undo: "Undo layer mode change".
+      const juce::String what = undo().getUndoDescription();
+      info.setInfo(what.isNotEmpty() ? "Undo " + what : juce::String("Undo"),
+                   "Undo the last change",
+                   "Edit",
+                   0);
       info.addDefaultKeypress('z', juce::ModifierKeys::commandModifier);
       info.setActive(undo().canUndo());
       break;
-    case commands::kRedo:
-      info.setInfo("Redo", "Redo the last undone change", "Edit", 0);
+    }
+    case commands::kRedo: {
+      const juce::String what = undo().getRedoDescription();
+      info.setInfo(what.isNotEmpty() ? "Redo " + what : juce::String("Redo"),
+                   "Redo the last undone change",
+                   "Edit",
+                   0);
       info.addDefaultKeypress('z',
                               juce::ModifierKeys::commandModifier
                                   | juce::ModifierKeys::shiftModifier);
       info.setActive(undo().canRedo());
       break;
+    }
     case commands::kFileNew:
       info.setInfo(
           "New Device...", "Create a fresh device document", "File", 0);
@@ -467,10 +478,22 @@ void MainComponent::getCommandInfo(juce::CommandID id,
 
 bool MainComponent::perform(const InvocationInfo& info) {
   switch (info.commandID) {
-    case commands::kUndo:
-      return undo().undo();
-    case commands::kRedo:
-      return undo().redo();
+    case commands::kUndo: {
+      const bool ok = undo().undo();
+      // A bulk action edits kits with no listener attached; refresh what
+      // watches the document as a whole.
+      MarkEdited();
+      UpdateSyncButton();
+      commands_.commandStatusChanged();
+      return ok;
+    }
+    case commands::kRedo: {
+      const bool ok = undo().redo();
+      MarkEdited();
+      UpdateSyncButton();
+      commands_.commandStatusChanged();
+      return ok;
+    }
     case commands::kFileNew:
       // Nothing to prompt about — the current document is autosaved.
       // A new device needs a home up front so autosave has a target.
@@ -642,19 +665,15 @@ void MainComponent::SelectTab(int index) {
   repaint();
 }
 
-juce::String MainComponent::ApplyBulkSetMode(const ops::SetModeRequest& request,
-                                             bool preview) {
+juce::String MainComponent::ApplyBulkSetMode(
+    const ops::SetModeRequest& request) {
   document_.StashActiveKit();
   std::vector<KitData> kits;
   kits.reserve(DeviceModel::kKitCount);
   for (int i = 0; i < DeviceModel::kKitCount; ++i) {
     kits.push_back(device_.kit(i));
   }
-  if (preview) {
-    const auto plan = bulk::PlanSetMode(kits, request);
-    return juce::String(plan.size()) + " pad(s) would change";
-  }
-  const auto plan = bulk::ApplySetMode(kits, request);
+  const auto plan = bulk::PlanSetMode(kits, request);
   if (plan.empty()) {
     return "nothing to change";
   }
@@ -662,16 +681,11 @@ juce::String MainComponent::ApplyBulkSetMode(const ops::SetModeRequest& request,
   for (const ops::ModeChange& change : plan) {
     touched.insert(change.kit);
   }
-  for (const int kit : touched) {
-    document_.ApplyBulkKit(kit - 1, kits[static_cast<size_t>(kit - 1)]);
-  }
-  // A cross-kit edit outside the undo system; stale histories would undo
-  // into nonsense.
-  for (auto& undo : undos_) {
-    if (undo != nullptr) {
-      undo->clearUndoHistory();
-    }
-  }
+  // One undoable transaction in the current kit's history, like any
+  // other edit.
+  undo().beginNewTransaction("layer mode change");
+  undo().perform(
+      new bulk::SetModeAction(document_, device_, plan, request.target));
   MarkEdited();
   UpdateSyncButton();
   commands_.commandStatusChanged();
@@ -1909,7 +1923,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
   if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
     if (hovered_ >= 0 && hovered_ < kSlotCount
         && slots_[static_cast<size_t>(hovered_)]->has_sample()) {
-      undo().beginNewTransaction("Clear layer");
+      undo().beginNewTransaction("clear layer");
       undo().perform(new SetSampleAction(model_,
                                          hovered_ / KitModel::kLayersPerPad,
                                          hovered_ % KitModel::kLayersPerPad,
@@ -2145,7 +2159,7 @@ void MainComponent::ApplyLayerParams(int pad) {
   if (params == model_.params(pad)) {
     return;
   }
-  undo().beginNewTransaction("Change pad " + juce::String(pad + 1) + " layers");
+  undo().beginNewTransaction("change pad " + juce::String(pad + 1) + " layers");
   undo().perform(new SetPadParamsAction(model_, pad, params));
 }
 
@@ -2168,7 +2182,7 @@ void MainComponent::ShowPadSettings(int pad) {
     if (changed == model_.params(pad)) {
       return;
     }
-    undo().beginNewTransaction("Change pad " + juce::String(pad + 1)
+    undo().beginNewTransaction("change pad " + juce::String(pad + 1)
                                + " settings");
     undo().perform(new SetPadParamsAction(model_, pad, changed));
   };
@@ -2221,7 +2235,7 @@ void MainComponent::MoveSample(int from, int to, bool copy) {
   }
   const LayerSample sample = model_.sample(from / KitModel::kLayersPerPad,
                                            from % KitModel::kLayersPerPad);
-  undo().beginNewTransaction(copy ? "Duplicate sample" : "Move sample");
+  undo().beginNewTransaction(copy ? "duplicate sample" : "move sample");
   undo().perform(new SetSampleAction(model_,
                                      to / KitModel::kLayersPerPad,
                                      to % KitModel::kLayersPerPad,
@@ -2241,7 +2255,7 @@ void MainComponent::MovePad(int from_pad, int to_pad, bool copy) {
   // Copy up front so the source-clears below can't invalidate them.
   const LayerSample top = model_.sample(from_pad, 0);
   const LayerSample bottom = model_.sample(from_pad, 1);
-  undo().beginNewTransaction(copy ? "Duplicate pad" : "Move pad");
+  undo().beginNewTransaction(copy ? "duplicate pad" : "move pad");
   undo().perform(new SetSampleAction(model_, to_pad, 0, top));
   undo().perform(new SetSampleAction(model_, to_pad, 1, bottom));
   if (!copy) {

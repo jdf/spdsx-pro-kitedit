@@ -37,9 +37,10 @@ public:
   // The spdutil command line these controls describe.
   virtual juce::String CommandLine() const = 0;
 
-  // Applies to the document (preview = report only). Returns the line to
-  // show. Runs on the message thread — document edits are instant.
-  virtual juce::String Apply(bool preview) = 0;
+  // Applies to the document as one undoable transaction. Returns the
+  // line to show. Runs on the message thread — document edits are
+  // instant.
+  virtual juce::String Apply() = 0;
 };
 
 class BulkEditPanel
@@ -48,8 +49,7 @@ class BulkEditPanel
 public:
   // How the pages reach the document; provided by the owner.
   struct Handlers {
-    std::function<juce::String(const ops::SetModeRequest&, bool preview)>
-        set_mode;
+    std::function<juce::String(const ops::SetModeRequest&)> set_mode;
   };
 
   explicit BulkEditPanel(Handlers handlers);
@@ -75,7 +75,7 @@ private:
 
   void ShowOperation(int index);
   void RefreshPreview();
-  void Run(bool preview);
+  void Run();
 
   // The window-sized text this panel uses; see the LookAndFeel note in
   // the implementation.
@@ -87,7 +87,6 @@ private:
   juce::ListBox nav_;
   juce::Label blurb_;
   juce::Label preview_;  // the equivalent spdutil command line
-  juce::TextButton preview_button_ {"Preview"};
   juce::TextButton apply_button_ {"Apply"};
   juce::Label status_;
 };

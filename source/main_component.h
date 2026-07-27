@@ -323,10 +323,10 @@ private:
   std::vector<juce::Component*> edit_tab_children_;
   bool on_edit_tab_ = true;
 
-  // Applies a bulk layer-mode edit to the document (all kits stashed
-  // first); preview only counts. Returns the status line to show.
-  juce::String ApplyBulkSetMode(const ops::SetModeRequest& request,
-                                bool preview);
+  // Applies a bulk layer-mode edit to the document as one undoable
+  // transaction (active kit stashed first). Returns the status line to
+  // show.
+  juce::String ApplyBulkSetMode(const ops::SetModeRequest& request);
   juce::String device_firmware_version_;
   juce::String device_firmware_;
   std::atomic<bool> conn_check_running_ {false};

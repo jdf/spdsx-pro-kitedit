@@ -8,6 +8,9 @@
 
 #include <vector>
 
+#include <juce_data_structures/juce_data_structures.h>
+
+#include "device_document.h"
 #include "device_model.h"  // KitData
 #include "device_ops.h"
 
@@ -21,6 +24,37 @@ std::vector<ops::ModeChange> PlanSetMode(const std::vector<KitData>& kits,
 // Touches nothing else about a pad.
 std::vector<ops::ModeChange> ApplySetMode(std::vector<KitData>& kits,
                                           const ops::SetModeRequest& request);
+
+// The undoable form of a bulk layer-mode edit: perform sets every pad in
+// the plan to the target, undo puts each back to what it was. Lands each
+// touched kit through DeviceDocument::ApplyBulkKit, so the active kit's
+// model reloads and the kits read dirty either way. Lives in the undo
+// history of the kit that was active at apply time, like any other
+// transaction.
+class SetModeAction : public juce::UndoableAction {
+public:
+  SetModeAction(DeviceDocument& document,
+                DeviceModel& device,
+                std::vector<ops::ModeChange> plan,
+                LayerMode target)
+      : document_(document)
+      , device_(device)
+      , plan_(std::move(plan))
+      , target_(target) {}
+
+  bool perform() override;
+  bool undo() override;
+
+private:
+  // Applies target (forward) or each change's `from` (backward) and
+  // lands the touched kits.
+  void ApplyModes(bool forward);
+
+  DeviceDocument& document_;
+  DeviceModel& device_;
+  std::vector<ops::ModeChange> plan_;
+  LayerMode target_;
+};
 
 }  // namespace spdsx::bulk
 
