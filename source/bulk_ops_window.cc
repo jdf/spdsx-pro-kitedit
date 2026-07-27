@@ -28,6 +28,59 @@ juce::Label& Caption(juce::Label& label, const juce::String& text) {
   return label;
 }
 
+// A --kits entry: caption, field, and the format spelled out. The hint
+// stays on screen rather than living in a placeholder that vanishes the
+// moment you type, because a spec is easy to get slightly wrong and
+// expensive to get wrong.
+class KitSpecField : public juce::Component {
+public:
+  KitSpecField() {
+    addAndMakeVisible(Caption(caption_, "Kits"));
+    editor_.onTextChange = [this] {
+      if (on_changed) {
+        on_changed();
+      }
+    };
+    addAndMakeVisible(editor_);
+    addAndMakeVisible(Caption(
+        hint_, "one kit (108), a range (108-200), or a list (1,5,10-20)"));
+    hint_.setFont(juce::FontOptions(12.0f));
+  }
+
+  std::function<void()> on_changed;
+
+  static constexpr int kHeight = 18 + 26 + 18;
+
+  bool Parse(std::vector<spdutil::KitRange>* out, std::string* error) const {
+    return spdutil::ParseKitSpec(
+        editor_.getText().trim().toStdString(), out, error);
+  }
+
+  // Empty when the field names some kits; otherwise why it does not.
+  juce::String Problem() const {
+    std::vector<spdutil::KitRange> ranges;
+    std::string error;
+    if (Parse(&ranges, &error)) {
+      return {};
+    }
+    return editor_.getText().trim().isEmpty()
+        ? juce::String::fromUTF8("Say which kits — a write never guesses.")
+        : juce::String(error);
+  }
+
+  void resized() override {
+    auto area = getLocalBounds();
+    caption_.setBounds(area.removeFromTop(18));
+    editor_.setBounds(area.removeFromTop(26));
+    hint_.setBounds(area.removeFromTop(18));
+  }
+
+private:
+  juce::Label caption_;
+  juce::TextEditor editor_;
+  juce::Label hint_;
+};
+
 void FillModes(juce::ComboBox& box) {
   for (int i = 0; i < kLayerModeCount; ++i) {
     box.addItem(
@@ -41,19 +94,20 @@ void FillModes(juce::ComboBox& box) {
 class SetModePage : public BulkOpPage {
 public:
   SetModePage() {
-    addAndMakeVisible(Caption(kits_caption_, "Kits"));
-    kits_.setTextToShowWhenEmpty("108-200, or 1,5,10-20", kMeta);
-    kits_.onTextChange = [this] { Changed(); };
+    kits_.on_changed = [this] { Changed(); };
     addAndMakeVisible(kits_);
 
     addAndMakeVisible(Caption(pads_caption_, "Pads"));
+    // Every pad starts ticked: what the window shows is what it will
+    // touch, rather than an empty row meaning all nine.
     for (int pad = 1; pad <= 9; ++pad) {
       auto button = std::make_unique<juce::ToggleButton>(juce::String(pad));
+      button->setToggleState(true, juce::dontSendNotification);
       button->onClick = [this] { Changed(); };
       addAndMakeVisible(*button);
       pads_.push_back(std::move(button));
     }
-    addAndMakeVisible(Caption(pads_note_, "none ticked = all nine"));
+    addAndMakeVisible(Caption(pads_note_, ""));
 
     addAndMakeVisible(Caption(mode_caption_, "Set mode to"));
     FillModes(mode_);
@@ -73,16 +127,15 @@ public:
     commit_.setToggleState(true, juce::dontSendNotification);
     commit_.onClick = [this] { Changed(); };
     addAndMakeVisible(commit_);
+    Changed();  // fills in the pad summary
   }
 
   juce::String Problem() const override {
-    std::vector<spdutil::KitRange> ranges;
-    std::string error;
-    if (!spdutil::ParseKitSpec(
-            kits_.getText().trim().toStdString(), &ranges, &error)) {
-      return kits_.getText().trim().isEmpty()
-          ? juce::String::fromUTF8("Say which kits — a write never guesses.")
-          : juce::String(error);
+    if (const juce::String kits = kits_.Problem(); kits.isNotEmpty()) {
+      return kits;
+    }
+    if (TickedPads().empty()) {
+      return "Tick at least one pad.";
     }
     return {};
   }
@@ -116,8 +169,7 @@ public:
   void resized() override {
     auto area = getLocalBounds();
     auto row = [&area](int h) { return area.removeFromTop(h); };
-    kits_caption_.setBounds(row(18));
-    kits_.setBounds(row(26));
+    kits_.setBounds(row(KitSpecField::kHeight));
     area.removeFromTop(10);
 
     pads_caption_.setBounds(row(18));
@@ -143,20 +195,36 @@ public:
 private:
   void Changed() {
     if_mode_.setEnabled(if_mode_enabled_.getToggleState());
+    const std::vector<int> pads = TickedPads();
+    pads_note_.setText(
+        pads.size() == pads_.size()
+            ? "all nine pads"
+            : (pads.empty() ? "no pads ticked"
+                            : juce::String(pads.size()) + " of nine"),
+        juce::dontSendNotification);
     if (on_changed) {
       on_changed();
     }
   }
 
+  std::vector<int> TickedPads() const {
+    std::vector<int> pads;
+    for (size_t i = 0; i < pads_.size(); ++i) {
+      if (pads_[i]->getToggleState()) {
+        pads.push_back(static_cast<int>(i) + 1);
+      }
+    }
+    return pads;
+  }
+
   ops::SetModeRequest Request(bool dry_run) const {
     ops::SetModeRequest request;
     std::string error;
-    spdutil::ParseKitSpec(
-        kits_.getText().trim().toStdString(), &request.kits, &error);
-    for (size_t i = 0; i < pads_.size(); ++i) {
-      if (pads_[i]->getToggleState()) {
-        request.pads.push_back(static_cast<int>(i) + 1);
-      }
+    kits_.Parse(&request.kits, &error);
+    // All nine ticked is no restriction at all, which is what an omitted
+    // --pad means; rendering nine of them would be noise.
+    if (std::vector<int> pads = TickedPads(); pads.size() < pads_.size()) {
+      request.pads = std::move(pads);
     }
     request.target = static_cast<LayerMode>(mode_.getSelectedId() - 1);
     request.has_if_mode = if_mode_enabled_.getToggleState();
@@ -166,8 +234,7 @@ private:
     return request;
   }
 
-  juce::Label kits_caption_;
-  juce::TextEditor kits_;
+  KitSpecField kits_;
   juce::Label pads_caption_;
   juce::Label pads_note_;
   std::vector<std::unique_ptr<juce::ToggleButton>> pads_;
