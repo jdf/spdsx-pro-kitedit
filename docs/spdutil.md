@@ -46,14 +46,12 @@ Reading is never gated — `info` tells you what a unit is running, and
 
 ## Flags are checked against the command
 
-Every flag is rejected by any command that would not act on it. `spdutil
+Every flag is rejected by any command that would not act on it: `spdutil
 ping --dry-run` and `spdutil kits --kits 1-5` are errors, and so is a bare
-number for a command that takes none (`spdutil kits 5`). A flag that
-parses but does nothing is how a sweep ends up somewhere you did not mean.
+number for a command that takes none (`spdutil kits 5`).
 
 `--dry-run` is honored by `assign`, `setname`, `setparams`, `setlayer`,
-`setmode`, and `padlink`; the other write commands reject it rather than
-pretend.
+`setmode`, and `padlink`; the other commands reject it.
 
 ## Working state vs. commit
 
@@ -62,8 +60,7 @@ cycle. Write commands take `--commit` to follow the writes with a flash
 commit (the same `6a 21`/`22` handshake the official app's WRITE button
 uses), which makes them durable. Uncommitted edits accumulate across
 separate spdutil invocations, and one final `--commit`-ing command flushes
-everything staged. `deletewave` and `sendwave` always commit — a delete or
-an upload left half-done in working state is a trap, not a feature.
+everything staged. `deletewave` and `sendwave` always commit.
 
 ## Read-only commands
 
@@ -115,7 +112,7 @@ Some factory preloads have no exportable file and fail cleanly.
 ## Kit and pad writes
 
 Every command that writes to kits says which with **`--kits SPEC`**, and
-it is required. Which kits a write touches is never implied.
+it is required.
 
 A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST`
 inclusive:
@@ -149,13 +146,11 @@ Sample 0 clears the layer.
 Writes one pad's ten hit-response parameters as a comma list, in order:
 `mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,hhFadeIn,hhDecay,trigRsv`.
 
-Mode and curve are **names** — `MIX FADE1 FADE2 XFADE SWITCH SW(MONO)
-ALTERNATE HI-HAT` and `LINEAR LOUD1 LOUD2 LOUD3` — never the number behind
-one, which nobody should have to know. Dynamics and trigger reserve are
-`ON` or `OFF`. Only the plain counts — fade point/end, fixed velocity, the
-hi-hat trio — are numbers, 0-127. A token it does not
-recognize is an error that names the token and lists the names it knows,
-so a slip cannot be read as zero and write MIX in silence.
+Mode is one of `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE HI-HAT`;
+curve is one of `LINEAR LOUD1 LOUD2 LOUD3`; dynamics and trigger reserve
+are `ON` or `OFF`; fade point/end, fixed velocity, and the hi-hat trio
+are numbers, 0-127. An unrecognized token is an error listing the
+accepted values.
 
 ```sh
 spdutil setparams --kits 199 --pad 5 \
@@ -175,8 +170,8 @@ Bulk layer-mode writes across kits. Reads the kits bank first and writes
 untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
 HI-HAT`.
 
-Scope it deliberately: with no `--pad` this touches **all nine pads** of
-every kit `--kits` names.
+With no `--pad`, this changes **all nine pads** of every kit `--kits`
+names.
 
 | option | meaning |
 | --- | --- |
@@ -207,9 +202,9 @@ Back the unit up before a padlink run across many kits.
 
 ### `sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]`
 Uploads one or more waves on a single connection to consecutive pool
-indices starting at N: writes each `.SMP` file to device flash AND
-registers it in the pool directory (either alone is useless), commits the
-whole batch once, then reads every wave back and reports `MATCH`/`FAIL`.
+indices starting at N: writes each `.SMP` file to device flash, registers
+it in the pool directory, commits the whole batch once, then reads every
+wave back and reports `MATCH`/`FAIL`.
 Use a fresh index range (`samples` shows what's taken). `--name` overrides
 the stored filename, single-file uploads only.
 
