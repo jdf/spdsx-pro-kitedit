@@ -358,6 +358,7 @@ void SpdsxDevice::SetPadLayerParams(const PadParamsWrite& w) {
   write(0x07, w.params.hi_hat_volume);
   write(0x08, w.params.hi_hat_fade_in);
   write(0x09, w.params.hi_hat_decay);
+  write(0x0d, w.params.pad_link);
   write(0x13, w.params.trigger_reserve);
 }
 

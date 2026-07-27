@@ -536,9 +536,9 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   EXPECT_TRUE(ExecutePush(dev, {}, {kw}, IgnoreUpload, 0.0));
 
   const std::vector<Bytes> sent = port.payloads();
-  // 16 name chars + wave + enable + focus + 10 params + the two layer
-  // mixes (3 writes each) + begin + poll.
-  ASSERT_EQ(sent.size(), 37u);
+  // 16 name chars + wave + enable + focus + 11 params (pad link
+  // included) + the two layer mixes (3 writes each) + begin + poll.
+  ASSERT_EQ(sent.size(), 38u);
   using namespace device;
   EXPECT_EQ(sent[0], Dt1(KitNameAddr(199, 0), {'M'}));
   EXPECT_EQ(sent[15], Dt1(KitNameAddr(199, 15), {' '}));  // space-padded
@@ -559,14 +559,16 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   // layer A then layer B (defaults here: 0.0 dB, 0, 127).
   const PadLayerRef top {.kit = 199, .pad = 7, .slot = PadSlot::kTop};
   const PadLayerRef bottom {.kit = 199, .pad = 7, .slot = PadSlot::kBottom};
-  EXPECT_EQ(sent[29],
+  // Param 0x0d (pad link) lands with the others, at index 28.
+  EXPECT_EQ(sent[28], Dt1(PadParamAddr({.kit = 199, .pad = 7}, 0x0d), {0}));
+  EXPECT_EQ(sent[30],
             Dt1(PadLayerAddr(top, kLayerVolumeOffset), NibbleEncode(0)));
-  EXPECT_EQ(sent[30], Dt1(PadLayerAddr(top, kLayerFadeInOffset), {0}));
-  EXPECT_EQ(sent[31], Dt1(PadLayerAddr(top, kLayerDecayOffset), {127}));
-  EXPECT_EQ(sent[32],
+  EXPECT_EQ(sent[31], Dt1(PadLayerAddr(top, kLayerFadeInOffset), {0}));
+  EXPECT_EQ(sent[32], Dt1(PadLayerAddr(top, kLayerDecayOffset), {127}));
+  EXPECT_EQ(sent[33],
             Dt1(PadLayerAddr(bottom, kLayerVolumeOffset), NibbleEncode(0)));
-  EXPECT_EQ(sent[35][4], 0x21);  // one commit at the very end
-  EXPECT_EQ(sent[36][4], 0x22);
+  EXPECT_EQ(sent[36][4], 0x21);  // one commit at the very end
+  EXPECT_EQ(sent[37][4], 0x22);
 }
 
 TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {

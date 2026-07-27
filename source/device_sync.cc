@@ -46,6 +46,10 @@ juce::String FmtBool(bool v) {
   return v ? "on" : "off";
 }
 
+juce::String FmtLink(int group) {
+  return group == 0 ? juce::String("unlinked") : "group " + juce::String(group);
+}
+
 juce::String FmtMode(LayerMode v) {
   return juce::String(std::string(LayerModeName(v)));
 }
@@ -100,6 +104,7 @@ KitData KitDataFromDevice(const device::KitRecord& rec) {
     p.params.fixed_velocity =
         juce::jlimit(1, 127, static_cast<int>(dp.fixed_velocity));
     p.params.trigger_reserve = dp.trigger_reserve != 0;
+    p.params.pad_link = juce::jlimit(0, 127, static_cast<int>(dp.pad_link));
     p.params.hi_hat_volume =
         juce::jlimit(0, 127, static_cast<int>(dp.hi_hat_volume));
     p.params.hi_hat_fade_in =
@@ -134,6 +139,7 @@ device::PadDeviceParams DeviceParamsFromPad(const Pad& pad) {
   dp.dynamics_curve = static_cast<uint8_t>(pp.curve);
   dp.fixed_velocity = static_cast<uint8_t>(pp.fixed_velocity);
   dp.trigger_reserve = pp.trigger_reserve ? 1 : 0;
+  dp.pad_link = static_cast<uint8_t>(pp.pad_link);
   dp.hi_hat_volume = static_cast<uint8_t>(pp.hi_hat_volume);
   dp.hi_hat_fade_in = static_cast<uint8_t>(pp.hi_hat_fade_in);
   dp.hi_hat_decay = static_cast<uint8_t>(pp.hi_hat_decay);
@@ -187,6 +193,7 @@ Pad MergePad(const Pad& current,
                             b.trigger_reserve,
                             t.trigger_reserve,
                             FmtBool);
+  p.pad_link = merge("pad link", c.pad_link, b.pad_link, t.pad_link, FmtLink);
   p.hi_hat_volume = merge("hi-hat volume",
                           c.hi_hat_volume,
                           b.hi_hat_volume,

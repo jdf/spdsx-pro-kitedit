@@ -88,6 +88,8 @@ struct PadDeviceParams {
   uint8_t dynamics_curve = 0;
   uint8_t fixed_velocity = 0;
   uint8_t trigger_reserve = 0;
+  // Pad-link group, 0 = unlinked (record offset +0x0d, like the DT1).
+  uint8_t pad_link = 0;
   // HI-HAT closed-pedal shaping (used only in HI-HAT mode).
   uint8_t hi_hat_volume = 0;
   uint8_t hi_hat_fade_in = 0;
@@ -95,6 +97,7 @@ struct PadDeviceParams {
   // Wave (sample pool index) per layer; 0 = no sample.
   uint16_t wave_top = 0;
   uint16_t wave_bottom = 0;
+
   // Per-layer mix: volume (s16, 0.1 dB units, 0 = 0.0 dB), fade-in and
   // decay (0-127, decay 127 = none).
   struct LayerMix {
@@ -104,6 +107,7 @@ struct PadDeviceParams {
 
     bool operator==(const LayerMix&) const = default;
   };
+
   LayerMix mix_top;
   LayerMix mix_bottom;
 };

@@ -61,6 +61,7 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       pp.hi_hat_fade_in = clean_image[p + kPadHiHatFadeIn];
       pp.hi_hat_decay = clean_image[p + kPadHiHatDecay];
       pp.trigger_reserve = clean_image[p + kPadTrigReserve];
+      pp.pad_link = clean_image[p + 0x0d];
       // The layer table: top = layer pad*2, bottom = pad*2 + 1.
       const size_t top = rec + kLayerTableBase
           + static_cast<size_t>(pad) * 2 * kLayerBlockStride;
@@ -71,9 +72,9 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
         };
         auto layer_mix = [&](size_t at) {
           PadDeviceParams::LayerMix m;
-          m.volume_db10 = static_cast<int16_t>(
-              clean_image[at + kLayerVolumeLo]
-              | clean_image[at + kLayerVolumeLo + 1] << 8);
+          m.volume_db10 =
+              static_cast<int16_t>(clean_image[at + kLayerVolumeLo]
+                                   | clean_image[at + kLayerVolumeLo + 1] << 8);
           m.fade_in = clean_image[at + kLayerFadeIn];
           m.decay = clean_image[at + kLayerDecay];
           return m;

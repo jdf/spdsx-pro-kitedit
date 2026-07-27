@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS pads(
   top_decay INTEGER DEFAULT 127,
   bottom_volume INTEGER DEFAULT 0, bottom_fadein INTEGER DEFAULT 0,
   bottom_decay INTEGER DEFAULT 127,
+  pad_link INTEGER DEFAULT 0,
   PRIMARY KEY(snapshot, kit_idx, pad_idx));
 CREATE TABLE IF NOT EXISTS samples(
   idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
@@ -45,6 +46,15 @@ const char* kV1PadColumns =
     "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
     "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
     "trigger_reserve, top_device, top_local, bottom_device, bottom_local";
+
+// v2 added the per-layer mix trio; v3 adds pad_link. A migration copies
+// the SOURCE version's columns, so a v2 document keeps its mix values.
+const char* kV2PadColumns =
+    "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
+    "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
+    "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
+    "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
+    "bottom_decay";
 
 const char* SnapshotName(Snapshot s) {
   return s == Snapshot::kBase ? "base" : "current";
@@ -194,15 +204,14 @@ bool MigrateOlderDocument(const juce::File& path,
   tmp.deleteFile();
   sqlite3* db = nullptr;
   if (sqlite3_open(tmp.getFullPathName().toRawUTF8(), &db) != SQLITE_OK) {
-    error = juce::String("migration: couldn't create ")
-        + tmp.getFullPathName() + ": " + sqlite3_errmsg(db);
+    error = juce::String("migration: couldn't create ") + tmp.getFullPathName()
+        + ": " + sqlite3_errmsg(db);
     sqlite3_close(db);
     return false;
   }
   try {
     Exec(db, kSchemaSql);
-    Exec(db,
-         ("PRAGMA user_version=" + std::to_string(kSchemaVersion)).c_str());
+    Exec(db, ("PRAGMA user_version=" + std::to_string(kSchemaVersion)).c_str());
     Exec(db,
          ("INSERT INTO meta(key,value) VALUES"
           "('schema_version','"
@@ -216,9 +225,10 @@ bool MigrateOlderDocument(const juce::File& path,
              .c_str());
     Exec(db, "BEGIN;");
     Exec(db, "INSERT INTO kits SELECT * FROM old.kits;");
+    const char* pad_columns = from_version >= 2 ? kV2PadColumns : kV1PadColumns;
     Exec(db,
-         (std::string("INSERT INTO pads(") + kV1PadColumns + ") SELECT "
-          + kV1PadColumns + " FROM old.pads;")
+         (std::string("INSERT INTO pads(") + pad_columns + ") SELECT "
+          + pad_columns + " FROM old.pads;")
              .c_str());
     Exec(db, "INSERT INTO samples SELECT * FROM old.samples;");
     Exec(db,
@@ -328,9 +338,9 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         "fade_end, dynamics, curve, fixed_velocity, hihat_vol, hihat_fadein, "
         "hihat_decay, trigger_reserve, top_device, top_local, bottom_device, "
         "bottom_local, top_volume, top_fadein, top_decay, bottom_volume, "
-        "bottom_fadein, bottom_decay) "
+        "bottom_fadein, bottom_decay, pad_link) "
         "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,"
-        "?15,?16,?17,?18,?19,?20,?21,?22,?23);");
+        "?15,?16,?17,?18,?19,?20,?21,?22,?23,?24);");
     for (int k = 0; k < DeviceModel::kKitCount; ++k) {
       const KitData& kd = model.kit(k);
       kit.Text(1, snap);
@@ -363,6 +373,7 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         pad.Int(21, pp.mix_bottom.volume_db10);
         pad.Int(22, pp.mix_bottom.fade_in);
         pad.Int(23, pp.mix_bottom.decay);
+        pad.Int(24, pp.pad_link);
         pad.RunOnce();
       }
     }
@@ -403,7 +414,7 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
         "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
         "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
         "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
-        "bottom_decay "
+        "bottom_decay, pad_link "
         "FROM pads WHERE snapshot=?1;");
     pad.Text(1, snap);
     while (pad.Step()) {
@@ -440,6 +451,7 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
       };
       pp.mix_top = mix(16);
       pp.mix_bottom = mix(19);
+      pp.pad_link = juce::jlimit(0, 127, pad.ColInt(22));
     }
   }
   if (snapshot == Snapshot::kCurrent) {
@@ -539,7 +551,7 @@ void DeviceDb::CaptureBase() {
          "hihat_vol, hihat_fadein, hihat_decay, trigger_reserve, "
          "top_device, top_local, bottom_device, bottom_local, "
          "top_volume, top_fadein, top_decay, "
-         "bottom_volume, bottom_fadein, bottom_decay "
+         "bottom_volume, bottom_fadein, bottom_decay, pad_link "
          "FROM pads WHERE snapshot='current';");
   } catch (...) {
     Exec(db_, "ROLLBACK;");

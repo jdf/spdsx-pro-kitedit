@@ -1039,14 +1039,14 @@ int RunKit(const KitShowArgs& args) {
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
   std::printf(
       "  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
-      "  hhVol hhFadeIn hhDecay  top   bottom\n");
+      "  hhVol hhFadeIn hhDecay  link  top   bottom\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
-        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d\n",
+        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d\n",
         pad + 1,
         mode,
         p.fade_point,
@@ -1058,6 +1058,7 @@ int RunKit(const KitShowArgs& args) {
         p.hi_hat_volume,
         p.hi_hat_fade_in,
         p.hi_hat_decay,
+        p.pad_link,
         p.wave_top,
         p.wave_bottom);
   }

@@ -389,12 +389,13 @@ TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
   params.hi_hat_fade_in = 5;
   params.hi_hat_decay = 25;
   params.trigger_reserve = 1;
+  params.pad_link = 11;
 
   dev.SetPadLayerParams(
       {.kit = 200, .pad = 9, .params = params, .pace_seconds = 0.0});
 
   const std::vector<Bytes> sent = port.payloads();
-  ASSERT_EQ(sent.size(), 11u);  // the focus, then ten fields
+  ASSERT_EQ(sent.size(), 12u);  // the focus, then eleven fields
   EXPECT_EQ(sent[0],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 9)}));
 
@@ -410,6 +411,7 @@ TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
                 {0x07, 80},
                 {0x08, 5},
                 {0x09, 25},
+                {0x0d, 11},
                 {0x13, 1}};
 
   for (size_t i = 0; i < std::size(fields); ++i) {

@@ -32,12 +32,16 @@ struct PadParams {
   // Device-only (read/write, not emulated): hold a strike until the
   // next click accent instead of sounding immediately.
   bool trigger_reserve = false;
+  // Pad-link group (hits on one linked pad trigger the others); 0 =
+  // unlinked. Stored and synced; not emulated by the engine.
+  int pad_link = 0;
   // HI-HAT mode's closed-pedal shaping (0..127). Volume scales the
   // closed layer and is emulated; fade in (attack) and decay are
   // read/write for the device only until the engine grows envelopes.
   int hi_hat_volume = kDefaultHiHatVolume;
   int hi_hat_fade_in = kDefaultHiHatFadeIn;
   int hi_hat_decay = kDefaultHiHatDecay;
+
   // Per-layer mix (top = layer A, bottom = layer B): volume in 0.1 dB
   // steps (0 = 0.0 dB, negative = quieter), fade-in 0..127, decay 0..127
   // (127 = none). Read/write for the device; not yet emulated in the
@@ -49,6 +53,7 @@ struct PadParams {
 
     bool operator==(const LayerMix&) const = default;
   };
+
   LayerMix mix_top;
   LayerMix mix_bottom;
 
