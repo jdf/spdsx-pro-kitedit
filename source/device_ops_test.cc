@@ -131,6 +131,17 @@ TEST(CommandLine, PadLinkReadsBackAsTheSpdutilInvocation) {
             "spdutil padlink --kits 108-200 --group 11 --pad 7");
 }
 
+TEST(CommandLine, PadLinkRendersTriggersBeforePads) {
+  PadLinkRequest request;
+  request.kits = {{1, 200}};
+  request.pads = {7};
+  request.triggers = {7, 8};
+  request.group = 11;
+  EXPECT_EQ(CommandLine(request),
+            "spdutil padlink --kits 1-200 --group 11 "
+            "--trigger 7 --trigger 8 --pad 7");
+}
+
 TEST(CommandLine, SetNameQuotesANameWithSpaces) {
   SetNameRequest request;
   request.kit = 199;

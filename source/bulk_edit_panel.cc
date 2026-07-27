@@ -288,6 +288,15 @@ public:
     }
     addAndMakeVisible(Caption(pads_note_, ""));
 
+    addAndMakeVisible(Caption(triggers_caption_, "Triggers"));
+    for (int trigger = 1; trigger <= 8; ++trigger) {
+      auto button = std::make_unique<juce::ToggleButton>(juce::String(trigger));
+      button->onClick = [this] { Changed(); };
+      addAndMakeVisible(*button);
+      triggers_.push_back(std::move(button));
+    }
+    addAndMakeVisible(Caption(triggers_note_, "the external trigger inputs"));
+
     addAndMakeVisible(Caption(group_caption_, "Link group"));
     group_.setRange(0, 32, 1);
     group_.setSliderStyle(juce::Slider::IncDecButtons);
@@ -305,8 +314,8 @@ public:
     if (const juce::String kits = kits_.Problem(); kits.isNotEmpty()) {
       return kits;
     }
-    if (TickedPads().empty()) {
-      return "You must select at least one pad.";
+    if (Ticked(pads_).empty() && Ticked(triggers_).empty()) {
+      return "You must select at least one pad or trigger.";
     }
     return {};
   }
@@ -331,6 +340,14 @@ public:
     pads_note_.setBounds(row(kHintRow));
     area.removeFromTop(12);
 
+    triggers_caption_.setBounds(row(kCaptionRow));
+    auto trigger_row = row(kControlRow);
+    for (auto& trigger : triggers_) {
+      trigger->setBounds(trigger_row.removeFromLeft(60));
+    }
+    triggers_note_.setBounds(row(kHintRow));
+    area.removeFromTop(12);
+
     group_caption_.setBounds(row(kCaptionRow));
     group_.setBounds(row(kControlRow).removeFromLeft(170));
     group_note_.setBounds(row(kHintRow));
@@ -338,35 +355,32 @@ public:
 
 private:
   void Changed() {
-    const std::vector<int> pads = TickedPads();
+    const size_t count = Ticked(pads_).size() + Ticked(triggers_).size();
     pads_note_.setText(
-        pads.size() == pads_.size()
-            ? "all nine pads"
-            : (pads.empty() ? "none selected"
-                            : juce::String(pads.size()) + " of nine"),
+        count == 0 ? "none selected" : juce::String(count) + " selected",
         juce::dontSendNotification);
     if (on_changed) {
       on_changed();
     }
   }
 
-  std::vector<int> TickedPads() const {
-    std::vector<int> pads;
-    for (size_t i = 0; i < pads_.size(); ++i) {
-      if (pads_[i]->getToggleState()) {
-        pads.push_back(static_cast<int>(i) + 1);
+  static std::vector<int> Ticked(
+      const std::vector<std::unique_ptr<juce::ToggleButton>>& buttons) {
+    std::vector<int> on;
+    for (size_t i = 0; i < buttons.size(); ++i) {
+      if (buttons[i]->getToggleState()) {
+        on.push_back(static_cast<int>(i) + 1);
       }
     }
-    return pads;
+    return on;
   }
 
   ops::PadLinkRequest Request() const {
     ops::PadLinkRequest request;
     std::string error;
     kits_.Parse(&request.kits, &error);
-    if (std::vector<int> pads = TickedPads(); pads.size() < pads_.size()) {
-      request.pads = std::move(pads);
-    }
+    request.pads = Ticked(pads_);
+    request.triggers = Ticked(triggers_);
     request.group = static_cast<int>(group_.getValue());
     return request;
   }
@@ -376,6 +390,9 @@ private:
   juce::Label pads_caption_;
   juce::Label pads_note_;
   std::vector<std::unique_ptr<juce::ToggleButton>> pads_;
+  juce::Label triggers_caption_;
+  juce::Label triggers_note_;
+  std::vector<std::unique_ptr<juce::ToggleButton>> triggers_;
   juce::Label group_caption_;
   juce::Slider group_;
   juce::Label group_note_;

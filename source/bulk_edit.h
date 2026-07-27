@@ -25,10 +25,11 @@ std::vector<ops::ModeChange> PlanSetMode(const std::vector<KitData>& kits,
 std::vector<ops::ModeChange> ApplySetMode(std::vector<KitData>& kits,
                                           const ops::SetModeRequest& request);
 
-// One pad's link-group change.
+// One object's link-group change: a pad, or a trigger input.
 struct LinkChange {
   int kit = 0;  // 1-based
-  int pad = 0;  // 1-based
+  bool trigger = false;  // false: `index` is a pad 1-9; true: trigger 1-8
+  int index = 0;
   int from = 0;  // the group it had (0 = unlinked)
 };
 

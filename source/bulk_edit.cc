@@ -40,13 +40,6 @@ std::vector<ops::ModeChange> ApplySetMode(std::vector<KitData>& kits,
 
 std::vector<LinkChange> PlanPadLink(const std::vector<KitData>& kits,
                                     const ops::PadLinkRequest& request) {
-  std::array<bool, 9> wanted {};
-  wanted.fill(request.pads.empty());
-  for (const int pad : request.pads) {
-    if (pad >= 1 && pad <= 9) {
-      wanted[static_cast<size_t>(pad - 1)] = true;
-    }
-  }
   std::vector<LinkChange> plan;
   for (const spdutil::KitRange& range : request.kits) {
     for (int kit = range.first; kit <= range.last; ++kit) {
@@ -54,16 +47,27 @@ std::vector<LinkChange> PlanPadLink(const std::vector<KitData>& kits,
         continue;
       }
       const KitData& data = kits[static_cast<size_t>(kit - 1)];
-      for (int pad = 1; pad <= 9; ++pad) {
-        if (!wanted[static_cast<size_t>(pad - 1)]) {
+      for (const int pad : request.pads) {
+        if (pad < 1 || pad > 9) {
           continue;
         }
         const int current =
             data.pads[static_cast<size_t>(pad - 1)].params.pad_link;
-        if (current == request.group) {
+        if (current != request.group) {
+          plan.push_back(
+              {.kit = kit, .trigger = false, .index = pad, .from = current});
+        }
+      }
+      for (const int trigger : request.triggers) {
+        if (trigger < 1 || trigger > device::kTriggersPerKit) {
           continue;
         }
-        plan.push_back({.kit = kit, .pad = pad, .from = current});
+        const int current =
+            data.trigger_links[static_cast<size_t>(trigger - 1)];
+        if (current != request.group) {
+          plan.push_back(
+              {.kit = kit, .trigger = true, .index = trigger, .from = current});
+        }
       }
     }
   }
@@ -88,9 +92,15 @@ void PadLinkAction::ApplyLinks(bool forward) {
   for (const int kit : touched) {
     KitData content = device_.kit(kit - 1);
     for (const LinkChange& change : plan_) {
-      if (change.kit == kit) {
-        content.pads[static_cast<size_t>(change.pad - 1)].params.pad_link =
-            forward ? group_ : change.from;
+      if (change.kit != kit) {
+        continue;
+      }
+      const int value = forward ? group_ : change.from;
+      if (change.trigger) {
+        content.trigger_links[static_cast<size_t>(change.index - 1)] = value;
+      } else {
+        content.pads[static_cast<size_t>(change.index - 1)].params.pad_link =
+            value;
       }
     }
     document_.ApplyBulkKit(kit - 1, content);

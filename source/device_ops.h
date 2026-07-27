@@ -100,7 +100,8 @@ SetModeResult SetMode(device::SpdsxDevice& dev,
 
 struct PadLinkRequest {
   std::vector<spdutil::KitRange> kits;  // required: never implied
-  std::vector<int> pads;  // 1-9; empty = all nine
+  std::vector<int> pads;  // 1-9
+  std::vector<int> triggers;  // 1-8
   int group = 0;  // 0 = unlink
 };
 

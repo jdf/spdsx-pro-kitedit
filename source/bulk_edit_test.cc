@@ -105,6 +105,29 @@ TEST(BulkPadLink, PlansOnlyPadsNotAlreadyInTheGroup) {
   EXPECT_EQ(plan[1].kit, 3);
 }
 
+TEST(BulkPadLink, TriggersPlanFromTheTriggerTable) {
+  auto kits = Kits(2);
+  kits[0].trigger_links[6] = 11;  // kit 1 trigger 7 already there
+  ops::PadLinkRequest request;
+  request.kits = {{1, 2}};
+  request.triggers = {7};
+  request.group = 11;
+  const auto plan = PlanPadLink(kits, request);
+  ASSERT_EQ(plan.size(), 1u);
+  EXPECT_EQ(plan[0].kit, 2);
+  EXPECT_TRUE(plan[0].trigger);
+  EXPECT_EQ(plan[0].index, 7);
+  EXPECT_EQ(plan[0].from, 0);
+}
+
+TEST(BulkPadLink, NoObjectsMeansNoChanges) {
+  auto kits = Kits(3);
+  ops::PadLinkRequest request;
+  request.kits = {{1, 3}};
+  request.group = 11;
+  EXPECT_TRUE(PlanPadLink(kits, request).empty());
+}
+
 TEST(BulkPadLink, GroupZeroUnlinks) {
   auto kits = Kits(2);
   kits[0].pads[0].params.pad_link = 5;
@@ -191,9 +214,11 @@ TEST_F(SetModeActionTest, TheActiveKitReloadsIntoTheModel) {
 
 TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
   device.kit(2).pads[6].params.pad_link = 4;  // kit 3 pad 7, group 4
+  device.kit(3).trigger_links[6] = 2;  // kit 4 trigger 7, group 2
   ops::PadLinkRequest request;
   request.kits = {{3, 4}};
   request.pads = {7};
+  request.triggers = {7};
   request.group = 11;
   std::vector<KitData> snapshot;
   for (int i = 0; i < DeviceModel::kKitCount; ++i) {
@@ -205,9 +230,13 @@ TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
       *document, device, PlanPadLink(snapshot, request), request.group)));
   EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 11);
   EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 11);
+  EXPECT_EQ(device.kit(2).trigger_links[6], 11);
+  EXPECT_EQ(device.kit(3).trigger_links[6], 11);
   ASSERT_TRUE(undo.undo());
   EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 4);
   EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 0);
+  EXPECT_EQ(device.kit(2).trigger_links[6], 0);
+  EXPECT_EQ(device.kit(3).trigger_links[6], 2);
 }
 
 }  // namespace
