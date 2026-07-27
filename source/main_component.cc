@@ -1146,7 +1146,34 @@ void MainComponent::UpdateSyncButton() {
   const juce::String label = "Sync Changes with Device";
   const juce::String text =
       dirty > 1 ? label + " (" + juce::String(dirty) + " kits)" : label;
-  sync_button_.setEnabled(DeviceConnected() && !device_fetching_);
+  const bool connected = DeviceConnected();
+  const bool busy = device_fetching_;
+  const bool firmware_ok =
+      device_firmware_version_ == device::SpdsxDevice::kSupportedFirmware;
+  sync_button_.setEnabled(connected && !busy && firmware_ok);
+  // The tooltip answers the question the button raises: why it is
+  // disabled, or what clicking it will do.
+  juce::String tip;
+  if (!connected) {
+    tip = "No device is connected. Plug in the SPD-SX PRO to sync.";
+  } else if (busy) {
+    tip =
+        "The device is busy with another operation. Sync when it "
+        "finishes.";
+  } else if (!firmware_ok) {
+    tip = "This unit reports firmware "
+        + (device_firmware_version_.isEmpty() ? juce::String("(unknown)")
+                                              : device_firmware_version_)
+        + "; writing has only been verified against "
+        + device::SpdsxDevice::kSupportedFirmware
+        + ", so syncing is disabled. Reading still works.";
+  } else {
+    tip = "Pushes " + juce::String(dirty) + " edited kit"
+        + (dirty == 1 ? juce::String("'s") : juce::String("s'"))
+        + " changes to the device, pulls changes made on the unit, and "
+          "asks before overwriting anything changed on both sides.";
+  }
+  sync_button_.setTooltip(tip);
   const bool show = dirty > 0;
   if (text != sync_button_.getButtonText()
       || show != sync_button_.isVisible()) {

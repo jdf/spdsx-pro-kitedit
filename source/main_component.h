@@ -294,6 +294,9 @@ private:
   // build for display ("2.00 (0094)"). The firmware gate compares the
   // bare version; the display string is for bug reports.
   juce::Label status_bar_;
+  // Without one of these, every setTooltip in the app is silent — JUCE
+  // only shows tooltips while a TooltipWindow instance exists.
+  juce::TooltipWindow tooltip_window_ {this};
 
   // The tab bar under the global header. A plain TabbedButtonBar (not a
   // TabbedComponent): the Edit Kits "tab content" is this component's
