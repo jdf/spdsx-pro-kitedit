@@ -329,6 +329,12 @@ BulkOpsPanel::BulkOpsPanel() {
   status_.setFont(juce::FontOptions(12.0f));
   addAndMakeVisible(status_);
 
+  connection_text_.setColour(juce::Label::textColourId, kMeta);
+  connection_text_.setFont(juce::FontOptions(12.0f));
+  connection_text_.setText("no device connected", juce::dontSendNotification);
+  addAndMakeVisible(connection_dot_);
+  addAndMakeVisible(connection_text_);
+
   for (auto& mode : modes_) {
     mode.page->on_changed = [this] { RefreshPreview(); };
     addChildComponent(*mode.page);
@@ -392,8 +398,9 @@ void BulkOpsPanel::RefreshPreview() {
                    juce::dontSendNotification);
   preview_.setColour(juce::Label::textColourId, ready ? kText : kMeta);
   dry_run_.setVisible(page.CanDryRun());
-  dry_run_.setEnabled(ready && !running_);
-  run_.setEnabled(ready && !running_);
+  // Even a dry run reads the device, so nothing runs without one.
+  dry_run_.setEnabled(ready && !running_ && device_connected_);
+  run_.setEnabled(ready && !running_ && device_connected_);
 }
 
 void BulkOpsPanel::Start(bool dry_run) {
@@ -467,8 +474,20 @@ void BulkOpsPanel::Finish(const juce::String& outcome,
   RefreshPreview();
 }
 
+void BulkOpsPanel::SetConnection(bool connected, const juce::String& text) {
+  device_connected_ = connected;
+  connection_dot_.SetConnected(connected);
+  connection_text_.setText(text, juce::dontSendNotification);
+  RefreshPreview();
+}
+
 void BulkOpsPanel::paint(juce::Graphics& g) {
   g.fillAll(kPanelBg);
+  const auto strip = getLocalBounds().removeFromBottom(24);
+  g.setColour(kNavBg);
+  g.fillRect(strip);
+  g.setColour(juce::Colour(0xff222831));
+  g.fillRect(strip.withHeight(1));
   auto preview = preview_.getBounds().expanded(8, 6);
   g.setColour(kPreviewBg);
   g.fillRoundedRectangle(preview.toFloat(), 5.0f);
@@ -476,6 +495,9 @@ void BulkOpsPanel::paint(juce::Graphics& g) {
 
 void BulkOpsPanel::resized() {
   auto area = getLocalBounds();
+  auto strip = area.removeFromBottom(24);
+  connection_dot_.setBounds(strip.removeFromLeft(24));
+  connection_text_.setBounds(strip.withTrimmedRight(8));
   nav_.setBounds(area.removeFromLeft(kNavWidth));
   area = area.reduced(kMargin);
 
@@ -507,11 +529,18 @@ BulkOpsWindow::BulkOpsWindow()
                            juce::DocumentWindow::closeButton
                                | juce::DocumentWindow::minimiseButton) {
   setUsingNativeTitleBar(true);
-  setContentOwned(new BulkOpsPanel(), false);
+  panel_ = new BulkOpsPanel();
+  setContentOwned(panel_, false);
   setResizable(true, true);
   setResizeLimits(640, 420, 1400, 1000);
   centreWithSize(760, 520);
   setVisible(true);
+}
+
+void BulkOpsWindow::SetConnection(bool connected, const juce::String& text) {
+  if (panel_ != nullptr) {
+    panel_->SetConnection(connected, text);
+  }
 }
 
 void BulkOpsWindow::closeButtonPressed() {

@@ -18,6 +18,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "connection_dot.h"
 #include "device_ops.h"
 
 namespace spdsx {
@@ -62,6 +63,12 @@ public:
   void paint(juce::Graphics& g) override;
   void resized() override;
 
+  // Fed by the main window's connection poller (the one place that opens
+  // the port for status). The Run buttons stay disabled while no device
+  // is present — an operation that cannot start should not look like it
+  // could.
+  void SetConnection(bool connected, const juce::String& text);
+
 private:
   struct Mode {
     juce::String name;
@@ -94,8 +101,12 @@ private:
   juce::ProgressBar progress_bar_ {progress_};
   juce::Label status_;
 
+  ConnectionDot connection_dot_;
+  juce::Label connection_text_;
+
   double progress_ = 0.0;
   bool running_ = false;
+  bool device_connected_ = false;
   std::shared_ptr<std::atomic<bool>> abort_flag_;
 
   JUCE_DECLARE_WEAK_REFERENCEABLE(BulkOpsPanel)
@@ -106,6 +117,12 @@ class BulkOpsWindow : public juce::DocumentWindow {
 public:
   BulkOpsWindow();
   void closeButtonPressed() override;
+
+  // Forwarded to the panel; see BulkOpsPanel::SetConnection.
+  void SetConnection(bool connected, const juce::String& text);
+
+private:
+  BulkOpsPanel* panel_ = nullptr;  // owned by the window as its content
 };
 
 }  // namespace spdsx

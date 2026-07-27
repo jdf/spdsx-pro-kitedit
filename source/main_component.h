@@ -13,6 +13,7 @@
 
 #include "audio.h"
 #include "bulk_ops_window.h"
+#include "connection_dot.h"
 #include "device_document.h"
 #include "device_model.h"
 #include "device_samples.h"
@@ -25,35 +26,6 @@
 #include "sample_slot.h"
 
 namespace spdsx {
-
-// A small header status light: green when the device is connected, gray
-// when not. Set from the connection poller.
-class ConnectionDot
-    : public juce::Component
-    , public juce::SettableTooltipClient {
-public:
-  ConnectionDot() { setTooltip("No device connected"); }
-
-  void SetConnected(bool connected) {
-    if (connected != connected_) {
-      connected_ = connected;
-      setTooltip(connected ? "SPD-SX PRO connected" : "No device connected");
-      repaint();
-    }
-  }
-
-  void paint(juce::Graphics& g) override {
-    const auto dot = getLocalBounds().toFloat().withSizeKeepingCentre(10, 10);
-    g.setColour(connected_ ? juce::Colour(0xff35c65a)
-                           : juce::Colour(0xff6b6b6b));
-    g.fillEllipse(dot);
-    g.setColour(juce::Colours::black.withAlpha(0.25f));
-    g.drawEllipse(dot, 1.0f);
-  }
-
-private:
-  bool connected_ = false;
-};
 
 class MainComponent
     : public juce::Component
@@ -87,6 +59,9 @@ public:
   // Window menu: brings the main window forward, and opens (or fronts)
   // the bulk-operations window, creating it the first time.
   void ShowBulkOps();
+  // The connection line both windows show ("SPD-SX PRO connected,
+  // firmware 2.00 (0094)" / "no device connected").
+  juce::String ConnectionText() const;
 
   // A line of device/sync narration in the strip along the bottom of the
   // window — where it stays visible whatever panel or tab is showing.

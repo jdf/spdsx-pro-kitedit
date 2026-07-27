@@ -599,10 +599,23 @@ void ReportCliInstall(bool ok) {
 
 }  // namespace
 
+juce::String MainComponent::ConnectionText() const {
+  if (!device_connected_.load()) {
+    return "no device connected";
+  }
+  return "SPD-SX PRO connected"
+      + (device_firmware_.isNotEmpty() ? ", firmware " + device_firmware_
+                                       : juce::String());
+}
+
 void MainComponent::ShowBulkOps() {
   if (bulk_ops_ == nullptr) {
     bulk_ops_ = std::make_unique<BulkOpsWindow>();
   }
+  // The window learns the connection from this component's poller; hand
+  // it the current state so it does not open saying "no device" for the
+  // two seconds until the next poll.
+  bulk_ops_->SetConnection(device_connected_.load(), ConnectionText());
   bulk_ops_->setVisible(true);
   bulk_ops_->toFront(true);
 }
@@ -1044,6 +1057,16 @@ void MainComponent::PollConnection() {
         return;
       }
       safe->conn_check_running_ = false;
+      if (safe->bulk_ops_ != nullptr) {
+        // Every poll, not just changes: the window may have opened since.
+        safe->bulk_ops_->SetConnection(
+            connected,
+            connected ? "SPD-SX PRO connected"
+                    + (safe->device_firmware_.isNotEmpty()
+                           ? ", firmware " + safe->device_firmware_
+                           : juce::String())
+                      : juce::String("no device connected"));
+      }
       if (connected != safe->device_connected_.load()) {
         safe->device_connected_ = connected;
         safe->connection_dot_.SetConnected(connected);
@@ -1781,6 +1804,12 @@ void MainComponent::resized() {
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
+  // Command-key chords are menu shortcuts (⌘1/⌘2 pick windows, ⌘S syncs).
+  // Every trigger key here is unmodified, so let chords fall through to
+  // the command manager's key mappings instead of eating ⌘1 as a pad hit.
+  if (key.getModifiers().isCommandDown()) {
+    return false;
+  }
   // Delete/Backspace clears the layer under the cursor (same edit as the
   // slot's right-click Clear). The 30 Hz hover poll keeps hovered_ current.
   if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
