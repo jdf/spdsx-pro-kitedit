@@ -197,6 +197,29 @@ TEST(ParseKits, ReadsThePadParamsFromTheMappedOffsets) {
   EXPECT_EQ(kits[128].pads[1].layer_mode, 0);
 }
 
+// Pad-link groups: pads carry theirs in the pad block at +0x0d; the
+// external trigger inputs have their own 8 x 28-byte table at rec+0x380
+// with the group at +0x0c. Both mapped offline 2026-07-27 against the
+// cached image, whose every kit has pad 7 and trigger 7 in group 11
+// (link_all_kits.py wrote them there).
+TEST(ParseKits, ReadsPadAndTriggerLinkGroups) {
+  Bytes image = CleanImage();
+  image[PadAt(128, 6) + kPadLinkGroup] = 11;
+  const size_t trig = RecordAt(128) + kTrigTableOffset;
+  image[trig + 6 * kTrigBlockStride + kTrigPadLink] = 11;  // trigger 7
+  image[trig + 7 * kTrigBlockStride + kTrigPadLink] = 3;  // trigger 8
+
+  const std::vector<KitRecord> kits = ParseKits(image);
+
+  ASSERT_EQ(kits.size(), static_cast<size_t>(kRecords));
+  EXPECT_EQ(kits[128].pads[6].pad_link, 11);
+  EXPECT_EQ(kits[128].pads[5].pad_link, 0);
+  EXPECT_EQ(kits[128].trigger_links[6], 11);
+  EXPECT_EQ(kits[128].trigger_links[7], 3);
+  EXPECT_EQ(kits[128].trigger_links[0], 0);
+  EXPECT_EQ(kits[127].trigger_links[6], 0);
+}
+
 // The layer table is 18 blocks: top = pad*2, bottom = pad*2 + 1, each
 // starting with the wave as a u16 LE.
 TEST(ParseKits, ReadsEachLayersWaveAsALittleEndianPoolIndex) {

@@ -59,6 +59,7 @@ inline constexpr size_t kPadFixedVel = 0x05;
 inline constexpr size_t kPadHiHatVolume = 0x07;
 inline constexpr size_t kPadHiHatFadeIn = 0x08;
 inline constexpr size_t kPadHiHatDecay = 0x09;
+inline constexpr size_t kPadLinkGroup = 0x0d;
 inline constexpr size_t kPadTrigReserve = 0x13;
 
 // Per-layer table within a kit record; each layer block starts with the
@@ -68,6 +69,14 @@ inline constexpr size_t kPadTrigReserve = 0x13;
 // at +0x0d, decay at +0x0e. (Record offsets differ from the DT1 page's.)
 inline constexpr size_t kLayerTableBase = 0x49a;
 inline constexpr size_t kLayerBlockStride = 60;  // 0x3c
+
+// The trigger table follows the pad table directly: 8 triggers x 28-byte
+// blocks at rec+0x380, pad-link group at +0x0c (the trigger DT1 offset —
+// param index == record offset holds for triggers as for pads).
+inline constexpr int kTriggersPerKit = 8;
+inline constexpr size_t kTrigTableOffset = 0x380;
+inline constexpr size_t kTrigBlockStride = 28;
+inline constexpr size_t kTrigPadLink = 0x0c;
 inline constexpr size_t kLayerVolumeLo = 0x02;  // s16 LE, 0.1 dB units
 inline constexpr size_t kLayerFadeIn = 0x0d;
 inline constexpr size_t kLayerDecay = 0x0e;
@@ -116,6 +125,9 @@ struct PadDeviceParams {
 struct KitRecord {
   std::string name;
   std::array<PadDeviceParams, kPadsPerKit> pads;
+  // Each trigger's pad-link group, 0 = unlinked. The only trigger field
+  // mapped so far.
+  std::array<uint8_t, kTriggersPerKit> trigger_links {};
 };
 
 // Parses the kit records out of a CLEAN (header-stripped) bank 0x10

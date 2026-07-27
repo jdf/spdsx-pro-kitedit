@@ -83,7 +83,8 @@ Lists all 200 kit names — live from the device, or offline from a saved
 ### `kit <N> [--from FILE]`
 Shows kit N's per-pad parameters as a table: layer mode, fade point/end,
 dynamics + curve, fixed velocity, trigger reserve, the hi-hat closed-pedal
-trio, and each pad's top/bottom wave assignment. Live or `--from` a dump.
+trio, pad-link group, and each pad's top/bottom wave assignment, plus a
+line of the external trigger inputs' link groups. Live or `--from` a dump.
 
 ### `samples [--from FILE]`
 Lists the device wave pool from the bank 0x20 sample directory: index,

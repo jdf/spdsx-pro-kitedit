@@ -1062,6 +1062,11 @@ int RunKit(const KitShowArgs& args) {
         p.wave_top,
         p.wave_bottom);
   }
+  std::printf("  trigger links:");
+  for (int trig = 0; trig < spdsx::device::kTriggersPerKit; ++trig) {
+    std::printf(" %d:%d", trig + 1, k.trigger_links[static_cast<size_t>(trig)]);
+  }
+  std::printf("\n");
   return 0;
 }
 

@@ -61,7 +61,7 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       pp.hi_hat_fade_in = clean_image[p + kPadHiHatFadeIn];
       pp.hi_hat_decay = clean_image[p + kPadHiHatDecay];
       pp.trigger_reserve = clean_image[p + kPadTrigReserve];
-      pp.pad_link = clean_image[p + 0x0d];
+      pp.pad_link = clean_image[p + kPadLinkGroup];
       // The layer table: top = layer pad*2, bottom = pad*2 + 1.
       const size_t top = rec + kLayerTableBase
           + static_cast<size_t>(pad) * 2 * kLayerBlockStride;
@@ -84,6 +84,12 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
         pp.mix_top = layer_mix(top);
         pp.mix_bottom = layer_mix(top + kLayerBlockStride);
       }
+    }
+    for (int trig = 0; trig < kTriggersPerKit; ++trig) {
+      k.trigger_links[static_cast<size_t>(trig)] =
+          clean_image[rec + kTrigTableOffset
+                      + static_cast<size_t>(trig) * kTrigBlockStride
+                      + kTrigPadLink];
     }
     kits.push_back(std::move(k));
   }

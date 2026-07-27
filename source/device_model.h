@@ -9,6 +9,7 @@
 #include <array>
 #include <vector>
 
+#include "device/kit_image.h"  // kTriggersPerKit
 #include "device/sample_image.h"
 #include "kit_model.h"
 
@@ -24,6 +25,10 @@ struct KitData {
 
   juce::String name {"USER KIT"};  // the device's own default kit name
   std::array<Pad, KitModel::kPadCount> pads;
+  // Each trigger input's pad-link group, 0 = unlinked. Not part of the
+  // live KitModel (no Edit Kits surface); stash/load leave it alone, so
+  // it rides in KitData between the document and the device.
+  std::array<int, device::kTriggersPerKit> trigger_links {};
 
   // Whole-kit value equality — what the three-way device sync diffs.
   bool operator==(const KitData&) const = default;
