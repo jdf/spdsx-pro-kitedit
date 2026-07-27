@@ -8,16 +8,16 @@
 namespace spdsx {
 namespace {
 
-constexpr int kNavWidth = 240;
+constexpr int kNavWidth = 200;
 constexpr int kMargin = 16;
-constexpr int kRowHeight = 56;  // nav rows
+constexpr int kRowHeight = 44;  // nav rows
 
-// Roughly twice JUCE's defaults throughout: body text and controls.
-constexpr float kBodyFont = 24.0f;
-constexpr float kMetaFont = 22.0f;
-constexpr int kCaptionRow = 32;
-constexpr int kControlRow = 44;
-constexpr int kHintRow = 32;
+// Larger than JUCE's defaults, sized to sit alongside the Edit Kits tab.
+constexpr float kBodyFont = 19.0f;
+constexpr float kMetaFont = 17.0f;
+constexpr int kCaptionRow = 26;
+constexpr int kControlRow = 36;
+constexpr int kHintRow = 26;
 
 const juce::Colour kPanelBg(0xff12161b);
 const juce::Colour kNavBg(0xff0d1117);
@@ -206,18 +206,18 @@ public:
     pads_caption_.setBounds(row(kCaptionRow));
     auto pad_row = row(kControlRow);
     for (auto& pad : pads_) {
-      pad->setBounds(pad_row.removeFromLeft(74));
+      pad->setBounds(pad_row.removeFromLeft(60));
     }
     pads_note_.setBounds(row(kHintRow));
     area.removeFromTop(12);
 
     mode_caption_.setBounds(row(kCaptionRow));
-    mode_.setBounds(row(kControlRow).removeFromLeft(280));
+    mode_.setBounds(row(kControlRow).removeFromLeft(230));
     area.removeFromTop(12);
 
     auto if_row = row(kControlRow);
-    if_mode_enabled_.setBounds(if_row.removeFromLeft(320));
-    if_mode_.setBounds(if_row.removeFromLeft(280));
+    if_mode_enabled_.setBounds(if_row.removeFromLeft(260));
+    if_mode_.setBounds(if_row.removeFromLeft(230));
   }
 
 private:
@@ -399,15 +399,15 @@ void BulkEditPanel::resized() {
   nav_.setBounds(area.removeFromLeft(kNavWidth));
   area = area.reduced(kMargin);
 
-  auto buttons = area.removeFromBottom(46);
-  apply_button_.setBounds(buttons.removeFromRight(150));
+  auto buttons = area.removeFromBottom(38);
+  apply_button_.setBounds(buttons.removeFromRight(120));
   buttons.removeFromRight(10);
-  preview_button_.setBounds(buttons.removeFromRight(170));
+  preview_button_.setBounds(buttons.removeFromRight(140));
   status_.setBounds(buttons.withTrimmedRight(8));
   area.removeFromBottom(12);
 
   // The command line sits just above the buttons, framed by paint().
-  preview_.setBounds(area.removeFromBottom(60).reduced(10, 8));
+  preview_.setBounds(area.removeFromBottom(48).reduced(10, 8));
   area.removeFromBottom(12);
 
   blurb_.setBounds(area.removeFromTop(kCaptionRow + 4));
