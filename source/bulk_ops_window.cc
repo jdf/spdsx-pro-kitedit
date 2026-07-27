@@ -10,9 +10,16 @@
 namespace spdsx {
 namespace {
 
-constexpr int kNavWidth = 190;
+constexpr int kNavWidth = 240;
 constexpr int kMargin = 16;
-constexpr int kRowHeight = 34;
+constexpr int kRowHeight = 56;  // nav rows
+
+// Roughly twice JUCE's defaults throughout: body text and controls.
+constexpr float kBodyFont = 24.0f;
+constexpr float kMetaFont = 22.0f;
+constexpr int kCaptionRow = 32;
+constexpr int kControlRow = 44;
+constexpr int kHintRow = 32;
 
 const juce::Colour kPanelBg(0xff12161b);
 const juce::Colour kNavBg(0xff0d1117);
@@ -24,9 +31,57 @@ const juce::Colour kPreviewBg(0xff05070a);
 juce::Label& Caption(juce::Label& label, const juce::String& text) {
   label.setText(text, juce::dontSendNotification);
   label.setColour(juce::Label::textColourId, kMeta);
-  label.setFont(juce::FontOptions(13.0f));
+  label.setFont(juce::FontOptions(kBodyFont));
   return label;
 }
+
+// The stock theme with every control's text scaled to match kBodyFont;
+// LookAndFeel_V4 otherwise pins toggles and buttons near 15pt.
+class BulkLookAndFeel : public juce::LookAndFeel_V4 {
+public:
+  juce::Font getTextButtonFont(juce::TextButton&, int) override {
+    return juce::Font(juce::FontOptions(kBodyFont));
+  }
+
+  juce::Font getComboBoxFont(juce::ComboBox&) override {
+    return juce::Font(juce::FontOptions(kBodyFont));
+  }
+
+  juce::Font getPopupMenuFont() override {
+    return juce::Font(juce::FontOptions(kBodyFont));
+  }
+
+  // LookAndFeel_V4's drawing, minus its 15pt font ceiling.
+  void drawToggleButton(juce::Graphics& g,
+                        juce::ToggleButton& button,
+                        bool highlighted,
+                        bool down) override {
+    const float font_size =
+        juce::jmin(kBodyFont, static_cast<float>(button.getHeight()) * 0.75f);
+    const float tick = font_size * 1.1f;
+    drawTickBox(g,
+                button,
+                4.0f,
+                (static_cast<float>(button.getHeight()) - tick) * 0.5f,
+                tick,
+                tick,
+                button.getToggleState(),
+                button.isEnabled(),
+                highlighted,
+                down);
+    g.setColour(button.findColour(juce::ToggleButton::textColourId));
+    g.setFont(font_size);
+    if (!button.isEnabled()) {
+      g.setOpacity(0.5f);
+    }
+    g.drawFittedText(button.getButtonText(),
+                     button.getLocalBounds()
+                         .withTrimmedLeft(juce::roundToInt(tick) + 10)
+                         .withTrimmedRight(2),
+                     juce::Justification::centredLeft,
+                     10);
+  }
+};
 
 // A --kits entry: caption, field, and the format spelled out. The hint
 // stays on screen rather than living in a placeholder that vanishes the
@@ -36,6 +91,7 @@ class KitSpecField : public juce::Component {
 public:
   KitSpecField() {
     addAndMakeVisible(Caption(caption_, "Kits"));
+    editor_.setFont(juce::FontOptions(kBodyFont));
     editor_.onTextChange = [this] {
       if (on_changed) {
         on_changed();
@@ -44,12 +100,12 @@ public:
     addAndMakeVisible(editor_);
     addAndMakeVisible(Caption(
         hint_, "one kit (108), a range (108-200), or a list (1,5,10-20)"));
-    hint_.setFont(juce::FontOptions(12.0f));
+    hint_.setFont(juce::FontOptions(kMetaFont));
   }
 
   std::function<void()> on_changed;
 
-  static constexpr int kHeight = 18 + 26 + 18;
+  static constexpr int kHeight = kCaptionRow + kControlRow + kHintRow;
 
   bool Parse(std::vector<spdutil::KitRange>* out, std::string* error) const {
     return spdutil::ParseKitSpec(
@@ -70,9 +126,9 @@ public:
 
   void resized() override {
     auto area = getLocalBounds();
-    caption_.setBounds(area.removeFromTop(18));
-    editor_.setBounds(area.removeFromTop(26));
-    hint_.setBounds(area.removeFromTop(18));
+    caption_.setBounds(area.removeFromTop(kCaptionRow));
+    editor_.setBounds(area.removeFromTop(kControlRow));
+    hint_.setBounds(area.removeFromTop(kHintRow));
   }
 
 private:
@@ -169,26 +225,26 @@ public:
     auto area = getLocalBounds();
     auto row = [&area](int h) { return area.removeFromTop(h); };
     kits_.setBounds(row(KitSpecField::kHeight));
-    area.removeFromTop(10);
+    area.removeFromTop(12);
 
-    pads_caption_.setBounds(row(18));
-    auto pad_row = row(26);
+    pads_caption_.setBounds(row(kCaptionRow));
+    auto pad_row = row(kControlRow);
     for (auto& pad : pads_) {
-      pad->setBounds(pad_row.removeFromLeft(46));
+      pad->setBounds(pad_row.removeFromLeft(74));
     }
-    pads_note_.setBounds(row(16));
-    area.removeFromTop(10);
+    pads_note_.setBounds(row(kHintRow));
+    area.removeFromTop(12);
 
-    mode_caption_.setBounds(row(18));
-    mode_.setBounds(row(26).removeFromLeft(180));
-    area.removeFromTop(10);
+    mode_caption_.setBounds(row(kCaptionRow));
+    mode_.setBounds(row(kControlRow).removeFromLeft(280));
+    area.removeFromTop(12);
 
-    auto if_row = row(26);
-    if_mode_enabled_.setBounds(if_row.removeFromLeft(190));
-    if_mode_.setBounds(if_row.removeFromLeft(180));
-    area.removeFromTop(10);
+    auto if_row = row(kControlRow);
+    if_mode_enabled_.setBounds(if_row.removeFromLeft(320));
+    if_mode_.setBounds(if_row.removeFromLeft(280));
+    area.removeFromTop(12);
 
-    commit_.setBounds(row(26));
+    commit_.setBounds(row(kControlRow));
   }
 
 private:
@@ -279,7 +335,7 @@ public:
   }
 
   void resized() override {
-    text_.setBounds(getLocalBounds().removeFromTop(20));
+    text_.setBounds(getLocalBounds().removeFromTop(kCaptionRow));
   }
 
 private:
@@ -289,6 +345,9 @@ private:
 }  // namespace
 
 BulkOpsPanel::BulkOpsPanel() {
+  look_and_feel_ = std::make_unique<BulkLookAndFeel>();
+  setLookAndFeel(look_and_feel_.get());
+
   modes_.push_back({"Device info",
                     "Who is on the other end of the cable.",
                     std::make_unique<InfoPage>()});
@@ -302,12 +361,13 @@ BulkOpsPanel::BulkOpsPanel() {
   addAndMakeVisible(nav_);
 
   blurb_.setColour(juce::Label::textColourId, kMeta);
-  blurb_.setFont(juce::FontOptions(13.0f));
+  blurb_.setFont(juce::FontOptions(kBodyFont));
   addAndMakeVisible(blurb_);
 
   preview_.setColour(juce::Label::textColourId, kText);
-  preview_.setFont(juce::FontOptions(
-      juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+  preview_.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(),
+                                     kMetaFont,
+                                     juce::Font::plain));
   preview_.setJustificationType(juce::Justification::topLeft);
   preview_.setMinimumHorizontalScale(1.0f);
   addAndMakeVisible(preview_);
@@ -326,11 +386,11 @@ BulkOpsPanel::BulkOpsPanel() {
   progress_bar_.setVisible(false);
   addChildComponent(progress_bar_);
   status_.setColour(juce::Label::textColourId, kMeta);
-  status_.setFont(juce::FontOptions(12.0f));
+  status_.setFont(juce::FontOptions(kMetaFont));
   addAndMakeVisible(status_);
 
   connection_text_.setColour(juce::Label::textColourId, kMeta);
-  connection_text_.setFont(juce::FontOptions(12.0f));
+  connection_text_.setFont(juce::FontOptions(kMetaFont));
   connection_text_.setText("no device connected", juce::dontSendNotification);
   addAndMakeVisible(connection_dot_);
   addAndMakeVisible(connection_text_);
@@ -344,6 +404,7 @@ BulkOpsPanel::BulkOpsPanel() {
 }
 
 BulkOpsPanel::~BulkOpsPanel() {
+  setLookAndFeel(nullptr);
   if (abort_flag_ != nullptr) {
     *abort_flag_ = true;  // the worker checks this and stops
   }
@@ -363,7 +424,7 @@ void BulkOpsPanel::paintListBoxItem(
     g.fillRect(0, 0, width, height);
   }
   g.setColour(selected ? kText : kMeta);
-  g.setFont(juce::FontOptions(14.0f));
+  g.setFont(juce::FontOptions(kBodyFont));
   g.drawText(modes_[static_cast<size_t>(row)].name,
              juce::Rectangle<int>(12, 0, width - 16, height),
              juce::Justification::centredLeft);
@@ -483,7 +544,7 @@ void BulkOpsPanel::SetConnection(bool connected, const juce::String& text) {
 
 void BulkOpsPanel::paint(juce::Graphics& g) {
   g.fillAll(kPanelBg);
-  const auto strip = getLocalBounds().removeFromBottom(24);
+  const auto strip = getLocalBounds().removeFromBottom(38);
   g.setColour(kNavBg);
   g.fillRect(strip);
   g.setColour(juce::Colour(0xff222831));
@@ -495,29 +556,29 @@ void BulkOpsPanel::paint(juce::Graphics& g) {
 
 void BulkOpsPanel::resized() {
   auto area = getLocalBounds();
-  auto strip = area.removeFromBottom(24);
-  connection_dot_.setBounds(strip.removeFromLeft(24));
+  auto strip = area.removeFromBottom(38);
+  connection_dot_.setBounds(strip.removeFromLeft(34));
   connection_text_.setBounds(strip.withTrimmedRight(8));
   nav_.setBounds(area.removeFromLeft(kNavWidth));
   area = area.reduced(kMargin);
 
-  auto buttons = area.removeFromBottom(30);
-  run_.setBounds(buttons.removeFromRight(110));
-  buttons.removeFromRight(8);
-  dry_run_.setBounds(buttons.removeFromRight(110));
-  buttons.removeFromRight(8);
-  abort_.setBounds(buttons.removeFromRight(90));
+  auto buttons = area.removeFromBottom(46);
+  run_.setBounds(buttons.removeFromRight(150));
+  buttons.removeFromRight(10);
+  dry_run_.setBounds(buttons.removeFromRight(170));
+  buttons.removeFromRight(10);
+  abort_.setBounds(buttons.removeFromRight(130));
   status_.setBounds(buttons.withTrimmedRight(8));
-  area.removeFromBottom(8);
-  progress_bar_.setBounds(area.removeFromBottom(18));
   area.removeFromBottom(10);
+  progress_bar_.setBounds(area.removeFromBottom(24));
+  area.removeFromBottom(12);
 
   // The command line sits just above the buttons, framed by paint().
-  preview_.setBounds(area.removeFromBottom(38).reduced(8, 6));
-  area.removeFromBottom(10);
+  preview_.setBounds(area.removeFromBottom(60).reduced(10, 8));
+  area.removeFromBottom(12);
 
-  blurb_.setBounds(area.removeFromTop(20));
-  area.removeFromTop(8);
+  blurb_.setBounds(area.removeFromTop(kCaptionRow + 4));
+  area.removeFromTop(10);
   for (auto& mode : modes_) {
     mode.page->setBounds(area);
   }
@@ -532,8 +593,8 @@ BulkOpsWindow::BulkOpsWindow()
   panel_ = new BulkOpsPanel();
   setContentOwned(panel_, false);
   setResizable(true, true);
-  setResizeLimits(640, 420, 1400, 1000);
-  centreWithSize(760, 520);
+  setResizeLimits(900, 740, 1600, 1200);
+  centreWithSize(980, 800);
   setVisible(true);
 }
 

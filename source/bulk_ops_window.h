@@ -92,6 +92,10 @@ private:
   std::vector<Mode> modes_;
   int current_ = -1;
 
+  // The window's own LookAndFeel: the same theme, at roughly twice the
+  // default text size (this is a utility window read at arm's length).
+  std::unique_ptr<juce::LookAndFeel> look_and_feel_;
+
   juce::ListBox nav_;
   juce::Label blurb_;
   juce::Label preview_;  // the equivalent spdutil command line
