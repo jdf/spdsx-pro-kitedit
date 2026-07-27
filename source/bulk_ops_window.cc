@@ -392,6 +392,7 @@ BulkOpsPanel::BulkOpsPanel() {
   connection_text_.setColour(juce::Label::textColourId, kMeta);
   connection_text_.setFont(juce::FontOptions(kMetaFont));
   connection_text_.setText("no device connected", juce::dontSendNotification);
+  connection_dot_.SetDiameter(12.0f);
   addAndMakeVisible(connection_dot_);
   addAndMakeVisible(connection_text_);
 
@@ -557,7 +558,10 @@ void BulkOpsPanel::paint(juce::Graphics& g) {
 void BulkOpsPanel::resized() {
   auto area = getLocalBounds();
   auto strip = area.removeFromBottom(38);
-  connection_dot_.setBounds(strip.removeFromLeft(34));
+  // Nudged to the text's OPTICAL center: lowercase pixel mass sits ~2px
+  // below the geometric middle of the label (measured off a render), and
+  // a dot centered geometrically reads as floating high.
+  connection_dot_.setBounds(strip.removeFromLeft(34).translated(0, 2));
   connection_text_.setBounds(strip.withTrimmedRight(8));
   nav_.setBounds(area.removeFromLeft(kNavWidth));
   area = area.reduced(kMargin);

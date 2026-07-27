@@ -22,8 +22,16 @@ public:
     }
   }
 
+  // The header uses the default 10; the bulk window's taller strip uses
+  // a slightly larger dot so it does not read as a speck.
+  void SetDiameter(float diameter) {
+    diameter_ = diameter;
+    repaint();
+  }
+
   void paint(juce::Graphics& g) override {
-    const auto dot = getLocalBounds().toFloat().withSizeKeepingCentre(10, 10);
+    const auto dot =
+        getLocalBounds().toFloat().withSizeKeepingCentre(diameter_, diameter_);
     g.setColour(connected_ ? juce::Colour(0xff35c65a)
                            : juce::Colour(0xff6b6b6b));
     g.fillEllipse(dot);
@@ -33,6 +41,7 @@ public:
 
 private:
   bool connected_ = false;
+  float diameter_ = 10.0f;
 };
 
 }  // namespace spdsx
