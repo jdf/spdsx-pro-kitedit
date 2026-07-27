@@ -64,7 +64,7 @@ public:
       return {};
     }
     return editor_.getText().trim().isEmpty()
-        ? juce::String::fromUTF8("Say which kits — a write never guesses.")
+        ? juce::String("Enter the kits to change.")
         : juce::String(error);
   }
 
@@ -244,103 +244,57 @@ private:
   juce::ToggleButton commit_;
 };
 
-// ---- setname ----
+// ---- info ----
 
-class SetNamePage : public BulkOpPage {
+class InfoPage : public BulkOpPage {
 public:
-  SetNamePage() {
-    addAndMakeVisible(Caption(kit_caption_, "Kit"));
-    kit_.setRange(spdutil::kFirstKit, spdutil::kLastKit, 1);
-    kit_.setSliderStyle(juce::Slider::IncDecButtons);
-    kit_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 60, 24);
-    kit_.setValue(1, juce::dontSendNotification);
-    kit_.onValueChange = [this] { Changed(); };
-    addAndMakeVisible(kit_);
-
-    addAndMakeVisible(Caption(name_caption_, "Name"));
-    // The device's field is a fixed 16 characters; what you type is what
-    // the kit gets.
-    name_.setInputRestrictions(device::kKitNameLength);
-    name_.setTextToShowWhenEmpty("up to 16 characters", kMeta);
-    name_.onTextChange = [this] { Changed(); };
-    addAndMakeVisible(name_);
-
-    commit_.setButtonText("Commit to flash (otherwise a power cycle reverts)");
-    commit_.setToggleState(true, juce::dontSendNotification);
-    commit_.onClick = [this] { Changed(); };
-    addAndMakeVisible(commit_);
+  InfoPage() {
+    addAndMakeVisible(Caption(
+        text_, "Finds the device, pings it, and asks its firmware version."));
   }
 
-  juce::String Problem() const override {
-    if (name_.getText().trim().isEmpty()) {
-      return "A kit name cannot be empty.";
-    }
-    return {};
-  }
+  juce::String Problem() const override { return {}; }
 
-  juce::String CommandLine(bool dry_run) const override {
-    return juce::String(ops::CommandLine(Request(dry_run)));
+  bool CanDryRun() const override { return false; }  // it only reads
+
+  juce::String CommandLine(bool) const override {
+    return juce::String(ops::CommandLine(ops::InfoRequest {}));
   }
 
   juce::String Run(device::SpdsxDevice& dev,
-                   bool dry_run,
+                   bool,
                    const ops::ProgressFn& progress,
-                   const ops::AbortFn& should_abort) override {
-    const ops::SetNameResult result =
-        ops::SetName(dev, Request(dry_run), progress, should_abort);
-    if (dry_run) {
-      return "would name kit " + juce::String(Request(true).kit);
+                   const ops::AbortFn&) override {
+    const ops::InfoResult result = ops::Info(dev, progress);
+    if (result.version.empty()) {
+      return "connected, but the unit did not answer the version query";
     }
-    return "kit named"
-        + juce::String(result.committed ? ", committed"
-                                        : (commit_.getToggleState()
-                                               ? ", COMMIT DID NOT CONFIRM"
-                                               : ", working state"));
+    juce::String out =
+        juce::String::fromUTF8("connected \xe2\x80\x94 firmware ")
+        + juce::String(result.version);
+    if (!result.build.empty()) {
+      out << " (build " << juce::String(result.build) << ")";
+    }
+    return out;
   }
 
   void resized() override {
-    auto area = getLocalBounds();
-    auto row = [&area](int h) { return area.removeFromTop(h); };
-    kit_caption_.setBounds(row(18));
-    kit_.setBounds(row(26).removeFromLeft(160));
-    area.removeFromTop(10);
-    name_caption_.setBounds(row(18));
-    name_.setBounds(row(26).removeFromLeft(260));
-    area.removeFromTop(10);
-    commit_.setBounds(row(26));
+    text_.setBounds(getLocalBounds().removeFromTop(20));
   }
 
 private:
-  void Changed() {
-    if (on_changed) {
-      on_changed();
-    }
-  }
-
-  ops::SetNameRequest Request(bool dry_run) const {
-    ops::SetNameRequest request;
-    request.kit = static_cast<int>(kit_.getValue());
-    request.name = name_.getText().trim().toStdString();
-    request.commit = commit_.getToggleState();
-    request.dry_run = dry_run;
-    return request;
-  }
-
-  juce::Label kit_caption_;
-  juce::Slider kit_;
-  juce::Label name_caption_;
-  juce::TextEditor name_;
-  juce::ToggleButton commit_;
+  juce::Label text_;
 };
 
 }  // namespace
 
 BulkOpsPanel::BulkOpsPanel() {
+  modes_.push_back({"Device info",
+                    "Who is on the other end of the cable.",
+                    std::make_unique<InfoPage>()});
   modes_.push_back({"Layer mode",
                     "Set the layer mode of pads across a range of kits.",
                     std::make_unique<SetModePage>()});
-  modes_.push_back(
-      {"Kit name", "Rename one kit.", std::make_unique<SetNamePage>()});
 
   nav_.setModel(this);
   nav_.setRowHeight(kRowHeight);
@@ -437,6 +391,7 @@ void BulkOpsPanel::RefreshPreview() {
   preview_.setText(ready ? page.CommandLine(false) : problem,
                    juce::dontSendNotification);
   preview_.setColour(juce::Label::textColourId, ready ? kText : kMeta);
+  dry_run_.setVisible(page.CanDryRun());
   dry_run_.setEnabled(ready && !running_);
   run_.setEnabled(ready && !running_);
 }

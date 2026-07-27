@@ -12,8 +12,8 @@ namespace {
 device::KitRecord KitWithModes(std::vector<LayerMode> modes) {
   device::KitRecord record;
   for (size_t pad = 0; pad < record.pads.size(); ++pad) {
-    record.pads[pad].layer_mode = static_cast<uint8_t>(
-        pad < modes.size() ? modes[pad] : LayerMode::kMix);
+    record.pads[pad].layer_mode =
+        static_cast<uint8_t>(pad < modes.size() ? modes[pad] : LayerMode::kMix);
   }
   return record;
 }
@@ -83,7 +83,8 @@ TEST(PlanSetMode, ReportsWhatEachPadIsChangingFrom) {
 }
 
 TEST(PlanSetMode, IgnoresKitNumbersPastTheEndOfTheImage) {
-  const auto plan = PlanSetMode(Kits(2), Request({{1, 200}}, LayerMode::kHiHat));
+  const auto plan =
+      PlanSetMode(Kits(2), Request({{1, 200}}, LayerMode::kHiHat));
   EXPECT_EQ(plan.size(), 18u);  // only the two kits that exist
 }
 
@@ -99,6 +100,10 @@ TEST(KitSpecText, RendersSingleKitsAndRanges) {
 
 // The window shows this line and then runs the very request it came from,
 // so the two cannot disagree about what is about to happen.
+TEST(CommandLine, InfoIsJustTheCommand) {
+  EXPECT_EQ(CommandLine(InfoRequest {}), "spdutil info");
+}
+
 TEST(CommandLine, SetModeReadsBackAsTheSpdutilInvocation) {
   SetModeRequest request = Request({{108, 200}}, LayerMode::kHiHat);
   request.pads = {9};

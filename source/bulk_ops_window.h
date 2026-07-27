@@ -37,6 +37,10 @@ public:
   // in a sentence to show the user.
   virtual juce::String Problem() const = 0;
 
+  // False for read-only modes, where a dry run would rehearse nothing;
+  // the panel hides the Dry Run button for them.
+  virtual bool CanDryRun() const { return true; }
+
   // The spdutil command line these controls describe. dry_run picks
   // which of the two buttons is being previewed.
   virtual juce::String CommandLine(bool dry_run) const = 0;

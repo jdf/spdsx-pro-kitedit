@@ -38,6 +38,18 @@ inline bool NeverAbort() {
   return false;
 }
 
+// ---- info ----
+
+struct InfoRequest {};  // no options; exists so CommandLine has a request
+
+struct InfoResult {
+  std::string version;  // e.g. "2.00"; empty if the unit did not answer
+  std::string build;  // e.g. "0094"
+};
+
+// Asks the unit its firmware version and build. Read-only.
+InfoResult Info(device::SpdsxDevice& dev, ProgressFn progress = IgnoreProgress);
+
 // ---- setmode ----
 
 struct SetModeRequest {
@@ -100,6 +112,7 @@ SetNameResult SetName(device::SpdsxDevice& dev,
 //
 // Rendered from the same request the operation runs, so what the window
 // shows is what it does.
+std::string CommandLine(const InfoRequest& request);
 std::string CommandLine(const SetModeRequest& request);
 std::string CommandLine(const SetNameRequest& request);
 

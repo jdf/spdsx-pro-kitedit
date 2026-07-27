@@ -50,6 +50,15 @@ std::string KitSpecText(const std::vector<spdutil::KitRange>& kits) {
   return out;
 }
 
+InfoResult Info(device::SpdsxDevice& dev, ProgressFn progress) {
+  progress({.done = 0, .total = 1, .note = "asking the unit"});
+  InfoResult result;
+  result.version = dev.FirmwareField(0);
+  result.build = dev.FirmwareField(3);
+  progress({.done = 1, .total = 1, .note = "done"});
+  return result;
+}
+
 std::vector<ModeChange> PlanSetMode(const std::vector<device::KitRecord>& kits,
                                     const SetModeRequest& request) {
   std::array<bool, 9> wanted {};
@@ -168,6 +177,10 @@ SetNameResult SetName(device::SpdsxDevice& dev,
   }
   progress({.done = 1, .total = 1, .note = "done"});
   return result;
+}
+
+std::string CommandLine(const InfoRequest&) {
+  return "spdutil info";
 }
 
 std::string CommandLine(const SetModeRequest& request) {
