@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <unistd.h>
+
 #include "device_sync.h"  // KitDataFromDevice
 
 namespace spdsx {
@@ -66,6 +68,16 @@ Pad PadFromVar(const juce::var& v) {
   return pad;
 }
 
+// Where cached wave audio is extracted for the engine to load. Scoped to
+// this process: the suite's tests and a running app otherwise share one
+// directory and race over it (a teardown's recursive delete against an
+// extract).
+juce::File WaveCacheDir() {
+  return juce::File::getSpecialLocation(juce::File::tempDirectory)
+      .getChildFile("spdsx-wavecache-"
+                    + juce::String(static_cast<int>(getpid())));
+}
+
 }  // namespace
 
 DeviceDocument::DeviceDocument(DeviceModel& device,
@@ -107,10 +119,8 @@ juce::File DeviceDocument::CachedWaveFile(int sample_index) {
   }
   // Extract the blob to a temp cache file the audio engine can load. The
   // DB is the source of truth; the temp file is derived and disposable.
-  const juce::File file =
-      juce::File::getSpecialLocation(juce::File::tempDirectory)
-          .getChildFile("spdsx-wavecache")
-          .getChildFile(juce::String(sample_index).paddedLeft('0', 5) + ".wav");
+  const juce::File file = WaveCacheDir().getChildFile(
+      juce::String(sample_index).paddedLeft('0', 5) + ".wav");
   if (!file.existsAsFile()) {
     const juce::MemoryBlock wav = db_->GetAudio(sample_index);
     file.getParentDirectory().createDirectory();
@@ -126,8 +136,7 @@ void DeviceDocument::StoreWaveAudio(int sample_index,
   }
   db_->PutAudio(sample_index, wav.getData(), wav.getSize());
   // Invalidate any stale extraction so the next load re-extracts.
-  juce::File::getSpecialLocation(juce::File::tempDirectory)
-      .getChildFile("spdsx-wavecache")
+  WaveCacheDir()
       .getChildFile(juce::String(sample_index).paddedLeft('0', 5) + ".wav")
       .deleteFile();
 }

@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 #include <sqlite3.h>
+#include <unistd.h>
 
 #include "temp_dir.h"
 
@@ -71,7 +72,8 @@ protected:
 
   static juce::File WaveCache() {
     return juce::File::getSpecialLocation(juce::File::tempDirectory)
-        .getChildFile("spdsx-wavecache");
+        .getChildFile("spdsx-wavecache-"
+                      + juce::String(static_cast<int>(getpid())));
   }
 
   juce::File path() const { return temp.file("dev.spdsx"); }
