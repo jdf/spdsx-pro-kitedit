@@ -98,11 +98,10 @@ public:
     addAndMakeVisible(kits_);
 
     addAndMakeVisible(Caption(pads_caption_, "Pads"));
-    // Every pad starts ticked: what the window shows is what it will
-    // touch, rather than an empty row meaning all nine.
+    // No pad starts ticked: choosing the pads is part of saying what the
+    // operation is, and the Run buttons stay disabled until you do.
     for (int pad = 1; pad <= 9; ++pad) {
       auto button = std::make_unique<juce::ToggleButton>(juce::String(pad));
-      button->setToggleState(true, juce::dontSendNotification);
       button->onClick = [this] { Changed(); };
       addAndMakeVisible(*button);
       pads_.push_back(std::move(button));
@@ -135,7 +134,7 @@ public:
       return kits;
     }
     if (TickedPads().empty()) {
-      return "Tick at least one pad.";
+      return "You must select at least one pad.";
     }
     return {};
   }
@@ -199,7 +198,7 @@ private:
     pads_note_.setText(
         pads.size() == pads_.size()
             ? "all nine pads"
-            : (pads.empty() ? "no pads ticked"
+            : (pads.empty() ? "none selected"
                             : juce::String(pads.size()) + " of nine"),
         juce::dontSendNotification);
     if (on_changed) {
