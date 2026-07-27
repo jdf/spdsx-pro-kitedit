@@ -316,8 +316,11 @@ KitData DeviceDocument::KitContent(int index) const {
   if (index != device_.current_kit()) {
     return device_.kit(index);
   }
-  // The active kit's stored copy can be stale; the model is the truth.
-  KitData kit;
+  // The active kit's stored copy can be stale; the model is the truth
+  // for what it holds. Fields the model does not carry (trigger links)
+  // keep the stored values — starting from a default KitData instead
+  // would zero them and read the kit dirty forever.
+  KitData kit = device_.kit(index);
   kit.name = model_.name();
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     auto& stored = kit.pads[static_cast<size_t>(pad)];

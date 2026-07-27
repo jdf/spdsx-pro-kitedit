@@ -671,6 +671,22 @@ TEST_F(DeviceDocumentTest, ApplySyncedKitAdvancesBothCopiesAndTheModel) {
   EXPECT_FALSE(doc->KitDirtyVsBase(0));
 }
 
+// Trigger links live only in KitData — the model doesn't carry them —
+// so the active kit's content must keep the stored ones. (Regression:
+// KitContent once rebuilt the kit from a default, zeroing the links, so
+// a kit whose synced base had any trigger linked read dirty forever.)
+TEST_F(DeviceDocumentTest, ActiveKitWithTriggerLinksStaysCleanAfterSync) {
+  ASSERT_TRUE(doc->CreateNew(path()).wasOk());
+  KitData pulled;
+  pulled.trigger_links[6] = 11;
+
+  doc->ApplySyncedKit(0, pulled, pulled);  // kit 0 is the active kit
+
+  EXPECT_EQ(doc->KitContent(0).trigger_links[6], 11);
+  EXPECT_FALSE(doc->KitDirtyVsBase(0));
+  EXPECT_TRUE(doc->DirtyKits().empty());
+}
+
 // A skipped conflict advances current but not base, so it stays dirty.
 TEST_F(DeviceDocumentTest, ApplySyncedKitCanLeaveBaseBehind) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
