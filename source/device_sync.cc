@@ -126,6 +126,10 @@ KitData KitDataFromDevice(const device::KitRecord& rec) {
         ? LayerSample::DeviceWave(dp.wave_bottom)
         : LayerSample();
   }
+  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
+    kit.trigger_links[static_cast<size_t>(trig)] = juce::jlimit(
+        0, 127, static_cast<int>(rec.trigger_links[static_cast<size_t>(trig)]));
+  }
   return kit;
 }
 
@@ -279,6 +283,22 @@ std::vector<SyncConflict> FindKitConflicts(int kit,
   if (!name_conflict.isEmpty()) {
     out.push_back({kit, -1, label + ": " + name_conflict.joinIntoString("; ")});
   }
+  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
+    const auto tr = static_cast<size_t>(trig);
+    juce::StringArray trigger_conflict;
+    Merge3(("trigger " + juce::String(trig + 1) + " link").toRawUTF8(),
+           current.trigger_links[tr],
+           base.trigger_links[tr],
+           theirs.trigger_links[tr],
+           true,
+           &trigger_conflict,
+           FmtLink);
+    if (!trigger_conflict.isEmpty()) {
+      out.push_back({kit,
+                     KitModel::kPadCount + trig,
+                     label + ": " + trigger_conflict.joinIntoString("; ")});
+    }
+  }
   for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
     const auto p = static_cast<size_t>(pad);
     const juce::StringArray conflicts =
@@ -303,6 +323,11 @@ bool KitSyncPlan::WritesDevice() const {
       return true;
     }
   }
+  for (const bool write : write_trigger_link) {
+    if (write) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -311,10 +336,41 @@ KitSyncPlan PlanKitSync(
     const KitData& base,
     const KitData& theirs,
     SyncResolution name_resolution,
-    const std::array<SyncResolution, KitModel::kPadCount>& pad_resolutions) {
+    const std::array<SyncResolution, KitModel::kPadCount>& pad_resolutions,
+    const std::array<SyncResolution, device::kTriggersPerKit>&
+        trigger_resolutions) {
   KitSyncPlan plan;
   plan.new_current = current;
   plan.new_base = base;
+
+  // Trigger links: one field each, same rules as a pad's.
+  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
+    const auto tr = static_cast<size_t>(trig);
+    juce::StringArray conflict;
+    Merge3("trigger link",
+           current.trigger_links[tr],
+           base.trigger_links[tr],
+           theirs.trigger_links[tr],
+           true,
+           &conflict,
+           FmtLink);
+    if (conflict.isEmpty()
+        || trigger_resolutions[tr] != SyncResolution::kSkip) {
+      const int merged =
+          Merge3("trigger link",
+                 current.trigger_links[tr],
+                 base.trigger_links[tr],
+                 theirs.trigger_links[tr],
+                 trigger_resolutions[tr] == SyncResolution::kMine,
+                 static_cast<juce::StringArray*>(nullptr),
+                 FmtLink);
+      plan.new_current.trigger_links[tr] = merged;
+      plan.new_base.trigger_links[tr] = merged;
+      plan.write_trigger_link[tr] = merged != theirs.trigger_links[tr];
+    } else {
+      plan.skipped = true;
+    }
+  }
 
   // The kit name: one field, same rules as a pad's.
   juce::StringArray name_conflict;
@@ -458,6 +514,12 @@ KitWrite BuildKitWrite(int kit_index, const KitSyncPlan& plan) {
     pw.dp = DeviceParamsFromPad(plan.new_current.pads[p]);
     w.pads.push_back(pw);
   }
+  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
+    const auto tr = static_cast<size_t>(trig);
+    if (plan.write_trigger_link[tr]) {
+      w.trigger_links.push_back({trig + 1, plan.new_current.trigger_links[tr]});
+    }
+  }
   return w;
 }
 
@@ -533,6 +595,14 @@ bool ExecutePush(device::SpdsxDevice& dev,
         }
         wrote = true;
       }
+    }
+    for (const auto& [trigger, group] : kw.trigger_links) {
+      dev.SetPadLink({.kit = kw.kit,
+                      .kind = device::ObjectKind::kTrig,
+                      .index = trigger,
+                      .group = group,
+                      .pace_seconds = pace_seconds});
+      wrote = true;
     }
   }
   // Everything above (uploads + DT1 writes) is in working state; this single

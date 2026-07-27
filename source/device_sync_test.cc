@@ -259,6 +259,38 @@ TEST(DeviceSyncConflicts, ListsTheNameAndEachConflictedPad) {
   EXPECT_TRUE(conflicts[1].description.contains("layer mode"));
 }
 
+TEST(DeviceSyncConflicts, ATriggerLinkConflictIsListedByTriggerNumber) {
+  const KitData base = SyncBase();
+  KitData current = base;
+  current.trigger_links[6] = 11;  // trigger 7
+  KitData theirs = base;
+  theirs.trigger_links[6] = 4;
+
+  const std::vector<SyncConflict> conflicts =
+      FindKitConflicts(0, current, base, theirs);
+
+  ASSERT_EQ(conflicts.size(), 1u);
+  EXPECT_EQ(conflicts[0].pad, KitModel::kPadCount + 6);
+  EXPECT_TRUE(conflicts[0].description.contains("trigger 7 link"));
+  EXPECT_TRUE(conflicts[0].description.contains("group 11"));
+  EXPECT_TRUE(conflicts[0].description.contains("group 4"));
+}
+
+TEST(DeviceSyncConflicts, AnUnlinkConflictSaysUnlinked) {
+  KitData base = SyncBase();
+  base.trigger_links[0] = 9;
+  KitData current = base;
+  current.trigger_links[0] = 0;
+  KitData theirs = base;
+  theirs.trigger_links[0] = 3;
+
+  const std::vector<SyncConflict> conflicts =
+      FindKitConflicts(0, current, base, theirs);
+
+  ASSERT_EQ(conflicts.size(), 1u);
+  EXPECT_TRUE(conflicts[0].description.contains("unlinked"));
+}
+
 TEST(DeviceSyncConflicts, ACleanKitHasNone) {
   const KitData base = SyncBase();
   EXPECT_TRUE(FindKitConflicts(0, base, base, base).empty());
@@ -383,6 +415,54 @@ TEST(DeviceSyncPlan, AConflictResolvedMineWritesTheDevice) {
 
 // ---- Free pool indices ----
 
+TEST(DeviceSyncPlan, ALocalTriggerLinkEditWritesItAndAdvancesBase) {
+  const KitData base = SyncBase();
+  KitData current = base;
+  current.trigger_links[6] = 11;
+
+  const KitSyncPlan plan =
+      PlanKitSync(current, base, base, SyncResolution::kMine, AllMine());
+
+  EXPECT_TRUE(plan.write_trigger_link[6]);
+  EXPECT_FALSE(plan.write_trigger_link[5]);
+  EXPECT_TRUE(plan.WritesDevice());
+  EXPECT_EQ(plan.new_current.trigger_links[6], 11);
+  EXPECT_EQ(plan.new_base.trigger_links[6], 11);
+}
+
+TEST(DeviceSyncPlan, ADeviceTriggerLinkEditPullsWithoutWriting) {
+  const KitData base = SyncBase();
+  KitData theirs = base;
+  theirs.trigger_links[2] = 7;
+
+  const KitSyncPlan plan =
+      PlanKitSync(base, base, theirs, SyncResolution::kMine, AllMine());
+
+  EXPECT_FALSE(plan.WritesDevice());
+  EXPECT_EQ(plan.new_current.trigger_links[2], 7);
+  EXPECT_EQ(plan.new_base.trigger_links[2], 7);
+}
+
+TEST(DeviceSyncPlan, ASkippedTriggerConflictKeepsItsOldBase) {
+  const KitData base = SyncBase();
+  KitData current = base;
+  current.trigger_links[0] = 5;
+  KitData theirs = base;
+  theirs.trigger_links[0] = 6;
+
+  // The file-local AllMine() is the pad-sized table; the header's is
+  // the trigger-sized default.
+  auto triggers = spdsx::AllMine();
+  triggers[0] = SyncResolution::kSkip;
+  const KitSyncPlan plan = PlanKitSync(
+      current, base, theirs, SyncResolution::kMine, AllMine(), triggers);
+
+  EXPECT_TRUE(plan.skipped);
+  EXPECT_FALSE(plan.write_trigger_link[0]);
+  EXPECT_EQ(plan.new_current.trigger_links[0], 5);
+  EXPECT_EQ(plan.new_base.trigger_links[0], base.trigger_links[0]);
+}
+
 TEST(DeviceSyncPool, AnEmptyPoolStartsAtOne) {
   EXPECT_EQ(NextFreeSampleIndex({}), 1);
 }
@@ -498,6 +578,22 @@ TEST(DeviceSyncWrite, CarriesOnlyThePadsThatNeedWrites) {
   EXPECT_EQ(write.pads[1].dp.wave_top, 42);
 }
 
+TEST(DeviceSyncWrite, CarriesTheTriggerLinksThatNeedWrites) {
+  const KitData base = SyncBase();
+  KitData current = base;
+  current.trigger_links[6] = 11;
+  current.trigger_links[7] = 3;
+
+  const KitSyncPlan plan =
+      PlanKitSync(current, base, base, SyncResolution::kMine, AllMine());
+  const KitWrite write = BuildKitWrite(198, plan);
+
+  EXPECT_TRUE(write.pads.empty());
+  ASSERT_EQ(write.trigger_links.size(), 2u);
+  EXPECT_EQ(write.trigger_links[0], std::make_pair(7, 11));
+  EXPECT_EQ(write.trigger_links[1], std::make_pair(8, 3));
+}
+
 // ---- ExecutePush, against the fake port ----
 
 // The commit-poll reply the device sends when the flash write is done.
@@ -569,6 +665,33 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
             Dt1(PadLayerAddr(bottom, kLayerVolumeOffset), NibbleEncode(0)));
   EXPECT_EQ(sent[36][4], 0x21);  // one commit at the very end
   EXPECT_EQ(sent[37][4], 0x22);
+}
+
+TEST(DeviceSyncPush, WritesTriggerLinksAsFocusPlusLinkThenCommits) {
+  FakeSerialPort port;
+  device::SpdsxDevice dev(&port);
+  dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
+
+  KitWrite kw;
+  kw.kit = 199;
+  kw.trigger_links = {{7, 11}};
+
+  port.QueueReply({0x7a});
+  port.QueueReply(SyncCommitDone());
+
+  EXPECT_TRUE(ExecutePush(dev, {}, {kw}, IgnoreUpload, 0.0));
+
+  const std::vector<Bytes> sent = port.payloads();
+  using namespace device;
+  ASSERT_EQ(sent.size(), 4u);  // focus + link + commit begin + poll
+  EXPECT_EQ(sent[0],
+            Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kTrig, 7)}));
+  EXPECT_EQ(
+      sent[1],
+      Dt1(PadLinkAddr({.kind = ObjectKind::kTrig, .index = 7, .kit = 199}),
+          {11}));
+  EXPECT_EQ(sent[2][4], 0x21);
+  EXPECT_EQ(sent[3][4], 0x22);
 }
 
 TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {
