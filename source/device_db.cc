@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS pads(
   bottom_decay INTEGER DEFAULT 127,
   pad_link INTEGER DEFAULT 0,
   PRIMARY KEY(snapshot, kit_idx, pad_idx));
+CREATE TABLE IF NOT EXISTS triggers(
+  snapshot TEXT NOT NULL, kit_idx INTEGER NOT NULL, trig_idx INTEGER NOT NULL,
+  pad_link INTEGER DEFAULT 0,
+  PRIMARY KEY(snapshot, kit_idx, trig_idx));
 CREATE TABLE IF NOT EXISTS samples(
   idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
   category INTEGER, content_hash INTEGER, audio BLOB);
@@ -55,6 +59,15 @@ const char* kV2PadColumns =
     "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
     "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
     "bottom_decay";
+
+// v3 added pad_link; v4 adds the triggers table (created empty by the
+// migration — older documents had no trigger data to carry).
+const char* kV3PadColumns =
+    "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
+    "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
+    "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
+    "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
+    "bottom_decay, pad_link";
 
 const char* SnapshotName(Snapshot s) {
   return s == Snapshot::kBase ? "base" : "current";
@@ -225,7 +238,9 @@ bool MigrateOlderDocument(const juce::File& path,
              .c_str());
     Exec(db, "BEGIN;");
     Exec(db, "INSERT INTO kits SELECT * FROM old.kits;");
-    const char* pad_columns = from_version >= 2 ? kV2PadColumns : kV1PadColumns;
+    const char* pad_columns = from_version >= 3
+        ? kV3PadColumns
+        : (from_version >= 2 ? kV2PadColumns : kV1PadColumns);
     Exec(db,
          (std::string("INSERT INTO pads(") + pad_columns + ") SELECT "
           + pad_columns + " FROM old.pads;")
@@ -330,6 +345,9 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
       Stmt delp(db_, "DELETE FROM pads WHERE snapshot=?1;");
       delp.Text(1, snap);
       delp.RunOnce();
+      Stmt delt(db_, "DELETE FROM triggers WHERE snapshot=?1;");
+      delt.Text(1, snap);
+      delt.RunOnce();
     }
     Stmt kit(db_, "INSERT INTO kits(snapshot, idx, name) VALUES(?1,?2,?3);");
     Stmt pad(
@@ -377,6 +395,20 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         pad.RunOnce();
       }
     }
+    Stmt trig(db_,
+              "INSERT INTO triggers(snapshot, kit_idx, trig_idx, pad_link) "
+              "VALUES(?1,?2,?3,?4);");
+    for (int k = 0; k < DeviceModel::kKitCount; ++k) {
+      const KitData& kd = model.kit(k);
+      for (int tr = 0; tr < device::kTriggersPerKit; ++tr) {
+        trig.Text(1, snap);
+        trig.Int(2, k);
+        trig.Int(3, tr);
+        trig.Int(4, kd.trigger_links[static_cast<size_t>(tr)]);
+        trig.RunOnce();
+      }
+    }
+
     if (snapshot == Snapshot::kCurrent) {
       Stmt meta(db_,
                 "INSERT INTO meta(key, value) VALUES('current_kit', ?1) "
@@ -452,6 +484,22 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
       pp.mix_top = mix(16);
       pp.mix_bottom = mix(19);
       pp.pad_link = juce::jlimit(0, 127, pad.ColInt(22));
+    }
+  }
+  {
+    Stmt trig(db_,
+              "SELECT kit_idx, trig_idx, pad_link FROM triggers "
+              "WHERE snapshot=?1;");
+    trig.Text(1, snap);
+    while (trig.Step()) {
+      const int k = trig.ColInt(0);
+      const int tr = trig.ColInt(1);
+      if (k < 0 || k >= DeviceModel::kKitCount || tr < 0
+          || tr >= device::kTriggersPerKit) {
+        continue;
+      }
+      model.kit(k).trigger_links[static_cast<size_t>(tr)] =
+          juce::jlimit(0, 127, trig.ColInt(2));
     }
   }
   if (snapshot == Snapshot::kCurrent) {
@@ -542,6 +590,11 @@ void DeviceDb::CaptureBase() {
   try {
     Exec(db_, "DELETE FROM kits WHERE snapshot='base';");
     Exec(db_, "DELETE FROM pads WHERE snapshot='base';");
+    Exec(db_, "DELETE FROM triggers WHERE snapshot='base';");
+    Exec(db_,
+         "INSERT INTO triggers(snapshot, kit_idx, trig_idx, pad_link) "
+         "SELECT 'base', kit_idx, trig_idx, pad_link FROM triggers "
+         "WHERE snapshot='current';");
     Exec(db_,
          "INSERT INTO kits(snapshot, idx, name) "
          "SELECT 'base', idx, name FROM kits WHERE snapshot='current';");

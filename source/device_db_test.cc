@@ -38,6 +38,8 @@ DeviceModel EditedModel() {
   // Both halves of the dual identity, so neither read path is missed.
   pad.samples.first = LayerSample::DeviceWave(1590);
   pad.samples.second = LayerSample(juce::File("/tmp/snare.wav"));
+  kit.trigger_links[6] = 11;
+  kit.trigger_links[0] = 3;
 
   model.set_current_kit(7);
   return model;
@@ -69,6 +71,8 @@ void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected) {
       EXPECT_EQ(a.samples.second, e.samples.second)
           << "kit " << k << " pad " << p;
     }
+    EXPECT_EQ(actual.kit(k).trigger_links, expected.kit(k).trigger_links)
+        << "kit " << k;
   }
 }
 
@@ -180,6 +184,52 @@ INSERT INTO samples(idx, wavename, filename, frames, category)
 
   // The original v1 file survives beside the new document.
   EXPECT_TRUE(temp.file("old.spdsx.v1.bak").existsAsFile());
+}
+
+// v3 knew pad_link but had no triggers table; the migration must carry
+// the pad groups across and leave the new table ready (empty) to read.
+TEST_F(DeviceDbTest, OpenMigratesAV3DocumentKeepingPadLinks) {
+  const juce::File old_doc = temp.file("v3.spdsx");
+  ExecSql(old_doc, R"SQL(
+CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE kits(
+  snapshot TEXT NOT NULL, idx INTEGER NOT NULL, name TEXT NOT NULL,
+  PRIMARY KEY(snapshot, idx));
+CREATE TABLE pads(
+  snapshot TEXT NOT NULL, kit_idx INTEGER NOT NULL, pad_idx INTEGER NOT NULL,
+  mode INTEGER, fade_point INTEGER, fade_end INTEGER, dynamics INTEGER,
+  curve INTEGER, fixed_velocity INTEGER, hihat_vol INTEGER,
+  hihat_fadein INTEGER, hihat_decay INTEGER, trigger_reserve INTEGER,
+  top_device INTEGER, top_local TEXT, bottom_device INTEGER, bottom_local TEXT,
+  top_volume INTEGER DEFAULT 0, top_fadein INTEGER DEFAULT 0,
+  top_decay INTEGER DEFAULT 127,
+  bottom_volume INTEGER DEFAULT 0, bottom_fadein INTEGER DEFAULT 0,
+  bottom_decay INTEGER DEFAULT 127,
+  pad_link INTEGER DEFAULT 0,
+  PRIMARY KEY(snapshot, kit_idx, pad_idx));
+CREATE TABLE samples(
+  idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
+  category INTEGER, content_hash INTEGER, audio BLOB);
+INSERT INTO meta(key, value) VALUES('schema_version', '3');
+INSERT INTO kits(snapshot, idx, name) VALUES('current', 0, 'LINKED');
+INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, fade_end,
+  dynamics, curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay,
+  trigger_reserve, top_device, top_local, bottom_device, bottom_local,
+  pad_link)
+  VALUES('current', 0, 6, 0, 80, 127, 1, 0, 127, 80, 0, 25, 0,
+         0, '', 0, '', 11);
+)SQL");
+
+  juce::String error;
+  auto migrated = DeviceDb::Open(old_doc, error);
+  ASSERT_NE(migrated, nullptr) << error;
+  EXPECT_EQ(migrated->SchemaVersion(), DeviceDb::kCurrentSchemaVersion);
+
+  DeviceModel model;
+  migrated->ReadKits(model);
+  EXPECT_EQ(model.kit(0).name, juce::String("LINKED"));
+  EXPECT_EQ(model.kit(0).pads[6].params.pad_link, 11);
+  EXPECT_EQ(model.kit(0).trigger_links[6], 0);  // nothing to inherit
 }
 
 TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase) {
