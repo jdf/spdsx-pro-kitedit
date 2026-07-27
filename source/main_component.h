@@ -295,8 +295,11 @@ private:
   // bare version; the display string is for bug reports.
   juce::Label status_bar_;
   // Without one of these, every setTooltip in the app is silent — JUCE
-  // only shows tooltips while a TooltipWindow instance exists.
-  juce::TooltipWindow tooltip_window_ {this};
+  // only shows tooltips while a TooltipWindow instance exists. On the
+  // DESKTOP, not parented here: a child tooltip's square window corners
+  // poke through its rounded bubble; a desktop one composites with
+  // per-pixel alpha.
+  juce::TooltipWindow tooltip_window_;
 
   // The tab bar under the global header. A plain TabbedButtonBar (not a
   // TabbedComponent): the Edit Kits "tab content" is this component's
