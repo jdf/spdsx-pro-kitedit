@@ -95,6 +95,9 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   };
   panel_tabs_.setOutline(0);
   panel_tabs_.setVisible(browser_visible_);
+  panel_tabs_.on_change = [this](int index) {
+    settings_.getUserSettings()->setValue("uiPanelTab", index);
+  };
   addChildComponent(panel_tabs_);
 
   // A quiet strip along the bottom: device and sync narration, where it
@@ -270,6 +273,18 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addChildComponent(bulk_panel_);
 
   RefreshProperties();
+
+  // Come back up on the tabs the user left: the left panel's
+  // Files/Device/Properties, the editing surface, and the main tab.
+  panel_tabs_.setCurrentTabIndex(
+      juce::jlimit(0,
+                   panel_tabs_.getNumTabs() - 1,
+                   settings_.getUserSettings()->getIntValue("uiPanelTab", 0)));
+  SelectSurface(juce::jlimit(
+      0, 1, settings_.getUserSettings()->getIntValue("uiSurface", 0)));
+  SelectTab(juce::jlimit(
+      0, 1, settings_.getUserSettings()->getIntValue("uiMainTab", 0)));
+
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
   startTimerHz(30);
@@ -648,6 +663,7 @@ void MainComponent::SelectTab(int index) {
   if (tabs_.getCurrentTabIndex() != index) {
     tabs_.setCurrentTabIndex(index, false);
   }
+  settings_.getUserSettings()->setValue("uiMainTab", index);
   on_edit_tab_ = index == 0;
   for (juce::Component* child : edit_tab_children_) {
     child->setVisible(on_edit_tab_);
@@ -673,6 +689,7 @@ void MainComponent::SelectSurface(int surface) {
     return;
   }
   surface_ = surface;
+  settings_.getUserSettings()->setValue("uiSurface", surface);
   if (!ObjectOnSurface(selected_)) {
     SelectObject(SurfaceObject(0, 0));
   }

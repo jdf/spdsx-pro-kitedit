@@ -431,9 +431,24 @@ private:
   std::shared_ptr<std::atomic<int>> download_permille_;
   SampleBrowser browser_;
   DeviceSamplePanel device_samples_ {device_, settings_};
+
   // The left panel: "Files" (the sample browser) and "Device" (the
   // wave pool) tabs.
-  juce::TabbedComponent panel_tabs_ {juce::TabbedButtonBar::TabsAtTop};
+  // A TabbedComponent that reports tab changes, so the selection can
+  // be persisted (JUCE's own has no callback).
+  class PanelTabs : public juce::TabbedComponent {
+  public:
+    using juce::TabbedComponent::TabbedComponent;
+    std::function<void(int)> on_change;
+
+    void currentTabChanged(int index, const juce::String&) override {
+      if (on_change) {
+        on_change(index);
+      }
+    }
+  };
+
+  PanelTabs panel_tabs_ {juce::TabbedButtonBar::TabsAtTop};
   std::vector<std::unique_ptr<juce::MidiInput>> midi_inputs_;
   bool browser_visible_ = true;
   int hovered_ = -1;
