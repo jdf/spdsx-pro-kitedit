@@ -387,5 +387,57 @@ TEST(DynamicsGain, FallsBackToLinearForACurveThatIsNotOne) {
       64.0f / 127.0f);
 }
 
+// ---- LayerEnvelopeGain ----
+
+TEST(LayerEnvelopeGain, NoEnvelopeIsUnity) {
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.0, 1.0, 0, 127), 1.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.5, 1.0, 0, 127), 1.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(1.0, 1.0, 0, 127), 1.0f);
+}
+
+TEST(LayerEnvelopeGain, FadeInLerpsTheTotalLength) {
+  // The spec's example: fade-in 64 on a 1-second sample ramps to full
+  // over the first 64/127 of it (about half a second).
+  const double attack = 64.0 / 127.0;
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.0, 1.0, 64, 127), 0.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(attack / 2.0, 1.0, 64, 127), 0.5f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(attack, 1.0, 64, 127), 1.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.9, 1.0, 64, 127), 1.0f);
+}
+
+TEST(LayerEnvelopeGain, FadeInScalesWithTheSample) {
+  // The same fade-in takes twice as long on a sample twice the length.
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(64.0 / 127.0, 2.0, 64, 127), 0.5f);
+}
+
+TEST(LayerEnvelopeGain, DecayReachesSilenceAtItsFractionOfTheLength) {
+  const double silence_at = 64.0 / 127.0;
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.0, 1.0, 0, 64), 1.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(silence_at / 2.0, 1.0, 0, 64), 0.5f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(silence_at, 1.0, 0, 64), 0.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.9, 1.0, 0, 64), 0.0f);
+}
+
+TEST(LayerEnvelopeGain, DecayZeroIsSilence) {
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.0, 1.0, 0, 0), 0.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.001, 1.0, 0, 0), 0.0f);
+}
+
+TEST(LayerEnvelopeGain, FadeAndDecayCombineByMin) {
+  // Attack over the whole length vs. decay dying halfway: the sound
+  // rises until the decay line crosses under it, then follows it down.
+  const int fade_in = 127;  // gain = t
+  const int decay = 64;  // silence at ~0.504s
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.1, 1.0, fade_in, decay), 0.1f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.5, 1.0, fade_in, decay),
+                  static_cast<float>(1.0 - 0.5 / (64.0 / 127.0)));
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.6, 1.0, fade_in, decay), 0.0f);
+}
+
+TEST(LayerEnvelopeGain, DegenerateInputsAreUnity) {
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(0.5, 0.0, 64, 64), 1.0f);
+  EXPECT_FLOAT_EQ(LayerEnvelopeGain(-0.1, 1.0, 64, 64), 1.0f);
+}
+
 }  // namespace
 }  // namespace spdsx

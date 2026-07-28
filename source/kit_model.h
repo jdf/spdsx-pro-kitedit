@@ -47,8 +47,9 @@ struct PadParams {
 
   // Per-layer mix (top = layer A, bottom = layer B): volume in 0.1 dB
   // steps (0 = 0.0 dB, negative = quieter), fade-in 0..127, decay 0..127
-  // (127 = none). Read/write for the device; not yet emulated in the
-  // preview engine.
+  // (127 = none). Emulated on pad hits: volume scales the layer's gain,
+  // fade-in/decay play through LayerEnvelopeGain (both lerp the
+  // sample's total length). Slot-level auditioning ignores all three.
   struct LayerMix {
     int volume_db10 = kDefaultLayerVolumeDb10;
     int fade_in = kDefaultLayerFadeIn;

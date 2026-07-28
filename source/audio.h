@@ -35,6 +35,11 @@ public:
   // triggers use this to realize layer-mode velocity scaling; slot-level
   // auditioning resets it to 1.
   void SetGain(int slot, float gain);
+  // The layer envelope for the slot's next/current sound, as the device
+  // stores it (0..127; decay 127 = none) — see LayerEnvelopeGain for
+  // the shape. Pad-level triggers set the layer's values; slot-level
+  // auditioning resets to (0, 127) = no envelope.
+  void SetEnvelope(int slot, int fade_in, int decay);
   // True while the slot's sound is audibly playing (false once it ends).
   bool IsPlaying(int slot) const;
   // Playback position as a fraction of the sample length, 0..1.

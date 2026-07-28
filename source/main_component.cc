@@ -2174,9 +2174,10 @@ void MainComponent::ApplyTransportAction(int idx, TransportAction action) {
     case TransportAction::kPlay:
       // Play during playback retriggers from the top (drum-pad style);
       // from paused it resumes, from stopped it starts at the top.
-      // Slot-level auditioning is always full volume, undoing any gain a
-      // pad-level layer trigger left behind.
+      // Slot-level auditioning is always full volume and envelope-free,
+      // undoing whatever a pad-level layer trigger left behind.
       engine_.SetGain(idx, 1.0f);
+      engine_.SetEnvelope(idx, 0, 127);
       slot.set_velocity_highlight(127);
       if (slot.play_state() == PlayState::kPlaying) {
         engine_.Stop(idx);
@@ -2283,13 +2284,20 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down) {
     }
   }
   for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
-    const float gain = (layer == 0 ? weights.top : weights.bottom) * loudness;
+    // The layer's own mix: its volume scales the hit, its fade-in and
+    // decay ride along as the playback envelope.
+    const PadParams::LayerMix& mix =
+        layer == 0 ? params.mix_top : params.mix_bottom;
+    const float gain = (layer == 0 ? weights.top : weights.bottom) * loudness
+        * juce::Decibels::decibelsToGain(static_cast<float>(mix.volume_db10)
+                                         / 10.0f);
     const int idx = pad * KitModel::kLayersPerPad + layer;
     auto& slot = *slots_[static_cast<size_t>(idx)];
     if (gain <= 0.0f || !slot.is_playable()) {
       continue;
     }
     engine_.SetGain(idx, gain);
+    engine_.SetEnvelope(idx, mix.fade_in, mix.decay);
     if (slot.play_state() == PlayState::kPlaying) {
       engine_.Stop(idx);  // retrigger from the top
     }

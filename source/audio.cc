@@ -1,15 +1,50 @@
 #include "audio.h"
 
+#include <atomic>
 #include <cstdio>
 #include <vector>
+
+#include "layers.h"
 
 namespace spdsx {
 
 namespace {
 
-struct Slot {
+// A slot sits between its transport and the mixer so it can shape each
+// block with the layer envelope (fade-in/decay lerped over the sample's
+// length) at the transport's position. The envelope params are atomics:
+// the message thread writes them, the audio thread reads.
+struct Slot : juce::AudioSource {
   std::unique_ptr<juce::AudioFormatReaderSource> reader_source;
   juce::AudioTransportSource transport;
+  std::atomic<int> env_fade_in {0};
+  std::atomic<int> env_decay {127};  // 127 = no decay
+  double sample_rate = 44100.0;
+
+  void prepareToPlay(int samples_per_block, double rate) override {
+    sample_rate = rate;
+    transport.prepareToPlay(samples_per_block, rate);
+  }
+
+  void releaseResources() override { transport.releaseResources(); }
+
+  void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override {
+    const double t0 = transport.getCurrentPosition();
+    const double total = transport.getLengthInSeconds();
+    transport.getNextAudioBlock(info);
+    const int fade_in = env_fade_in.load(std::memory_order_relaxed);
+    const int decay = env_decay.load(std::memory_order_relaxed);
+    if ((fade_in <= 0 && decay >= 127) || total <= 0.0 || sample_rate <= 0.0) {
+      return;  // no envelope
+    }
+    // The envelope is piecewise linear, so a per-block ramp between its
+    // endpoint gains reproduces it (up to a kink inside one block).
+    const double t1 = t0 + info.numSamples / sample_rate;
+    info.buffer->applyGainRamp(info.startSample,
+                               info.numSamples,
+                               LayerEnvelopeGain(t0, total, fade_in, decay),
+                               LayerEnvelopeGain(t1, total, fade_in, decay));
+  }
 };
 
 }  // namespace
@@ -34,10 +69,10 @@ AudioEngine::AudioEngine(int slot_count)
     auto slot = std::make_unique<Slot>();
     // A transport with no source renders silence, so idle slots cost
     // nothing but a mix input.
-    impl_->mixer.addInputSource(&slot->transport, false);
+    impl_->mixer.addInputSource(slot.get(), false);
     impl_->slots.push_back(std::move(slot));
   }
-  impl_->mixer.addInputSource(&impl_->preview.transport, false);
+  impl_->mixer.addInputSource(&impl_->preview, false);
   impl_->player.setSource(&impl_->mixer);
   impl_->device_manager.addAudioCallback(&impl_->player);
 }
@@ -101,6 +136,12 @@ void AudioEngine::Stop(int slot) {
 
 void AudioEngine::SetGain(int slot, float gain) {
   impl_->slots.at(static_cast<size_t>(slot))->transport.setGain(gain);
+}
+
+void AudioEngine::SetEnvelope(int slot, int fade_in, int decay) {
+  auto& s = *impl_->slots.at(static_cast<size_t>(slot));
+  s.env_fade_in.store(fade_in, std::memory_order_relaxed);
+  s.env_decay.store(decay, std::memory_order_relaxed);
 }
 
 bool AudioEngine::IsPlaying(int slot) const {

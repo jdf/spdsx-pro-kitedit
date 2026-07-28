@@ -88,6 +88,14 @@ LayerWeights ComputeLayerWeights(LayerMode mode,
                                  bool alternate_flip,
                                  bool pedal_down);
 
+// The layer envelope's gain 0..1 at t seconds into a layer of the given
+// total length, from the stored 0..127 fade-in and decay. Both lerp the
+// layer's TOTAL length (jdf's spec): fade-in ramps 0 to full over the
+// first fade_in/127 of it, and decay ramps full to silence, hitting
+// zero at decay/127 of it (127 = no decay, the device's convention).
+// The two combine by min, so a decay can cut an attack short.
+float LayerEnvelopeGain(double t, double total, int fade_in, int decay);
+
 // True when the mode reads the fade point (and, for the blended modes,
 // the fade end); drives which controls the UI shows.
 bool UsesFadePoint(LayerMode mode);

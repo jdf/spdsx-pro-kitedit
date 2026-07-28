@@ -86,6 +86,28 @@ LayerWeights ComputeLayerWeights(LayerMode mode,
   return {};
 }
 
+float LayerEnvelopeGain(double t, double total, int fade_in, int decay) {
+  if (total <= 0.0 || t < 0.0) {
+    return 1.0f;
+  }
+  // Attack: 0 to full over the first fade_in/127 of the layer's length.
+  float gain = 1.0f;
+  const double attack = fade_in / 127.0 * total;
+  if (attack > 0.0) {
+    gain = static_cast<float>(std::clamp(t / attack, 0.0, 1.0));
+  }
+  // Decay: full to silence, reaching zero at decay/127 of the length
+  // (so 0 cuts the sound immediately); 127 means no decay at all.
+  if (decay < 127) {
+    const double silence_at = decay / 127.0 * total;
+    const float decayed = silence_at > 0.0
+        ? static_cast<float>(std::clamp(1.0 - t / silence_at, 0.0, 1.0))
+        : 0.0f;
+    gain = std::min(gain, decayed);
+  }
+  return gain;
+}
+
 bool UsesFadePoint(LayerMode mode) {
   switch (mode) {
     case LayerMode::kFade1:
