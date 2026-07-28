@@ -22,6 +22,14 @@ constexpr juce::uint32 kRingDark = 0xff30363d;
 constexpr float kRingMinWidth = 1.0f;
 constexpr float kRingMaxWidth = 3.0f;
 
+// The bitmap's indicator dot, measured like the circle: centre
+// (100, 62) — exactly on the 0-radian line — radius 2.5. The green
+// marker drawn over it is bigger, since the baked-in dot reads small.
+constexpr float kDotCentreX = 100.0f;
+constexpr float kDotCentreY = 62.0f;
+constexpr float kDotDrawRadius = 4.5f;  // in image pixels, pre-scale
+constexpr juce::uint32 kDotGreen = 0xff3fb950;
+
 }  // namespace
 
 KnobLookAndFeel::KnobLookAndFeel()
@@ -72,6 +80,38 @@ void KnobLookAndFeel::drawRotarySlider(juce::Graphics& g,
           .translated(cx - kCircleCentreX * scale, cy - kCircleCentreY * scale);
   g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
   g.drawImageTransformed(knob_, transform);
+
+  // The indicator: a green circle over the bitmap's (too-small) dot,
+  // carried to its rotated position by the same transform. The emboss
+  // arcs keep a fixed light direction whatever the rotation.
+  {
+    const float enabled_alpha = slider.isEnabled() ? 1.0f : 0.4f;
+    float dot_x = kDotCentreX;
+    float dot_y = kDotCentreY;
+    transform.transformPoint(dot_x, dot_y);
+    const float r = kDotDrawRadius * scale;
+    g.setColour(juce::Colour(kDotGreen).withMultipliedAlpha(enabled_alpha));
+    g.fillEllipse(dot_x - r, dot_y - r, 2.0f * r, 2.0f * r);
+    // A hint of inner emboss: shadow on the top-left inner edge, a
+    // faint highlight opposite.
+    auto inner_arc = [&](float from, float to, juce::Colour colour) {
+      juce::Path arc;
+      arc.addCentredArc(
+          dot_x, dot_y, r * 0.72f, r * 0.72f, 0.0f, from, to, true);
+      g.setColour(colour.withMultipliedAlpha(enabled_alpha));
+      g.strokePath(arc,
+                   juce::PathStrokeType(r * 0.45f,
+                                        juce::PathStrokeType::curved,
+                                        juce::PathStrokeType::rounded));
+    };
+    constexpr float pi = juce::MathConstants<float>::pi;
+    inner_arc(1.5f * pi - 0.4f,
+              2.0f * pi + 0.4f,
+              juce::Colours::black.withAlpha(0.30f));
+    inner_arc(0.5f * pi - 0.4f,
+              1.0f * pi + 0.4f,
+              juce::Colours::white.withAlpha(0.20f));
+  }
 
   // The value arc, in short stroked segments so the colour and the
   // width can both grow along it. A segment's look follows its place

@@ -52,19 +52,24 @@ PadSettingsPanel::PadSettingsPanel() {
 
   // The full-width gray bands: the object's name on top, then one
   // header per section.
-  auto init_band = [this](juce::Label& label, float font_size) {
+  auto init_band = [this](juce::Label& label,
+                          float font_size,
+                          juce::uint32 text_colour) {
     label.setFont(juce::Font(juce::FontOptions(font_size)).boldened());
-    label.setColour(juce::Label::textColourId, juce::Colour(0xffc9d1d9));
+    label.setColour(juce::Label::textColourId, juce::Colour(text_colour));
     label.setColour(juce::Label::backgroundColourId, juce::Colour(kBandColour));
     label.setBorderSize(juce::BorderSize<int>(0, kPadding + kAlignInset, 0, 0));
     addAndMakeVisible(label);
   };
-  init_band(title_, 15.0f);
-  init_band(mode_header_, 14.0f);
-  init_band(dynamics_header_, 14.0f);
-  init_band(link_header_, 14.0f);
-  init_band(envelopes_header_, 14.0f);
-  init_band(pedal_header_, 14.0f);
+  init_band(title_, 15.0f, 0xffc9d1d9);
+  // The section headers wear a subtle greenish tint.
+  for (juce::Label* header : {&mode_header_,
+                              &dynamics_header_,
+                              &link_header_,
+                              &envelopes_header_,
+                              &pedal_header_}) {
+    init_band(*header, 14.0f, 0xffb5d0bb);
+  }
 
   for (int m = 0; m < kLayerModeCount; ++m) {
     const auto name = LayerModeName(static_cast<LayerMode>(m));
@@ -250,16 +255,18 @@ void PadSettingsPanel::RefreshSections() {
     c->setVisible(show_pedal_);
   }
 
-  // One section = a gap, its header band, a gap, and its content;
-  // every two lines inside the content sit kControlGap apart.
-  auto section = [](int content) {
-    return kSectionGap + kHeaderHeight + kControlGap + content;
+  // One section = a gap (doubled above every header but the first),
+  // its header band, a gap, and its content; every two lines inside
+  // the content sit kControlGap apart.
+  auto section = [](int content, int gap_above = 2 * kSectionGap) {
+    return gap_above + kHeaderHeight + kControlGap + content;
   };
   const int knob_unit = kMixLabelHeight + kMixKnobHeight;
   const int height = kTitleHeight  // the title band
       + section(kRowHeight  // layer type: the combo row...
-                + (show_fades_ ? kControlGap + knob_unit
-                               : 0))  // ...plus fade knobs when it fades
+                    + (show_fades_ ? kControlGap + knob_unit
+                                   : 0),  // ...plus fades when it fades
+                kSectionGap)
       + section(kKnobHeight + kControlGap + kRowHeight)  // dynamics radios
       + section(kRowHeight)  // link group
       + section(2 * (kRowHeight + kControlGap + knob_unit)
@@ -271,9 +278,12 @@ void PadSettingsPanel::RefreshSections() {
 
 void PadSettingsPanel::resized() {
   // Header bands span the panel edge to edge; content is inset.
-  auto band = [this](
+  bool first_band = true;
+  auto band = [this, &first_band](
                   juce::Rectangle<int>& area, juce::Label& header, int height) {
-    area.removeFromTop(kSectionGap);
+    // Double breathing room above every header but the first.
+    area.removeFromTop(first_band ? kSectionGap : 2 * kSectionGap);
+    first_band = false;
     header.setBounds(area.removeFromTop(height).withX(0).withWidth(getWidth()));
     area.removeFromTop(kControlGap);
   };
