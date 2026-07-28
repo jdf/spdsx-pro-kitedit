@@ -308,16 +308,16 @@ void PadSettingsPanel::resized() {
   }
 
   band(area, dynamics_header_, kHeaderHeight);
+  auto velocity_row = area.removeFromTop(kKnobHeight);
+  // The radio's text sits on the rotary control's bottom line.
+  velocity_radio_.setBounds(velocity_row.removeFromLeft(120)
+                                .withHeight(kRowHeight)
+                                .withY(velocity_row.getBottom() - kRowHeight));
+  velocity_.setBounds(velocity_row.removeFromLeft(kKnobSize));
+  area.removeFromTop(kRowGap);
   auto curve_row = area.removeFromTop(kRowHeight);
   curve_radio_.setBounds(curve_row.removeFromLeft(76));
   curve_.setBounds(curve_row.removeFromLeft(120));
-  area.removeFromTop(kRowGap);
-  auto velocity_row = area.removeFromTop(kKnobHeight);
-  velocity_radio_.setBounds(
-      velocity_row.removeFromLeft(120)
-          .withHeight(kRowHeight)
-          .withY(velocity_row.getY() + (kKnobHeight - kRowHeight) / 2));
-  velocity_.setBounds(velocity_row.removeFromLeft(kKnobSize));
 
   band(area, link_header_, kHeaderHeight);
   auto link_row = area.removeFromTop(kRowHeight);
