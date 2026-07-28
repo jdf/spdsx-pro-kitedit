@@ -74,11 +74,13 @@ public:
   PadLinkAction(DeviceDocument& document,
                 DeviceModel& device,
                 std::vector<LinkChange> plan,
-                int group)
+                int group,
+                device::LinkDirection direction)
       : document_(document)
       , device_(device)
       , plan_(std::move(plan))
-      , group_(group) {}
+      , group_(group)
+      , send_(direction == device::LinkDirection::kSend) {}
 
   bool perform() override;
   bool undo() override;
@@ -90,6 +92,7 @@ private:
   DeviceModel& device_;
   std::vector<LinkChange> plan_;
   int group_;
+  bool send_;
 };
 
 }  // namespace spdsx::bulk

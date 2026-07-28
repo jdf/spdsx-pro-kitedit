@@ -79,8 +79,13 @@ private:
   juce::ToggleButton velocity_radio_ {"Fixed Velocity"};
   juce::Slider velocity_;
 
+  // The directional link pair: this object sends its hits to a group,
+  // or receives a group's hits (0 = none).
+  juce::Label link_send_label_ {{}, "Send"};
+  juce::Slider link_send_;
+  juce::Label link_receive_label_ {{}, "Receive"};
+  juce::Slider link_receive_;
   juce::Label pad_link_hint_ {{}, "0 = none"};
-  juce::Slider pad_link_;  // link group, 0 = unlinked
 
   // Per-layer mix (Layer A on top, Layer B below): three small knobs
   // side by side under a heading — volume in dB, fade-in, decay.

@@ -81,10 +81,11 @@ Lists all 200 kit names — live from the device, or offline from a saved
 `dump` image via `--from`.
 
 ### `kit <N> [--from FILE]`
-Shows kit N's per-pad parameters as a table: layer mode, fade point/end,
-dynamics + curve, fixed velocity, trigger reserve, the hi-hat closed-pedal
-trio, pad-link group, and each pad's top/bottom wave assignment, plus a
-line of the external trigger inputs' link groups. Live or `--from` a dump.
+Shows kit N's per-object parameters as a table — the nine pads, then
+the eight external trigger inputs as `t1`-`t8` rows: layer mode, fade
+point/end, dynamics + curve, fixed velocity, trigger reserve, the
+hi-hat closed-pedal trio, the send/receive link groups, and each
+object's top/bottom wave assignment. Live or `--from` a dump.
 
 ### `samples [--from FILE]`
 Lists the device wave pool from the bank 0x20 sample directory: index,
@@ -187,11 +188,15 @@ spdutil setmode --kits 108-200 --mode HI-HAT --pad 9 --commit
 ```
 
 ### `padlink`
-Puts triggers/pads into a pad-link group across kits.
+Puts triggers/pads into a pad-link group across kits. A link is
+directional: an object **sends** its hits to the group, or **receives**
+the group's hits — so a typical link is two invocations, e.g. trigger 1
+`--direction send` and pad 3 `--direction receive` on the same group.
 
 | option | meaning |
 | --- | --- |
 | `--group N` | link group (required) |
+| `--direction send\|receive` | whether the objects fire the group or get fired by it (required) |
 | `--trigger N` / `--pad N` | which objects to link (repeatable) |
 | `--kits SPEC` | kits to touch (**required**) |
 | `--dry-run` | print the messages, send nothing |

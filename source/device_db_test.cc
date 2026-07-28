@@ -38,8 +38,9 @@ DeviceModel EditedModel() {
   // Both halves of the dual identity, so neither read path is missed.
   pad.samples.first = LayerSample::DeviceWave(1590);
   pad.samples.second = LayerSample(juce::File("/tmp/snare.wav"));
-  kit.trigger(6).params.pad_link = 11;
-  kit.trigger(0).params.pad_link = 3;
+  kit.trigger(6).params.link_send = 11;
+  kit.trigger(0).params.link_receive = 3;
+  pad.params.link_send = 2;
 
   model.set_current_kit(7);
   return model;
@@ -184,8 +185,9 @@ INSERT INTO samples(idx, wavename, filename, frames, category)
   EXPECT_TRUE(temp.file("old.spdsx.v1.bak").existsAsFile());
 }
 
-// v3 knew pad_link but had no triggers table; the migration must carry
-// the pad groups across and leave the new table ready (empty) to read.
+// v3 knew a single pad_link column (pads' receive group) and had no
+// triggers table; the migration must land it in link_receive and leave
+// the triggers' rows at their defaults.
 TEST_F(DeviceDbTest, OpenMigratesAV3DocumentKeepingPadLinks) {
   const juce::File old_doc = temp.file("v3.spdsx");
   ExecSql(old_doc, R"SQL(
@@ -226,8 +228,9 @@ INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, fade_end,
   DeviceModel model;
   migrated->ReadKits(model);
   EXPECT_EQ(model.kit(0).name, juce::String("LINKED"));
-  EXPECT_EQ(model.kit(0).pads[6].params.pad_link, 11);
-  EXPECT_EQ(model.kit(0).trigger(6).params.pad_link, 0);  // no v3 data
+  EXPECT_EQ(model.kit(0).pads[6].params.link_receive, 11);
+  EXPECT_EQ(model.kit(0).pads[6].params.link_send, 0);
+  EXPECT_EQ(model.kit(0).trigger(6).params.link_send, 0);  // no v3 data
 }
 
 TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase) {

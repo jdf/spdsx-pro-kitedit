@@ -217,7 +217,9 @@ std::string CommandLine(const SetModeRequest& request) {
 
 std::string CommandLine(const PadLinkRequest& request) {
   std::string out = "spdutil padlink --kits " + KitSpecText(request.kits)
-      + " --group " + std::to_string(request.group);
+      + " --group " + std::to_string(request.group) + " --direction "
+      + (request.direction == device::LinkDirection::kSend ? "send"
+                                                           : "receive");
   for (const int trigger : request.triggers) {
     out += " --trigger " + std::to_string(trigger);
   }

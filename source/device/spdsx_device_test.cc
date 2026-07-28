@@ -363,6 +363,7 @@ TEST_F(SpdsxDeviceTest, SetPadLinkFocusesTheObjectThenWritesTheGroup) {
   dev.SetPadLink({.kit = 200,
                   .kind = ObjectKind::kPad,
                   .index = 7,
+                  .direction = LinkDirection::kReceive,
                   .group = 11,
                   .pace_seconds = 0.0});
 
@@ -371,7 +372,10 @@ TEST_F(SpdsxDeviceTest, SetPadLinkFocusesTheObjectThenWritesTheGroup) {
   EXPECT_EQ(sent[0],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 7)}));
   EXPECT_EQ(sent[1],
-            Dt1(PadLinkAddr({.kind = ObjectKind::kPad, .index = 7, .kit = 200}),
+            Dt1(PadLinkAddr({.kind = ObjectKind::kPad,
+                             .index = 7,
+                             .kit = 200,
+                             .direction = LinkDirection::kReceive}),
                 {0x0b}));
 }
 
@@ -389,13 +393,14 @@ TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
   params.hi_hat_fade_in = 5;
   params.hi_hat_decay = 25;
   params.trigger_reserve = 1;
-  params.pad_link = 11;
+  params.link_send = 4;
+  params.link_receive = 11;
 
   dev.SetPadLayerParams(
       {.kit = 200, .pad = 9, .params = params, .pace_seconds = 0.0});
 
   const std::vector<Bytes> sent = port.payloads();
-  ASSERT_EQ(sent.size(), 12u);  // the focus, then eleven fields
+  ASSERT_EQ(sent.size(), 13u);  // the focus, then twelve fields
   EXPECT_EQ(sent[0],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 9)}));
 
@@ -411,6 +416,7 @@ TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {
                 {0x07, 80},
                 {0x08, 5},
                 {0x09, 25},
+                {0x0c, 4},
                 {0x0d, 11},
                 {0x13, 1}};
 

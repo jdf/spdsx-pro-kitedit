@@ -59,7 +59,12 @@ inline constexpr size_t kPadFixedVel = 0x05;
 inline constexpr size_t kPadHiHatVolume = 0x07;
 inline constexpr size_t kPadHiHatFadeIn = 0x08;
 inline constexpr size_t kPadHiHatDecay = 0x09;
-inline constexpr size_t kPadLinkGroup = 0x0d;
+// The directional pad-link pair (same offsets for pads and triggers):
+// send group at +0x0c, receive group at +0x0d; 0 = none. Mapped live
+// 2026-07-27 on kit 199 (pad 3 send 3 -> +0x0c; trigger 1 receive 3 ->
+// +0x0d).
+inline constexpr size_t kLinkSendOffset = 0x0c;
+inline constexpr size_t kLinkReceiveOffset = 0x0d;
 inline constexpr size_t kPadTrigReserve = 0x13;
 
 // Per-layer table within a kit record; each layer block starts with the
@@ -72,16 +77,13 @@ inline constexpr size_t kLayerBlockStride = 60;  // 0x3c
 
 // The trigger table follows the pad table directly: 8 triggers x 28-byte
 // blocks at rec+0x380, mirroring the pad blocks field for field (probed
-// offline 2026-07-27: mode/fades/dynamics/curve/fixed-velocity/hi-hat
-// trio sit at the pad offsets) EXCEPT the pad-link group, which sits at
-// +0x0c (the trigger DT1 offset — param index == record offset holds
-// for triggers as for pads). Trigger layers continue the layer table:
+// offline 2026-07-27: every offset, the link pair included, matches the
+// pad blocks). Trigger layers continue the layer table:
 // blocks 18..33 (trigger t top = 18 + 2t), confirmed by preload kits
 // carrying consecutive pool waves there.
 inline constexpr int kTriggersPerKit = 8;
 inline constexpr size_t kTrigTableOffset = 0x380;
 inline constexpr size_t kTrigBlockStride = 28;
-inline constexpr size_t kTrigPadLink = 0x0c;
 inline constexpr int kTrigLayerBlockBase = 18;
 inline constexpr size_t kLayerVolumeLo = 0x02;  // s16 LE, 0.1 dB units
 inline constexpr size_t kLayerFadeIn = 0x0d;
@@ -103,8 +105,9 @@ struct PadDeviceParams {
   uint8_t dynamics_curve = 0;
   uint8_t fixed_velocity = 0;
   uint8_t trigger_reserve = 0;
-  // Pad-link group, 0 = unlinked (record offset +0x0d, like the DT1).
-  uint8_t pad_link = 0;
+  // The directional pad-link pair, 0 = none.
+  uint8_t link_send = 0;
+  uint8_t link_receive = 0;
   // HI-HAT closed-pedal shaping (used only in HI-HAT mode).
   uint8_t hi_hat_volume = 0;
   uint8_t hi_hat_fade_in = 0;

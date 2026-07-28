@@ -716,8 +716,8 @@ juce::String MainComponent::ApplyBulkPadLink(
     touched.insert(change.kit);
   }
   undo().beginNewTransaction("pad link change");
-  undo().perform(
-      new bulk::PadLinkAction(document_, device_, plan, request.group));
+  undo().perform(new bulk::PadLinkAction(
+      document_, device_, plan, request.group, request.direction));
   MarkEdited();
   UpdateSyncButton();
   commands_.commandStatusChanged();

@@ -32,9 +32,11 @@ struct PadParams {
   // Device-only (read/write, not emulated): hold a strike until the
   // next click accent instead of sounding immediately.
   bool trigger_reserve = false;
-  // Pad-link group (hits on one linked pad trigger the others); 0 =
-  // unlinked. Stored and synced; not emulated by the engine.
-  int pad_link = 0;
+  // The directional pad-link pair: this object SENDS its hits to
+  // link_send's group, and RECEIVES hits from link_receive's group;
+  // 0 = none. Stored and synced; not emulated by the engine.
+  int link_send = 0;
+  int link_receive = 0;
   // HI-HAT mode's closed-pedal shaping (0..127). Volume scales the
   // closed layer and is emulated; fade in (attack) and decay are
   // read/write for the device only until the engine grows envelopes.

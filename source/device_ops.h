@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "device/kit_image.h"
+#include "device/protocol.h"
 #include "device/spdsx_device.h"
 #include "layers.h"
 #include "spdutil_args.h"  // KitRange
@@ -102,6 +103,8 @@ struct PadLinkRequest {
   std::vector<spdutil::KitRange> kits;  // required: never implied
   std::vector<int> pads;  // 1-9
   std::vector<int> triggers;  // 1-8
+  // Whether the named objects SEND to the group or RECEIVE from it.
+  device::LinkDirection direction = device::LinkDirection::kReceive;
   int group = 0;  // 0 = unlink
 };
 

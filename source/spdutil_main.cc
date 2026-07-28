@@ -182,6 +182,9 @@ int Usage() {
       "                  to persist\n"
       "  padlink     put triggers/pads into a pad-link group:\n"
       "                --group N        link group (required)\n"
+      "                --direction send|receive   whether the objects\n"
+      "                                 fire the group or get fired by\n"
+      "                                 it (required)\n"
       "                --trigger N      link trigger N\n"
       "                --pad N          link pad N\n"
       "                --kits SPEC      kits to touch (required)\n"
@@ -1039,14 +1042,15 @@ int RunKit(const KitShowArgs& args) {
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
   std::printf(
       "  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
-      "  hhVol hhFadeIn hhDecay  link  top   bottom\n");
+      "  hhVol hhFadeIn hhDecay  send  recv  top   bottom\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
-        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d\n",
+        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d "
+        "%5d\n",
         pad + 1,
         mode,
         p.fade_point,
@@ -1058,7 +1062,8 @@ int RunKit(const KitShowArgs& args) {
         p.hi_hat_volume,
         p.hi_hat_fade_in,
         p.hi_hat_decay,
-        p.pad_link,
+        p.link_send,
+        p.link_receive,
         p.wave_top,
         p.wave_bottom);
   }
@@ -1068,7 +1073,8 @@ int RunKit(const KitShowArgs& args) {
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
-        "   t%d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d\n",
+        "   t%d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d "
+        "%5d\n",
         trig + 1,
         mode,
         p.fade_point,
@@ -1080,7 +1086,8 @@ int RunKit(const KitShowArgs& args) {
         p.hi_hat_volume,
         p.hi_hat_fade_in,
         p.hi_hat_decay,
-        p.pad_link,
+        p.link_send,
+        p.link_receive,
         p.wave_top,
         p.wave_bottom);
   }
@@ -1090,6 +1097,8 @@ int RunKit(const KitShowArgs& args) {
 struct PadLinkArgs {
   std::string port;
   int group = 0;
+  spdsx::device::LinkDirection direction =
+      spdsx::device::LinkDirection::kReceive;
   std::vector<std::pair<ObjectKind, int>> objects;
   std::vector<KitRange> ranges;
   bool dry_run = false;
@@ -1109,7 +1118,12 @@ int RunPadLink(const PadLinkArgs& args) {
   std::unique_ptr<spdsx::device::SpdsxDevice> owned;
   if (!dry_run) {
     const std::string port = ResolvePort(args.port);
-    std::printf("About to WRITE to %s (group %d):", port.c_str(), group);
+    std::printf("About to WRITE to %s (group %d, %s):",
+                port.c_str(),
+                group,
+                args.direction == spdsx::device::LinkDirection::kSend
+                    ? "send"
+                    : "receive");
     for (const auto& [kind, index] : objects) {
       std::printf(" %s%d", KindName(kind), index);
     }
@@ -1163,10 +1177,12 @@ int RunPadLink(const PadLinkArgs& args) {
         const Bytes foc =
             spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
                                {spdsx::device::SelectValue(kind, index)});
-        const Bytes wr =
-            spdsx::device::Dt1(spdsx::device::PadLinkAddr(
-                                   {.kind = kind, .index = index, .kit = kit}),
-                               {static_cast<uint8_t>(group & 0x7F)});
+        const Bytes wr = spdsx::device::Dt1(
+            spdsx::device::PadLinkAddr({.kind = kind,
+                                        .index = index,
+                                        .kit = kit,
+                                        .direction = args.direction}),
+            {static_cast<uint8_t>(group & 0x7F)});
         std::printf("        focus %s%d : %s\n",
                     KindName(kind),
                     index,
@@ -1213,6 +1229,8 @@ int main(int argc, char** argv) {
   int sample_arg = -1;
   int pad_num = 0;
   int kit_arg = 0;
+  auto direction_arg = spdsx::device::LinkDirection::kReceive;
+  bool have_direction = false;
   std::string mode_arg;
   std::string if_mode_arg;
   double volume_arg = 0.0;
@@ -1246,6 +1264,17 @@ int main(int argc, char** argv) {
         port = next();
       } else if (arg == "--group") {
         group = std::atoi(next().c_str());
+      } else if (arg == "--direction") {
+        const std::string v = next();
+        if (v == "send") {
+          direction_arg = spdsx::device::LinkDirection::kSend;
+        } else if (v == "receive") {
+          direction_arg = spdsx::device::LinkDirection::kReceive;
+        } else {
+          throw std::runtime_error("--direction must be send or receive, not \""
+                                   + v + "\"");
+        }
+        have_direction = true;
       } else if (arg == "--trigger") {
         objects.emplace_back(ObjectKind::kTrig, std::atoi(next().c_str()));
       } else if (arg == "--pad") {
@@ -1496,8 +1525,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "padlink needs at least one --trigger or --pad\n");
         return 2;
       }
+      if (!have_direction) {
+        std::fprintf(stderr,
+                     "padlink needs --direction send|receive (do these "
+                     "objects fire the group, or get fired by it?)\n");
+        return 2;
+      }
       return RunPadLink({.port = port,
                          .group = group,
+                         .direction = direction_arg,
                          .objects = objects,
                          .ranges = ranges,
                          .dry_run = dry_run,

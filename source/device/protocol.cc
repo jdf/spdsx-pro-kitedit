@@ -71,14 +71,13 @@ Bytes PadLinkAddr(PadLinkTarget target) {
       throw std::out_of_range("pad 1-9");
     }
     addr.push_back(static_cast<uint8_t>(0x1F + target.index));
-    addr.push_back(0x0D);
   } else {
     if (target.index < 1 || target.index > 8) {
       throw std::out_of_range("trigger 1-8");
     }
     addr.push_back(static_cast<uint8_t>(0x28 + target.index));
-    addr.push_back(0x0C);
   }
+  addr.push_back(static_cast<uint8_t>(LinkParam(target.direction)));
   return addr;
 }
 

@@ -94,7 +94,7 @@ TEST(BulkSetMode, AlreadyThereMeansNoChange) {
 
 TEST(BulkPadLink, PlansOnlyPadsNotAlreadyInTheGroup) {
   auto kits = Kits(3);
-  kits[0].pads[6].params.pad_link = 11;  // kit 1 pad 7 already there
+  kits[0].pads[6].params.link_receive = 11;  // kit 1 pad 7 already there
   ops::PadLinkRequest request;
   request.kits = {{1, 3}};
   request.pads = {7};
@@ -107,10 +107,11 @@ TEST(BulkPadLink, PlansOnlyPadsNotAlreadyInTheGroup) {
 
 TEST(BulkPadLink, TriggersPlanFromTheTriggerTable) {
   auto kits = Kits(2);
-  kits[0].trigger(6).params.pad_link = 11;  // kit 1 trigger 7 already there
+  kits[0].trigger(6).params.link_send = 11;  // kit 1 trigger 7 already there
   ops::PadLinkRequest request;
   request.kits = {{1, 2}};
   request.triggers = {7};
+  request.direction = device::LinkDirection::kSend;
   request.group = 11;
   const auto plan = PlanPadLink(kits, request);
   ASSERT_EQ(plan.size(), 1u);
@@ -130,7 +131,7 @@ TEST(BulkPadLink, NoObjectsMeansNoChanges) {
 
 TEST(BulkPadLink, GroupZeroUnlinks) {
   auto kits = Kits(2);
-  kits[0].pads[0].params.pad_link = 5;
+  kits[0].pads[0].params.link_receive = 5;
   ops::PadLinkRequest request;
   request.kits = {{1, 2}};
   request.pads = {1};
@@ -213,12 +214,13 @@ TEST_F(SetModeActionTest, TheActiveKitReloadsIntoTheModel) {
 }
 
 TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
-  device.kit(2).pads[6].params.pad_link = 4;  // kit 3 pad 7, group 4
-  device.kit(3).trigger(6).params.pad_link = 2;  // kit 4 trigger 7, group 2
+  device.kit(2).pads[6].params.link_receive = 4;  // kit 3 pad 7, group 4
+  device.kit(3).trigger(6).params.link_receive = 2;  // kit 4 trig 7, group 2
   ops::PadLinkRequest request;
   request.kits = {{3, 4}};
   request.pads = {7};
   request.triggers = {7};
+  request.direction = device::LinkDirection::kReceive;
   request.group = 11;
   std::vector<KitData> snapshot;
   for (int i = 0; i < DeviceModel::kKitCount; ++i) {
@@ -226,17 +228,20 @@ TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
   }
   juce::UndoManager undo;
   undo.beginNewTransaction("pad link change");
-  ASSERT_TRUE(undo.perform(new PadLinkAction(
-      *document, device, PlanPadLink(snapshot, request), request.group)));
-  EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 11);
-  EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 11);
-  EXPECT_EQ(device.kit(2).trigger(6).params.pad_link, 11);
-  EXPECT_EQ(device.kit(3).trigger(6).params.pad_link, 11);
+  ASSERT_TRUE(undo.perform(new PadLinkAction(*document,
+                                             device,
+                                             PlanPadLink(snapshot, request),
+                                             request.group,
+                                             request.direction)));
+  EXPECT_EQ(device.kit(2).pads[6].params.link_receive, 11);
+  EXPECT_EQ(device.kit(3).pads[6].params.link_receive, 11);
+  EXPECT_EQ(device.kit(2).trigger(6).params.link_receive, 11);
+  EXPECT_EQ(device.kit(3).trigger(6).params.link_receive, 11);
   ASSERT_TRUE(undo.undo());
-  EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 4);
-  EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 0);
-  EXPECT_EQ(device.kit(2).trigger(6).params.pad_link, 0);
-  EXPECT_EQ(device.kit(3).trigger(6).params.pad_link, 2);
+  EXPECT_EQ(device.kit(2).pads[6].params.link_receive, 4);
+  EXPECT_EQ(device.kit(3).pads[6].params.link_receive, 0);
+  EXPECT_EQ(device.kit(2).trigger(6).params.link_receive, 0);
+  EXPECT_EQ(device.kit(3).trigger(6).params.link_receive, 2);
 }
 
 }  // namespace

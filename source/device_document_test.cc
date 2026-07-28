@@ -678,11 +678,11 @@ TEST_F(DeviceDocumentTest, ApplySyncedKitAdvancesBothCopiesAndTheModel) {
 TEST_F(DeviceDocumentTest, ActiveKitWithTriggerLinksStaysCleanAfterSync) {
   ASSERT_TRUE(doc->CreateNew(path()).wasOk());
   KitData pulled;
-  pulled.trigger(6).params.pad_link = 11;
+  pulled.trigger(6).params.link_send = 11;
 
   doc->ApplySyncedKit(0, pulled, pulled);  // kit 0 is the active kit
 
-  EXPECT_EQ(doc->KitContent(0).trigger(6).params.pad_link, 11);
+  EXPECT_EQ(doc->KitContent(0).trigger(6).params.link_send, 11);
   EXPECT_FALSE(doc->KitDirtyVsBase(0));
   EXPECT_TRUE(doc->DirtyKits().empty());
 }

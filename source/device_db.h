@@ -59,7 +59,7 @@ public:
   // one is migrated on open into a new document at the current version
   // (the original is kept beside it as a .bak).
   // v2 (2026-07-22): per-layer mix columns on pads.
-  static constexpr int kCurrentSchemaVersion = 5;  // v5: triggers as pads 9-16
+  static constexpr int kCurrentSchemaVersion = 6;  // v6: directional links
   int SchemaVersion();
 
   // Copies the current snapshot onto the base snapshot — the clean point

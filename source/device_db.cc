@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS pads(
   top_decay INTEGER DEFAULT 127,
   bottom_volume INTEGER DEFAULT 0, bottom_fadein INTEGER DEFAULT 0,
   bottom_decay INTEGER DEFAULT 127,
-  pad_link INTEGER DEFAULT 0,
+  link_send INTEGER DEFAULT 0, link_receive INTEGER DEFAULT 0,
   PRIMARY KEY(snapshot, kit_idx, pad_idx));
 CREATE TABLE IF NOT EXISTS samples(
   idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
@@ -56,14 +56,11 @@ const char* kV2PadColumns =
     "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
     "bottom_decay";
 
-// v3 added pad_link; v4 adds the triggers table (created empty by the
-// migration — older documents had no trigger data to carry).
-const char* kV3PadColumns =
-    "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
-    "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
-    "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
-    "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
-    "bottom_decay, pad_link";
+// v3-v5 carried a single pad_link column; v6 splits it into the
+// directional link_send/link_receive pair. What the old column MEANT
+// depends on the row: pad rows held the receive group, trigger rows
+// (pad_idx 9-16, since v5) the send group — the migration maps each
+// into its half of the pair.
 
 const char* SnapshotName(Snapshot s) {
   return s == Snapshot::kBase ? "base" : "current";
@@ -234,22 +231,32 @@ bool MigrateOlderDocument(const juce::File& path,
              .c_str());
     Exec(db, "BEGIN;");
     Exec(db, "INSERT INTO kits SELECT * FROM old.kits;");
-    const char* pad_columns = from_version >= 3
-        ? kV3PadColumns
-        : (from_version >= 2 ? kV2PadColumns : kV1PadColumns);
-    Exec(db,
-         (std::string("INSERT INTO pads(") + pad_columns + ") SELECT "
-          + pad_columns + " FROM old.pads;")
-             .c_str());
+    const char* pad_columns = from_version >= 2 ? kV2PadColumns : kV1PadColumns;
+    if (from_version >= 3) {
+      // The one old pad_link column splits by row kind: pads received,
+      // triggers sent.
+      Exec(db,
+           (std::string("INSERT INTO pads(") + pad_columns
+            + ", link_send, link_receive) SELECT " + pad_columns
+            + ", CASE WHEN pad_idx >= 9 THEN pad_link ELSE 0 END,"
+              " CASE WHEN pad_idx < 9 THEN pad_link ELSE 0 END"
+              " FROM old.pads;")
+               .c_str());
+    } else {
+      Exec(db,
+           (std::string("INSERT INTO pads(") + pad_columns + ") SELECT "
+            + pad_columns + " FROM old.pads;")
+               .c_str());
+    }
     if (from_version == 4) {
       // v4 kept trigger links in their own table; since v5 a trigger is
-      // a full pad row at pad_idx 9-16. Only the link was stored, so the
-      // rest of the row gets the factory-default params.
+      // a full pad row at pad_idx 9-16. Only the (send) link was
+      // stored, so the rest of the row gets the factory-default params.
       Exec(db,
            "INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, "
            "fade_end, dynamics, curve, fixed_velocity, hihat_vol, "
            "hihat_fadein, hihat_decay, trigger_reserve, top_device, "
-           "top_local, bottom_device, bottom_local, pad_link) "
+           "top_local, bottom_device, bottom_local, link_send) "
            "SELECT snapshot, kit_idx, trig_idx + 9, 0, 80, 127, 1, 0, 127, "
            "80, 0, 25, 0, 0, '', 0, '', pad_link FROM old.triggers;");
     }
@@ -361,9 +368,9 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         "fade_end, dynamics, curve, fixed_velocity, hihat_vol, hihat_fadein, "
         "hihat_decay, trigger_reserve, top_device, top_local, bottom_device, "
         "bottom_local, top_volume, top_fadein, top_decay, bottom_volume, "
-        "bottom_fadein, bottom_decay, pad_link) "
+        "bottom_fadein, bottom_decay, link_send, link_receive) "
         "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,"
-        "?15,?16,?17,?18,?19,?20,?21,?22,?23,?24);");
+        "?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25);");
     for (int k = 0; k < DeviceModel::kKitCount; ++k) {
       const KitData& kd = model.kit(k);
       kit.Text(1, snap);
@@ -396,7 +403,8 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         pad.Int(21, pp.mix_bottom.volume_db10);
         pad.Int(22, pp.mix_bottom.fade_in);
         pad.Int(23, pp.mix_bottom.decay);
-        pad.Int(24, pp.pad_link);
+        pad.Int(24, pp.link_send);
+        pad.Int(25, pp.link_receive);
         pad.RunOnce();
       }
     }
@@ -437,7 +445,7 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
         "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
         "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
         "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
-        "bottom_decay, pad_link "
+        "bottom_decay, link_send, link_receive "
         "FROM pads WHERE snapshot=?1;");
     pad.Text(1, snap);
     while (pad.Step()) {
@@ -474,7 +482,8 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
       };
       pp.mix_top = mix(16);
       pp.mix_bottom = mix(19);
-      pp.pad_link = juce::jlimit(0, 127, pad.ColInt(22));
+      pp.link_send = juce::jlimit(0, 127, pad.ColInt(22));
+      pp.link_receive = juce::jlimit(0, 127, pad.ColInt(23));
     }
   }
   {}
@@ -575,7 +584,8 @@ void DeviceDb::CaptureBase() {
          "hihat_vol, hihat_fadein, hihat_decay, trigger_reserve, "
          "top_device, top_local, bottom_device, bottom_local, "
          "top_volume, top_fadein, top_decay, "
-         "bottom_volume, bottom_fadein, bottom_decay, pad_link "
+         "bottom_volume, bottom_fadein, bottom_decay, link_send, "
+         "link_receive "
          "FROM pads WHERE snapshot='current';");
   } catch (...) {
     Exec(db_, "ROLLBACK;");

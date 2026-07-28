@@ -47,12 +47,15 @@ std::vector<LinkChange> PlanPadLink(const std::vector<KitData>& kits,
         continue;
       }
       const KitData& data = kits[static_cast<size_t>(kit - 1)];
+      const bool send = request.direction == device::LinkDirection::kSend;
+      auto field = [send](const Pad& object) {
+        return send ? object.params.link_send : object.params.link_receive;
+      };
       for (const int pad : request.pads) {
         if (pad < 1 || pad > 9) {
           continue;
         }
-        const int current =
-            data.pads[static_cast<size_t>(pad - 1)].params.pad_link;
+        const int current = field(data.pads[static_cast<size_t>(pad - 1)]);
         if (current != request.group) {
           plan.push_back(
               {.kit = kit, .trigger = false, .index = pad, .from = current});
@@ -62,7 +65,7 @@ std::vector<LinkChange> PlanPadLink(const std::vector<KitData>& kits,
         if (trigger < 1 || trigger > device::kTriggersPerKit) {
           continue;
         }
-        const int current = data.trigger(trigger - 1).params.pad_link;
+        const int current = field(data.trigger(trigger - 1));
         if (current != request.group) {
           plan.push_back(
               {.kit = kit, .trigger = true, .index = trigger, .from = current});
@@ -95,12 +98,10 @@ void PadLinkAction::ApplyLinks(bool forward) {
         continue;
       }
       const int value = forward ? group_ : change.from;
-      if (change.trigger) {
-        content.trigger(change.index - 1).params.pad_link = value;
-      } else {
-        content.pads[static_cast<size_t>(change.index - 1)].params.pad_link =
-            value;
-      }
+      Pad& object = change.trigger
+          ? content.trigger(change.index - 1)
+          : content.pads[static_cast<size_t>(change.index - 1)];
+      (send_ ? object.params.link_send : object.params.link_receive) = value;
     }
     document_.ApplyBulkKit(kit - 1, content);
   }

@@ -297,6 +297,23 @@ public:
     }
     addAndMakeVisible(Caption(triggers_note_, "the external trigger inputs"));
 
+    addAndMakeVisible(Caption(direction_caption_, "Direction"));
+    send_radio_.setRadioGroupId(1);
+    receive_radio_.setRadioGroupId(1);
+    receive_radio_.setToggleState(true, juce::dontSendNotification);
+    for (juce::ToggleButton* radio : {&send_radio_, &receive_radio_}) {
+      radio->onClick = [this, radio] {
+        if (radio->getToggleState()) {
+          Changed();
+        }
+      };
+      addAndMakeVisible(*radio);
+    }
+    addAndMakeVisible(Caption(
+        direction_note_,
+        "send: hits on these objects fire the group; receive: the group "
+        "fires them"));
+
     addAndMakeVisible(Caption(group_caption_, "Link group"));
     group_.setRange(0, 32, 1);
     group_.setSliderStyle(juce::Slider::IncDecButtons);
@@ -348,6 +365,13 @@ public:
     triggers_note_.setBounds(row(kHintRow));
     area.removeFromTop(12);
 
+    direction_caption_.setBounds(row(kCaptionRow));
+    auto direction_row = row(kControlRow);
+    send_radio_.setBounds(direction_row.removeFromLeft(110));
+    receive_radio_.setBounds(direction_row.removeFromLeft(130));
+    direction_note_.setBounds(row(kHintRow));
+    area.removeFromTop(12);
+
     group_caption_.setBounds(row(kCaptionRow));
     group_.setBounds(row(kControlRow).removeFromLeft(170));
     group_note_.setBounds(row(kHintRow));
@@ -381,6 +405,9 @@ private:
     kits_.Parse(&request.kits, &error);
     request.pads = Ticked(pads_);
     request.triggers = Ticked(triggers_);
+    request.direction = send_radio_.getToggleState()
+        ? device::LinkDirection::kSend
+        : device::LinkDirection::kReceive;
     request.group = static_cast<int>(group_.getValue());
     return request;
   }
@@ -393,6 +420,10 @@ private:
   juce::Label triggers_caption_;
   juce::Label triggers_note_;
   std::vector<std::unique_ptr<juce::ToggleButton>> triggers_;
+  juce::Label direction_caption_;
+  juce::ToggleButton send_radio_ {"Send"};
+  juce::ToggleButton receive_radio_ {"Receive"};
+  juce::Label direction_note_;
   juce::Label group_caption_;
   juce::Slider group_;
   juce::Label group_note_;

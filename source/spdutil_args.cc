@@ -38,7 +38,13 @@ const std::map<std::string, std::vector<std::string>, std::less<>>& Table() {
            {"pad", "volume", "fadein", "decay", "commit", "dry-run", "kits"}},
           {"setmode", {"mode", "if-mode", "pad", "kits", "dry-run", "commit"}},
           {"padlink",
-           {"group", "trigger", "pad", "kits", "dry-run", "verbose"}},
+           {"group",
+            "direction",
+            "trigger",
+            "pad",
+            "kits",
+            "dry-run",
+            "verbose"}},
       };
   return kTable;
 }

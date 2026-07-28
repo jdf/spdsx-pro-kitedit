@@ -148,6 +148,7 @@ public:
     int kit = 0;
     ObjectKind kind = ObjectKind::kPad;
     int index = 0;  // 1-based pad/trigger number
+    LinkDirection direction = LinkDirection::kReceive;
     int group = 0;
     double pace_seconds = 0.02;
   };

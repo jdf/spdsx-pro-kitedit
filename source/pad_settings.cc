@@ -156,14 +156,21 @@ PadSettingsPanel::PadSettingsPanel() {
   velocity_.onValueChange = [this] { Push(); };
   addAndMakeVisible(velocity_);
 
-  // Pad link: hits on one linked pad trigger the others. 0 = unlinked.
-  pad_link_.setRange(0, 32, 1);
-  pad_link_.setSliderStyle(juce::Slider::IncDecButtons);
-  pad_link_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 22);
-  pad_link_.setTextBoxIsEditable(true);
-  pad_link_.setChangeNotificationOnlyOnRelease(true);
-  pad_link_.onValueChange = [this] { Push(); };
-  addAndMakeVisible(pad_link_);
+  // The directional link pair: send fires the group, receive gets
+  // fired by it. 0 = none.
+  auto init_link = [this](juce::Slider& stepper, juce::Label& label) {
+    stepper.setRange(0, 32, 1);
+    stepper.setSliderStyle(juce::Slider::IncDecButtons);
+    stepper.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 22);
+    stepper.setTextBoxIsEditable(true);
+    stepper.setChangeNotificationOnlyOnRelease(true);
+    stepper.onValueChange = [this] { Push(); };
+    label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+    addAndMakeVisible(label);
+    addAndMakeVisible(stepper);
+  };
+  init_link(link_send_, link_send_label_);
+  init_link(link_receive_, link_receive_label_);
   pad_link_hint_.setFont(juce::FontOptions(12.0f));
   pad_link_hint_.setColour(juce::Label::textColourId, juce::Colour(0xff8b949e));
   addAndMakeVisible(pad_link_hint_);
@@ -237,7 +244,8 @@ void PadSettingsPanel::SetParams(const PadParams& params) {
   curve_.setSelectedId(static_cast<int>(params.curve) + 1,
                        juce::dontSendNotification);
   velocity_.setValue(params.fixed_velocity, juce::dontSendNotification);
-  pad_link_.setValue(params.pad_link, juce::dontSendNotification);
+  link_send_.setValue(params.link_send, juce::dontSendNotification);
+  link_receive_.setValue(params.link_receive, juce::dontSendNotification);
   const PadParams::LayerMix* mixes[2] = {&params.mix_top, &params.mix_bottom};
   for (size_t l = 0; l < mix_.size(); ++l) {
     mix_[l].volume.setValue(mixes[l]->volume_db10 / 10.0,
@@ -283,7 +291,7 @@ void PadSettingsPanel::RefreshSections() {
                                    : 0),  // ...plus fades when it fades
                 kSectionGap)
       + section(kKnobHeight + kControlGap + kRowHeight)  // dynamics radios
-      + section(kRowHeight)  // link group
+      + section(2 * kRowHeight + kControlGap)  // link send + receive
       + section(2 * (kRowHeight + kCaptionGap + knob_unit)
                 + kControlGap)  // the two layer envelopes
       + (show_pedal_ ? section(3 * kKnobHeight + 2 * kControlGap) : 0)
@@ -353,11 +361,17 @@ void PadSettingsPanel::resized() {
   curve_.setBounds(curve_row.removeFromLeft(120));
 
   band(area, link_header_, kHeaderHeight);
-  auto link_row = area.removeFromTop(kRowHeight);
-  link_row.removeFromLeft(kAlignInset);
-  pad_link_.setBounds(link_row.removeFromLeft(116).reduced(0, 2));
-  link_row.removeFromLeft(8);
-  pad_link_hint_.setBounds(link_row);
+  auto send_row = area.removeFromTop(kRowHeight);
+  send_row.removeFromLeft(kAlignInset);
+  link_send_label_.setBounds(send_row.removeFromLeft(64));
+  link_send_.setBounds(send_row.removeFromLeft(116).reduced(0, 2));
+  send_row.removeFromLeft(8);
+  pad_link_hint_.setBounds(send_row);
+  area.removeFromTop(kControlGap);
+  auto receive_row = area.removeFromTop(kRowHeight);
+  receive_row.removeFromLeft(kAlignInset);
+  link_receive_label_.setBounds(receive_row.removeFromLeft(64));
+  link_receive_.setBounds(receive_row.removeFromLeft(116).reduced(0, 2));
 
   band(area, envelopes_header_, kHeaderHeight);
   for (size_t l = 0; l < mix_.size(); ++l) {
@@ -408,7 +422,8 @@ void PadSettingsPanel::Push() {
   params.dynamics = curve_radio_.getToggleState();
   params.curve = static_cast<DynamicsCurve>(curve_.getSelectedId() - 1);
   params.fixed_velocity = static_cast<int>(velocity_.getValue());
-  params.pad_link = static_cast<int>(pad_link_.getValue());
+  params.link_send = static_cast<int>(link_send_.getValue());
+  params.link_receive = static_cast<int>(link_receive_.getValue());
   params.hi_hat_volume = static_cast<int>(volume_.getValue());
   params.hi_hat_fade_in = static_cast<int>(fade_in_.getValue());
   params.hi_hat_decay = static_cast<int>(decay_.getValue());

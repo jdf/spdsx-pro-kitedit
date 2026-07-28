@@ -291,7 +291,10 @@ void SpdsxDevice::SelectObject(ObjectKind kind, int index) {
 void SpdsxDevice::SetPadLink(const PadLinkWrite& w) {
   SelectObject(w.kind, w.index);  // focus; fire-and-forget like every DT1
   std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
-  Send(Dt1(PadLinkAddr({.kind = w.kind, .index = w.index, .kit = w.kit}),
+  Send(Dt1(PadLinkAddr({.kind = w.kind,
+                        .index = w.index,
+                        .kit = w.kit,
+                        .direction = w.direction}),
            {static_cast<uint8_t>(w.group & 0x7F)}));
   std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
 }
@@ -361,7 +364,8 @@ void SpdsxDevice::SetPadLayerParams(const PadParamsWrite& w) {
   write(0x07, w.params.hi_hat_volume);
   write(0x08, w.params.hi_hat_fade_in);
   write(0x09, w.params.hi_hat_decay);
-  write(LinkParam(w.kind), w.params.pad_link);
+  write(kLinkSendParam, w.params.link_send);
+  write(kLinkReceiveParam, w.params.link_receive);
   write(0x13, w.params.trigger_reserve);
 }
 

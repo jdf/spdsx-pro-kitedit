@@ -176,57 +176,87 @@ TEST(PadLinkPrefix, RefusesAKitTheDeviceDoesNotHave) {
 
 // ---- PadLinkAddr ----
 
+// The captures behind these were the classic uses: triggers SENDING
+// (offset 0x0c) and a pad RECEIVING (0x0d) — the same offsets the
+// direction now selects explicitly.
 TEST(PadLinkAddr, MatchesTheCapturedPadLinkMessages) {
   const struct {
     int kit;
     ObjectKind kind;
     int index;
+    LinkDirection direction;
     int group;
     const char* hex;
   } cases[] = {
       {5,
        ObjectKind::kTrig,
        7,
+       LinkDirection::kSend,
        3,
        "f0 41 10 00 00 00 00 16 12 04 08 2f 0c 03 36 f7"},
       {10,
        ObjectKind::kTrig,
        7,
+       LinkDirection::kSend,
        5,
        "f0 41 10 00 00 00 00 16 12 04 12 2f 0c 05 2a f7"},
       {20,
        ObjectKind::kTrig,
        7,
+       LinkDirection::kSend,
        5,
        "f0 41 10 00 00 00 00 16 12 04 26 2f 0c 05 16 f7"},
       {200,
        ObjectKind::kTrig,
        7,
+       LinkDirection::kSend,
        1,
        "f0 41 10 00 00 00 00 16 12 07 0e 2f 0c 01 2f f7"},
       {200,
        ObjectKind::kPad,
        7,
+       LinkDirection::kReceive,
        11,
        "f0 41 10 00 00 00 00 16 12 07 0e 26 0d 0b 2d f7"},
   };
 
   for (const auto& c : cases) {
-    const Bytes built =
-        Dt1(PadLinkAddr({.kind = c.kind, .index = c.index, .kit = c.kit}),
-            {static_cast<uint8_t>(c.group)});
+    const Bytes built = Dt1(PadLinkAddr({.kind = c.kind,
+                                         .index = c.index,
+                                         .kit = c.kit,
+                                         .direction = c.direction}),
+                            {static_cast<uint8_t>(c.group)});
     EXPECT_EQ(built, FromHex(c.hex)) << "kit " << c.kit;
   }
 }
 
+// Send lands at 0x0c and receive at 0x0d for BOTH object kinds (mapped
+// live 2026-07-27 on kit 199: pad 3 send / trigger 1 receive).
 TEST(PadLinkAddr, PutsTheKitPrefixAheadOfTheObject) {
-  const Bytes pad =
-      PadLinkAddr({.kind = ObjectKind::kPad, .index = 1, .kit = 129});
+  const Bytes pad = PadLinkAddr({.kind = ObjectKind::kPad,
+                                 .index = 1,
+                                 .kit = 129,
+                                 .direction = LinkDirection::kReceive});
   EXPECT_EQ(pad, Bytes({0x06, 0x00, 0x20, 0x0D}));  // 0x1F + 1
 
-  const Bytes trig =
-      PadLinkAddr({.kind = ObjectKind::kTrig, .index = 1, .kit = 129});
+  const Bytes pad_send = PadLinkAddr({.kind = ObjectKind::kPad,
+                                      .index = 3,
+                                      .kit = 199,
+                                      .direction = LinkDirection::kSend});
+  EXPECT_EQ(pad_send, Bytes({0x07, 0x0c, 0x22, 0x0C}));
+
+  const Bytes trig = PadLinkAddr({.kind = ObjectKind::kTrig,
+                                  .index = 1,
+                                  .kit = 129,
+                                  .direction = LinkDirection::kSend});
   EXPECT_EQ(trig, Bytes({0x06, 0x00, 0x29, 0x0C}));  // 0x28 + 1
+
+  const Bytes trig_receive =
+      PadLinkAddr({.kind = ObjectKind::kTrig,
+                   .index = 1,
+                   .kit = 199,
+                   .direction = LinkDirection::kReceive});
+  EXPECT_EQ(trig_receive, Bytes({0x07, 0x0c, 0x29, 0x0D}));
 }
 
 TEST(PadLinkAddr, RefusesAnObjectTheDeviceDoesNotHave) {
@@ -357,28 +387,24 @@ TEST(PadWaveEnableAddr, DiffersFromTheWaveAddressOnlyInTheField) {
 // and the whole volume write for -0.5 dB (s16 -5 as nibbles) was captured
 // as-is. Layer B is the same page one slot byte up.
 TEST(PadLayerAddr, MatchesTheCapturedLayerEditorWrites) {
-  EXPECT_EQ(
-      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
-                   kLayerVolumeOffset),
-      FromHex("07 0c 40 05"));
-  EXPECT_EQ(
-      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kBottom},
-                   kLayerVolumeOffset),
-      FromHex("07 0c 41 05"));
+  EXPECT_EQ(PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                         kLayerVolumeOffset),
+            FromHex("07 0c 40 05"));
+  EXPECT_EQ(PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kBottom},
+                         kLayerVolumeOffset),
+            FromHex("07 0c 41 05"));
   EXPECT_EQ(
       Dt1(PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
                        kLayerVolumeOffset),
           NibbleEncode(-5 & 0xFFFF)),
       FromHex("f0 41 10 00 00 00 00 16 12 07 0c 40 05 0f 0f 0f 0b 70 f7"));
   // Fade-in and decay are the single-byte fields either side of 0x17/0x18.
-  EXPECT_EQ(
-      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
-                   kLayerFadeInOffset),
-      FromHex("07 0c 40 17"));
-  EXPECT_EQ(
-      PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
-                   kLayerDecayOffset),
-      FromHex("07 0c 40 18"));
+  EXPECT_EQ(PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                         kLayerFadeInOffset),
+            FromHex("07 0c 40 17"));
+  EXPECT_EQ(PadLayerAddr({.kit = 199, .pad = 1, .slot = PadSlot::kTop},
+                         kLayerDecayOffset),
+            FromHex("07 0c 40 18"));
 }
 
 // The wave/enable addresses are the same page's 0x01/0x00 fields.

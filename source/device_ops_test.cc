@@ -127,8 +127,9 @@ TEST(CommandLine, PadLinkReadsBackAsTheSpdutilInvocation) {
   request.kits = {{108, 200}};
   request.pads = {7};
   request.group = 11;
-  EXPECT_EQ(CommandLine(request),
-            "spdutil padlink --kits 108-200 --group 11 --pad 7");
+  EXPECT_EQ(
+      CommandLine(request),
+      "spdutil padlink --kits 108-200 --group 11 --direction receive --pad 7");
 }
 
 TEST(CommandLine, PadLinkRendersTriggersBeforePads) {
@@ -136,9 +137,10 @@ TEST(CommandLine, PadLinkRendersTriggersBeforePads) {
   request.kits = {{1, 200}};
   request.pads = {7};
   request.triggers = {7, 8};
+  request.direction = device::LinkDirection::kSend;
   request.group = 11;
   EXPECT_EQ(CommandLine(request),
-            "spdutil padlink --kits 1-200 --group 11 "
+            "spdutil padlink --kits 1-200 --group 11 --direction send "
             "--trigger 7 --trigger 8 --pad 7");
 }
 

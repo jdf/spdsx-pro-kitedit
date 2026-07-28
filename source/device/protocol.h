@@ -57,11 +57,21 @@ uint8_t SelectValue(ObjectKind kind, int index);
 // two 7-bit bytes (hi = flat >> 7, lo = flat & 0x7F).
 Bytes PadLinkPrefix(int kit);
 
+// A pad-link field is directional: an object SENDS its hits to a
+// group, or RECEIVES the group's hits (mapped live 2026-07-27 on kit
+// 199: pad 3 send group 3 landed at +0x0c, trigger 1 receive group 3
+// at +0x0d — same offsets for both object kinds).
+enum class LinkDirection {
+  kSend,
+  kReceive
+};
+
 // Names a trigger/pad object within a specific kit (index is 1-based).
 struct PadLinkTarget {
   ObjectKind kind = ObjectKind::kPad;
   int index = 0;
   int kit = 0;
+  LinkDirection direction = LinkDirection::kReceive;
 };
 
 // Full pad-link parameter address for the object within its kit.
@@ -132,14 +142,13 @@ struct PadRef {
   ObjectKind kind = ObjectKind::kPad;
 };
 
-// The pad-link group param index within the parameter page: pads carry
-// it at 0x0d, triggers at 0x0c (both verified live via SetPadLink).
-inline constexpr int kPadLinkParam = 0x0d;
-inline constexpr int kTrigLinkParam = 0x0c;
+// The pad-link param indices within the parameter page (same for pads
+// and triggers): send group at 0x0c, receive group at 0x0d.
+inline constexpr int kLinkSendParam = 0x0c;
+inline constexpr int kLinkReceiveParam = 0x0d;
 
-// The link param index for the given object kind.
-inline constexpr int LinkParam(ObjectKind kind) {
-  return kind == ObjectKind::kPad ? kPadLinkParam : kTrigLinkParam;
+inline constexpr int LinkParam(LinkDirection direction) {
+  return direction == LinkDirection::kSend ? kLinkSendParam : kLinkReceiveParam;
 }
 
 Bytes PadParamAddr(PadRef pad, int param);

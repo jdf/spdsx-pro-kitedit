@@ -197,27 +197,29 @@ TEST(ParseKits, ReadsThePadParamsFromTheMappedOffsets) {
   EXPECT_EQ(kits[128].pads[1].layer_mode, 0);
 }
 
-// Pad-link groups: pads carry theirs in the pad block at +0x0d; the
-// external trigger inputs have their own 8 x 28-byte table at rec+0x380
-// with the group at +0x0c. Both mapped offline 2026-07-27 against the
-// cached image, whose every kit has pad 7 and trigger 7 in group 11
-// (link_all_kits.py wrote them there).
-TEST(ParseKits, ReadsPadAndTriggerLinkGroups) {
+// The directional pad-link pair sits at the same offsets in pad and
+// trigger blocks: send at +0x0c, receive at +0x0d (mapped live
+// 2026-07-27 on kit 199: pad 3 send group 3, trigger 1 receive group
+// 3).
+TEST(ParseKits, ReadsTheDirectionalLinkPair) {
   Bytes image = CleanImage();
-  image[PadAt(128, 6) + kPadLinkGroup] = 11;
+  image[PadAt(128, 2) + kLinkSendOffset] = 3;  // pad 3 sends
+  image[PadAt(128, 6) + kLinkReceiveOffset] = 11;  // pad 7 receives
   const size_t trig = RecordAt(128) + kTrigTableOffset;
-  image[trig + 6 * kTrigBlockStride + kTrigPadLink] = 11;  // trigger 7
-  image[trig + 7 * kTrigBlockStride + kTrigPadLink] = 3;  // trigger 8
+  image[trig + 0 * kTrigBlockStride + kLinkReceiveOffset] = 3;  // trig 1
+  image[trig + 6 * kTrigBlockStride + kLinkSendOffset] = 11;  // trig 7
 
   const std::vector<KitRecord> kits = ParseKits(image);
 
   ASSERT_EQ(kits.size(), static_cast<size_t>(kRecords));
-  EXPECT_EQ(kits[128].pads[6].pad_link, 11);
-  EXPECT_EQ(kits[128].pads[5].pad_link, 0);
-  EXPECT_EQ(kits[128].triggers[6].pad_link, 11);
-  EXPECT_EQ(kits[128].triggers[7].pad_link, 3);
-  EXPECT_EQ(kits[128].triggers[0].pad_link, 0);
-  EXPECT_EQ(kits[127].triggers[6].pad_link, 0);
+  EXPECT_EQ(kits[128].pads[2].link_send, 3);
+  EXPECT_EQ(kits[128].pads[2].link_receive, 0);
+  EXPECT_EQ(kits[128].pads[6].link_receive, 11);
+  EXPECT_EQ(kits[128].pads[6].link_send, 0);
+  EXPECT_EQ(kits[128].triggers[0].link_receive, 3);
+  EXPECT_EQ(kits[128].triggers[0].link_send, 0);
+  EXPECT_EQ(kits[128].triggers[6].link_send, 11);
+  EXPECT_EQ(kits[127].triggers[6].link_send, 0);
 }
 
 // Trigger blocks mirror the pad blocks (probed offline 2026-07-27), and
