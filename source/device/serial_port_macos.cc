@@ -69,10 +69,30 @@ private:
 };
 
 MacOSSerialPort::MacOSSerialPort(const std::string& path, int baud) {
-  fd_ = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+  // Retry briefly on EBUSY: another holder — the app's connection poll,
+  // or spdutil running alongside the app — may have the port for a
+  // moment. The TIOCEXCL below is what makes holders show up as EBUSY.
+  const double open_deadline = NowSeconds() + 0.75;
+  for (;;) {
+    fd_ = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd_ >= 0 || errno != EBUSY || NowSeconds() >= open_deadline) {
+      break;
+    }
+    ::usleep(50'000);
+  }
   if (fd_ < 0) {
     throw std::runtime_error("cannot open " + path + ": "
                              + std::strerror(errno));
+  }
+  // One holder at a time: until this fd closes, further opens of the
+  // tty fail with EBUSY instead of silently sharing the line. Two
+  // holders interleave bytes on the wire, and a single foreign frame
+  // in the middle of an upload's write session wedges the device.
+  if (::ioctl(fd_, TIOCEXCL) != 0) {
+    std::fprintf(stderr,
+                 "warning: could not make %s exclusive: %s\n",
+                 path.c_str(),
+                 std::strerror(errno));
   }
   // Opened non-blocking to avoid hanging on modem control lines; switch to
   // blocking now for straightforward read/write.

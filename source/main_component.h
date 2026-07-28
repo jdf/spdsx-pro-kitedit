@@ -393,7 +393,12 @@ private:
   juce::String ApplyBulkPadLink(const ops::PadLinkRequest& request);
   juce::String device_firmware_version_;
   juce::String device_firmware_;
-  std::atomic<bool> conn_check_running_ {false};
+  // True while the connection poll's worker may be on the port. Shared
+  // with every device-op worker: they wait it out before opening the
+  // port themselves (opens are exclusive; a probe mid-flight would make
+  // the op's open fail).
+  std::shared_ptr<std::atomic<bool>> conn_check_running_ =
+      std::make_shared<std::atomic<bool>>(false);
   juce::uint32 last_conn_check_ms_ = 0;
   // Follow-the-app kit selection on the unit: the pending 1-based kit
   // (shared so a detached worker can read it after switches), and a

@@ -1,6 +1,7 @@
 #include "main_component.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -27,6 +28,20 @@ namespace {
 // How often the app probes for the device; also the holdoff between an
 // app-side kit select and the poll's follow-the-device adoption.
 constexpr juce::uint32 kPollIntervalMs = 2000;
+
+// Opens the device port for a worker-thread operation, first waiting
+// out an in-flight connection probe. New probes don't start while an
+// operation's flag is up, but one already ON the port when the op began
+// would collide: opens are exclusive (TIOCEXCL), so the op's open would
+// fail — and without exclusivity the two would interleave bytes, which
+// wedges the device mid-upload.
+std::unique_ptr<device::SerialPort> OpenDevicePortAfterProbe(
+    const std::shared_ptr<std::atomic<bool>>& probing) {
+  for (int i = 0; i < 150 && probing->load(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  return device::PlatformPorts().Open(device::FindDevicePort());
+}
 
 // The SPD-SX PRO sends pad hits as note-on on channel 10, pads 1-9 on
 // notes 60-68.
@@ -977,13 +992,14 @@ void MainComponent::StartDeviceStateFetch() {
   // only the counter (by shared_ptr) and a SafePointer checked on the
   // message thread, so quitting mid-fetch can't dangle.
   juce::Component::SafePointer<MainComponent> safe(this);
-  std::thread([safe, blocks] {
+  auto probing = conn_check_running_;
+  std::thread([safe, probing, blocks] {
     std::vector<device::KitRecord> kits;
     std::vector<device::SampleRecord> pool;
     juce::String error;
     try {
       const std::unique_ptr<device::SerialPort> serial =
-          device::PlatformPorts().Open(device::FindDevicePort());
+          OpenDevicePortAfterProbe(probing);
       device::SpdsxDevice dev(serial.get());
       const auto count = [&blocks](const device::Bytes&) { ++*blocks; };
       kits = device::ParseKits(
@@ -1072,13 +1088,14 @@ void MainComponent::DownloadKitSamples() {
   juce::Component::SafePointer<MainComponent> safe(this);
   auto current = download_current_;
   auto permille = download_permille_;
-  std::thread([safe, want, current, permille] {
+  auto probing = conn_check_running_;
+  std::thread([safe, want, current, permille, probing] {
     juce::String error;
     int done = 0;
     int failed = 0;
     try {
       const std::unique_ptr<device::SerialPort> serial =
-          device::PlatformPorts().Open(device::FindDevicePort());
+          OpenDevicePortAfterProbe(probing);
       device::SpdsxDevice dev(serial.get());
       for (const int index : want) {
         permille->store(0);
@@ -1186,10 +1203,11 @@ void MainComponent::SyncDeviceKit() {
   }
   auto pending = pending_select_kit_;
   auto running = kit_select_running_;
-  std::thread([pending, running] {
+  auto probing = conn_check_running_;
+  std::thread([pending, running, probing] {
     try {
       const std::unique_ptr<device::SerialPort> serial =
-          device::PlatformPorts().Open(device::FindDevicePort());
+          OpenDevicePortAfterProbe(probing);
       device::SpdsxDevice dev(serial.get());
       // Coalesce: send the latest pending kit, and keep sending while the
       // user switches again mid-flight, so we never leave the unit stale.
@@ -1214,7 +1232,7 @@ void MainComponent::PollConnection() {
   // One probe at a time, throttled; skip while a device operation holds
   // the port (we're plainly connected then, and a second open would
   // clash).
-  if (device_fetching_ || conn_check_running_.load()
+  if (device_fetching_ || conn_check_running_->load()
       || kit_select_running_->load()) {
     return;
   }
@@ -1223,10 +1241,11 @@ void MainComponent::PollConnection() {
     return;
   }
   last_conn_check_ms_ = now;
-  conn_check_running_ = true;
+  conn_check_running_->store(true);
   juce::Component::SafePointer<MainComponent> safe(this);
+  auto probing = conn_check_running_;
   const bool was_connected = device_connected_.load();
-  std::thread([safe, was_connected] {
+  std::thread([safe, probing, was_connected] {
     bool connected = false;
     int device_kit = 0;  // 1-based; 0 = not read
     juce::String firmware;  // version + build, for display
@@ -1256,6 +1275,8 @@ void MainComponent::PollConnection() {
     } catch (const std::exception&) {
       connected = false;  // no node, or nothing answered
     }
+    // The port is closed now; ops waiting to open it may proceed.
+    probing->store(false);
     juce::MessageManager::callAsync([safe,
                                      connected,
                                      device_kit,
@@ -1264,7 +1285,6 @@ void MainComponent::PollConnection() {
       if (safe == nullptr) {
         return;
       }
-      safe->conn_check_running_ = false;
       if (connected != safe->device_connected_.load()) {
         safe->device_connected_ = connected;
         if (connected) {
@@ -1396,14 +1416,15 @@ void MainComponent::SyncChangesWithDevice() {
   ShowProgress("Sync with Device",
                juce::String::fromUTF8("Reading device state\xe2\x80\xa6"));
   juce::Component::SafePointer<MainComponent> safe(this);
-  std::thread([safe, need_pool, blocks] {
+  auto probing = conn_check_running_;
+  std::thread([safe, probing, need_pool, blocks] {
     std::vector<device::KitRecord> kits;
     std::vector<device::SampleRecord> pool;
     juce::String error;
     const auto count = [&blocks](const device::Bytes&) { ++*blocks; };
     try {
       const std::unique_ptr<device::SerialPort> serial =
-          device::PlatformPorts().Open(device::FindDevicePort());
+          OpenDevicePortAfterProbe(probing);
       device::SpdsxDevice dev(serial.get());
       kits = device::ParseKits(
           device::CleanBulkImage(dev.DumpBank(device::kBankKits, count)));
@@ -1571,6 +1592,7 @@ void MainComponent::RunSyncPush(
                });
   juce::Component::SafePointer<MainComponent> safe(this);
   std::thread([safe,
+               probing = conn_check_running_,
                uploads = sync_->uploads,
                writes = std::move(writes),
                abort = sync_abort_] {
@@ -1593,7 +1615,7 @@ void MainComponent::RunSyncPush(
         smp_uploads.push_back(std::move(upload));
       }
       const std::unique_ptr<device::SerialPort> serial =
-          device::PlatformPorts().Open(device::FindDevicePort());
+          OpenDevicePortAfterProbe(probing);
       device::SpdsxDevice dev(serial.get());
       committed = ExecutePush(
           dev,
