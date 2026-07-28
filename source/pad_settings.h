@@ -1,9 +1,12 @@
-// The pad "⋯" settings panel: real controls for the pad properties
-// that don't earn a spot in the pad header — dynamics on/off, dynamics
-// curve, fixed velocity, trigger reserve, and (for HI-HAT pads) the
-// closed-pedal shaping. Checkboxes for booleans, knobs (with a
-// click-to-type value box) for scalars. Pure view: SetParams in,
-// on_change out; the parent shows it in a CallOutBox.
+// The selected object's settings panel, hosted in the left panel's
+// Properties tab: a title strip naming the object, then real controls
+// for everything about how it responds to a hit — layer type, fade
+// knobs, the Dynamics section (a radio pair: velocity through a curve,
+// or a fixed velocity), the link group, the per-layer mixes, and (for
+// HI-HAT objects) the closed-pedal shaping. Checkboxes/radios for
+// choices, knobs (with a click-to-type value box) for scalars. Pure
+// view: set_title/SetParams in, on_change out with the FULL PadParams
+// (fields without controls pass through unchanged).
 #ifndef SPDSX_PATCHEDIT_SOURCE_PAD_SETTINGS_H_
 #define SPDSX_PATCHEDIT_SOURCE_PAD_SETTINGS_H_
 
@@ -20,32 +23,47 @@ class PadSettingsPanel : public juce::Component {
 public:
   PadSettingsPanel();
 
-  // Fires on every edit with the panel's own fields filled in; the
-  // other PadParams fields are defaults, so take only what this panel
-  // owns (dynamics, curve, fixed_velocity, trigger_reserve, the
-  // hi_hat_* trio, and the two per-layer mixes).
+  // Fires on every edit with the complete edited PadParams.
   std::function<void(const PadParams&)> on_change;
 
+  // The title strip's text ("Pad 3", "Trigger 5").
+  void set_title(const juce::String& title);
+
   // Updates the controls without firing on_change (initial state, and
-  // refreshes when undo/redo changes the pad underneath the panel).
-  // Shows or hides the closed-pedal section by the pad's layer mode,
-  // resizing the panel (the CallOutBox follows).
+  // refreshes when undo/redo changes the object underneath the panel).
+  // Shows or hides the fade knobs and the closed-pedal section by the
+  // layer mode, resizing the panel (the hosting viewport scrolls).
   void SetParams(const PadParams& params);
 
+  void paint(juce::Graphics& g) override;
   void resized() override;
 
 private:
   void Push();
-  // Curve only matters with dynamics on, fixed velocity only with it
-  // off; grey out whichever is dormant.
+  // Selecting the Curve radio is dynamics on; Fixed Velocity is off.
+  // Grey out whichever control is dormant.
   void RefreshEnablement();
+  // Applies the mode-dependent section visibility and the panel height.
+  void RefreshSections();
 
-  juce::ToggleButton dynamics_ {"Dynamics"};
-  juce::Label curve_label_ {{}, "Curve"};
+  // The last params set; fields this panel has no control for (trigger
+  // reserve) ride through Push unchanged.
+  PadParams params_;
+
+  juce::Label title_;
+  juce::Label mode_label_ {{}, "Layer Type"};
+  juce::ComboBox mode_;
+  juce::Label fade_point_label_ {{}, "Fade Pt"};
+  juce::Slider fade_point_;
+  juce::Label fade_end_label_ {{}, "Fade End"};
+  juce::Slider fade_end_;
+
+  juce::Label dynamics_heading_ {{}, "Dynamics"};
+  juce::ToggleButton curve_radio_ {"Curve"};
   juce::ComboBox curve_;
-  juce::Label velocity_label_ {{}, "Fixed Velocity"};
+  juce::ToggleButton velocity_radio_ {"Fixed Velocity"};
   juce::Slider velocity_;
-  juce::ToggleButton trigger_reserve_ {"Trigger Reserve"};
+
   juce::Label pad_link_label_;
   juce::Slider pad_link_;  // link group, 0 = unlinked
 
@@ -70,6 +88,8 @@ private:
   juce::Slider fade_in_;
   juce::Label decay_label_ {{}, "Decay"};
   juce::Slider decay_;
+
+  bool show_fades_ = false;
   bool show_pedal_ = false;
 };
 

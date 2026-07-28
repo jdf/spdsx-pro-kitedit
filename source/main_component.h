@@ -120,9 +120,7 @@ private:
   void SetHiHatKeyDown(bool down);
   // Pedal state from any source: the H key, or MIDI CC4 >= 64.
   bool HiHatPedalDown() const;
-  // Pushes the pad's layer widgets into the model as one undo step.
-  void ApplyLayerParams(int pad);
-  // Syncs the pad's layer widgets (and their visibility) from the model.
+  // Syncs an object's grid widgets (slot visibility) with the surface.
   void UpdatePadWidgets(int pad);
   // Makes the object the selected one: the Properties tab follows it
   // and its tile wears the selection ring. Clicking a pad (tile or
@@ -266,24 +264,14 @@ private:
   DeviceDocument document_ {device_, model_, settings_};
   AudioEngine engine_ {kSlotCount};
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
-  // Per-pad layer controls, living in each pad's header row.
-  std::array<std::unique_ptr<juce::ComboBox>, KitModel::kObjectCount>
-      mode_boxes_;
-  std::array<std::unique_ptr<juce::Slider>, KitModel::kObjectCount>
-      fade_point_sliders_;
-  std::array<std::unique_ptr<juce::Slider>, KitModel::kObjectCount>
-      fade_end_sliders_;
 
-  // The left panel's Properties tab: a heading naming the selected
-  // object over its settings panel (the controls that used to live in
-  // a per-pad "..." CallOutBox), scrollable when the panel outgrows
-  // the tab.
+  // The left panel's Properties tab: the selected object's settings
+  // panel (title strip included), scrollable when it outgrows the tab.
   class PropertiesTab : public juce::Component {
   public:
     PropertiesTab();
     void resized() override;
 
-    juce::Label heading;
     juce::Viewport viewport;
     PadSettingsPanel panel;
   };

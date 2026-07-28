@@ -82,25 +82,16 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   panel_tabs_.addTab("Device", tab_bg, &device_samples_, false);
   panel_tabs_.addTab("Properties", tab_bg, &properties_tab_, false);
   properties_tab_.panel.on_change = [this](const PadParams& edited) {
-    // Only the fields the panel owns; the object's mode and fade values
-    // may be edited in its header at the same time.
-    PadParams changed = model_.params(selected_);
-    changed.dynamics = edited.dynamics;
-    changed.curve = edited.curve;
-    changed.fixed_velocity = edited.fixed_velocity;
-    changed.trigger_reserve = edited.trigger_reserve;
-    changed.pad_link = edited.pad_link;
-    changed.hi_hat_volume = edited.hi_hat_volume;
-    changed.hi_hat_fade_in = edited.hi_hat_fade_in;
-    changed.hi_hat_decay = edited.hi_hat_decay;
-    changed.mix_top = edited.mix_top;
-    changed.mix_bottom = edited.mix_bottom;
-    if (changed == model_.params(selected_)) {
+    // The panel edits the whole PadParams; fields it has no control
+    // for (trigger reserve) ride through unchanged.
+    if (edited == model_.params(selected_)) {
       return;
     }
-    undo().beginNewTransaction("change " + ObjectLabel(selected_).toLowerCase()
-                               + " settings");
-    undo().perform(new SetPadParamsAction(model_, selected_, changed));
+    const juce::String which = KitModel::IsTrigger(selected_)
+        ? "trigger " + juce::String(KitModel::TriggerOf(selected_) + 1)
+        : "pad " + juce::String(selected_ + 1);
+    undo().beginNewTransaction("change " + which + " settings");
+    undo().perform(new SetPadParamsAction(model_, selected_, edited));
   };
   panel_tabs_.setOutline(0);
   panel_tabs_.setVisible(browser_visible_);
@@ -160,32 +151,6 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     addAndMakeVisible(slot);
   }
   for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
-    const auto p = static_cast<size_t>(pad);
-    mode_boxes_[p] = std::make_unique<juce::ComboBox>();
-    for (int m = 0; m < kLayerModeCount; ++m) {
-      const auto name = LayerModeName(static_cast<LayerMode>(m));
-      // Item ids are mode + 1; 0 means "nothing selected" to ComboBox.
-      mode_boxes_[p]->addItem(juce::String(name.data(), name.size()), m + 1);
-    }
-    mode_boxes_[p]->onChange = [this, pad] { ApplyLayerParams(pad); };
-    addAndMakeVisible(*mode_boxes_[p]);
-    auto make_fade_slider = [this, pad](int default_value) {
-      auto slider = std::make_unique<juce::Slider>(juce::Slider::LinearBar,
-                                                   juce::Slider::NoTextBox);
-      slider->setRange(1, 127, 1);
-      // Double-click returns the slider to its default.
-      slider->setDoubleClickReturnValue(true, default_value);
-      // One undo step per adjustment, not one per drag pixel.
-      slider->setChangeNotificationOnlyOnRelease(true);
-      // No room for a permanent readout; a bubble shows the value
-      // while dragging.
-      slider->setPopupDisplayEnabled(true, false, this);
-      slider->onValueChange = [this, pad] { ApplyLayerParams(pad); };
-      addAndMakeVisible(*slider);
-      return slider;
-    };
-    fade_point_sliders_[p] = make_fade_slider(kDefaultFadePoint);
-    fade_end_sliders_[p] = make_fade_slider(kDefaultFadeEnd);
     UpdatePadWidgets(pad);
   }
   // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
@@ -2014,15 +1979,9 @@ void MainComponent::resized() {
     for (int c = 0; c < SurfaceCols(); ++c) {
       auto inner = PadBounds(r, c).reduced(kPadPadding);
       const int pad = SurfaceObject(r, c);
-      // Layer controls share the header row with the painted pad number:
-      // fade point, fade end, mode box, right-aligned in that order.
-      auto header = inner.removeFromTop(kPadHeader).withTrimmedBottom(2);
-      const auto p = static_cast<size_t>(pad);
-      mode_boxes_[p]->setBounds(header.removeFromRight(88));
-      header.removeFromRight(4);
-      fade_end_sliders_[p]->setBounds(header.removeFromRight(30));
-      header.removeFromRight(4);
-      fade_point_sliders_[p]->setBounds(header.removeFromRight(30));
+      // The header row holds only the painted pad number; the layer
+      // controls live in the Properties tab.
+      inner.removeFromTop(kPadHeader);
       const int slot_h = (inner.getHeight() - kSlotSpacing) / 2;
       const auto slot = static_cast<size_t>(pad * 2);
       slots_[slot]->setBounds(inner.removeFromTop(slot_h));
@@ -2281,36 +2240,14 @@ void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down) {
   }
 }
 
-void MainComponent::ApplyLayerParams(int pad) {
-  const auto p = static_cast<size_t>(pad);
-  PadParams params = model_.params(pad);
-  params.mode = static_cast<LayerMode>(mode_boxes_[p]->getSelectedId() - 1);
-  params.fade_point = static_cast<int>(fade_point_sliders_[p]->getValue());
-  params.fade_end = static_cast<int>(fade_end_sliders_[p]->getValue());
-  // Fade end is constrained to >= fade point: pushing the point past
-  // the end drags the end along (the end slider's minimum tracks the
-  // point, so it can't be dragged below on its own).
-  params.fade_end = juce::jmax(params.fade_end, params.fade_point);
-  if (params == model_.params(pad)) {
-    return;
-  }
-  undo().beginNewTransaction("change pad " + juce::String(pad + 1) + " layers");
-  undo().perform(new SetPadParamsAction(model_, pad, params));
-}
-
 MainComponent::PropertiesTab::PropertiesTab() {
-  heading.setFont(juce::Font(juce::FontOptions(15.0f)).boldened());
-  heading.setColour(juce::Label::textColourId, juce::Colour(0xffc9d1d9));
-  addAndMakeVisible(heading);
   viewport.setViewedComponent(&panel, false);
   viewport.setScrollBarsShown(true, false);
   addAndMakeVisible(viewport);
 }
 
 void MainComponent::PropertiesTab::resized() {
-  auto area = getLocalBounds().reduced(8);
-  heading.setBounds(area.removeFromTop(24));
-  viewport.setBounds(area);
+  viewport.setBounds(getLocalBounds());
 }
 
 void MainComponent::SelectObject(int object) {
@@ -2329,42 +2266,20 @@ void MainComponent::SelectObject(int object) {
 }
 
 void MainComponent::RefreshProperties() {
-  properties_tab_.heading.setText(
+  properties_tab_.panel.set_title(
       KitModel::IsTrigger(selected_)
           ? "Trigger " + juce::String(KitModel::TriggerOf(selected_) + 1)
-          : "Pad " + juce::String(selected_ + 1),
-      juce::dontSendNotification);
+          : "Pad " + juce::String(selected_ + 1));
   properties_tab_.panel.SetParams(model_.params(selected_));
 }
 
 void MainComponent::UpdatePadWidgets(int pad) {
+  // The layer controls live in the Properties tab now; the grid's only
+  // per-object widgets are the two slots, visible on their surface.
   const auto p = static_cast<size_t>(pad);
-  const PadParams& params = model_.params(pad);
-  mode_boxes_[p]->setSelectedId(static_cast<int>(params.mode) + 1,
-                                juce::dontSendNotification);
-  fade_point_sliders_[p]->setValue(params.fade_point,
-                                   juce::dontSendNotification);
-  // The end can't go below the point; keep the constraint in the
-  // slider's own range so drags stop there instead of snapping back.
-  fade_end_sliders_[p]->setRange(params.fade_point, 127, 1);
-  fade_end_sliders_[p]->setValue(params.fade_end, juce::dontSendNotification);
-  // The default LookAndFeel's bar fill is indistinguishable from our
-  // background; paint each bar in its value's velocity colour (the
-  // same blue->amber->red language the pad flashes use).
-  fade_point_sliders_[p]->setColour(
-      juce::Slider::trackColourId,
-      VelocityColour(params.fade_point).withAlpha(0.5f));
-  fade_end_sliders_[p]->setColour(
-      juce::Slider::trackColourId,
-      VelocityColour(params.fade_end).withAlpha(0.5f));
-  // Visibility folds in the surface: a trigger's widgets only exist on
-  // the Triggers surface, a pad's on Pads.
   const bool shown = ObjectOnSurface(pad);
-  mode_boxes_[p]->setVisible(shown);
   slots_[p * 2]->setVisible(shown);
   slots_[p * 2 + 1]->setVisible(shown);
-  fade_point_sliders_[p]->setVisible(shown && UsesFadePoint(params.mode));
-  fade_end_sliders_[p]->setVisible(shown && UsesFadeEnd(params.mode));
 }
 
 void MainComponent::PadParamsChanged(int pad) {
