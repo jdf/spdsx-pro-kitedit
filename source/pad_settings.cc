@@ -279,6 +279,10 @@ void PadSettingsPanel::resized() {
                         std::initializer_list<juce::Slider*> knobs) {
     auto labels = area.removeFromTop(kMixLabelHeight);
     auto dials = area.removeFromTop(kMixKnobHeight);
+    // The same nudge every other control row gets, so the knobs' value
+    // boxes (their alignment point) land on the content line.
+    labels.removeFromLeft(kAlignInset);
+    dials.removeFromLeft(kAlignInset);
     auto name = names.begin();
     auto knob = knobs.begin();
     for (; name != names.end(); ++name, ++knob) {
