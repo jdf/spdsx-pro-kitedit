@@ -80,6 +80,28 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   const juce::Colour tab_bg(0xff161b22);
   panel_tabs_.addTab("Files", tab_bg, &browser_, false);
   panel_tabs_.addTab("Device", tab_bg, &device_samples_, false);
+  panel_tabs_.addTab("Properties", tab_bg, &properties_tab_, false);
+  properties_tab_.panel.on_change = [this](const PadParams& edited) {
+    // Only the fields the panel owns; the object's mode and fade values
+    // may be edited in its header at the same time.
+    PadParams changed = model_.params(selected_);
+    changed.dynamics = edited.dynamics;
+    changed.curve = edited.curve;
+    changed.fixed_velocity = edited.fixed_velocity;
+    changed.trigger_reserve = edited.trigger_reserve;
+    changed.pad_link = edited.pad_link;
+    changed.hi_hat_volume = edited.hi_hat_volume;
+    changed.hi_hat_fade_in = edited.hi_hat_fade_in;
+    changed.hi_hat_decay = edited.hi_hat_decay;
+    changed.mix_top = edited.mix_top;
+    changed.mix_bottom = edited.mix_bottom;
+    if (changed == model_.params(selected_)) {
+      return;
+    }
+    undo().beginNewTransaction("change " + ObjectLabel(selected_).toLowerCase()
+                               + " settings");
+    undo().perform(new SetPadParamsAction(model_, selected_, changed));
+  };
   panel_tabs_.setOutline(0);
   panel_tabs_.setVisible(browser_visible_);
   addChildComponent(panel_tabs_);
@@ -108,8 +130,9 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     };
     slot.on_click = [this](int idx) {
       // A click anywhere in a pad is a hit on the whole pad, at the
-      // cursor-height velocity.
+      // cursor-height velocity — and it selects the pad.
       const int pad = idx / KitModel::kLayersPerPad;
+      SelectObject(pad);
       const auto pos = getMouseXYRelative();
       TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
     };
@@ -163,10 +186,6 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     };
     fade_point_sliders_[p] = make_fade_slider(kDefaultFadePoint);
     fade_end_sliders_[p] = make_fade_slider(kDefaultFadeEnd);
-    pad_menu_buttons_[p] =
-        std::make_unique<juce::TextButton>(juce::String::fromUTF8("⋯"));
-    pad_menu_buttons_[p]->onClick = [this, pad] { ShowPadSettings(pad); };
-    addAndMakeVisible(*pad_menu_buttons_[p]);
     UpdatePadWidgets(pad);
   }
   // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
@@ -284,6 +303,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   addAndMakeVisible(tabs_);
   addChildComponent(bulk_panel_);
 
+  RefreshProperties();
   setSize(960, 720);
   // Drives the hover poll, the playhead, and end-of-sample detection.
   startTimerHz(30);
@@ -686,6 +706,9 @@ void MainComponent::SelectSurface(int surface) {
     return;
   }
   surface_ = surface;
+  if (!ObjectOnSurface(selected_)) {
+    SelectObject(SurfaceObject(0, 0));
+  }
   for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     UpdatePadWidgets(pad);
   }
@@ -1895,6 +1918,11 @@ void MainComponent::paint(juce::Graphics& g) {
       }
       g.setColour(kPadBorder);
       g.drawRoundedRectangle(pad.toFloat().reduced(0.5f), 10.0f, 1.0f);
+      if (object == selected_) {
+        // The selection ring: the Properties tab is showing this object.
+        g.setColour(juce::Colour(0xff58a6ff).withAlpha(0.85f));
+        g.drawRoundedRectangle(pad.toFloat().reduced(1.0f), 10.0f, 1.5f);
+      }
       g.setColour(kPadLabel);
       g.setFont(juce::Font(juce::FontOptions(13.0f)).boldened());
       g.drawText(
@@ -1990,8 +2018,6 @@ void MainComponent::resized() {
       // fade point, fade end, mode box, right-aligned in that order.
       auto header = inner.removeFromTop(kPadHeader).withTrimmedBottom(2);
       const auto p = static_cast<size_t>(pad);
-      pad_menu_buttons_[p]->setBounds(header.removeFromRight(18));
-      header.removeFromRight(4);
       mode_boxes_[p]->setBounds(header.removeFromRight(88));
       header.removeFromRight(4);
       fade_end_sliders_[p]->setBounds(header.removeFromRight(30));
@@ -2066,6 +2092,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     auto& held = held_pad_keys_[static_cast<size_t>(pad)];
     if (!held && object >= 0) {
       held = true;
+      SelectObject(object);
       TriggerPad(
           object, static_cast<int>(velocity_slider_.getValue()), pedal_down);
     }
@@ -2168,6 +2195,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event) {
   }
   const auto pos = event.getPosition();
   if (const int pad = PadAt(pos); pad >= 0) {
+    SelectObject(pad);
     TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
   }
 }
@@ -2270,36 +2298,43 @@ void MainComponent::ApplyLayerParams(int pad) {
   undo().perform(new SetPadParamsAction(model_, pad, params));
 }
 
-void MainComponent::ShowPadSettings(int pad) {
-  auto panel = std::make_unique<PadSettingsPanel>();
-  panel->SetParams(model_.params(pad));
-  panel->on_change = [this, pad](const PadParams& edited) {
-    // Only the fields the panel owns; the pad's mode and fade values
-    // may be edited in the header while the panel is open.
-    PadParams changed = model_.params(pad);
-    changed.dynamics = edited.dynamics;
-    changed.curve = edited.curve;
-    changed.fixed_velocity = edited.fixed_velocity;
-    changed.trigger_reserve = edited.trigger_reserve;
-    changed.pad_link = edited.pad_link;
-    changed.hi_hat_volume = edited.hi_hat_volume;
-    changed.hi_hat_fade_in = edited.hi_hat_fade_in;
-    changed.hi_hat_decay = edited.hi_hat_decay;
-    changed.mix_top = edited.mix_top;
-    changed.mix_bottom = edited.mix_bottom;
-    if (changed == model_.params(pad)) {
-      return;
-    }
-    undo().beginNewTransaction("change pad " + juce::String(pad + 1)
-                               + " settings");
-    undo().perform(new SetPadParamsAction(model_, pad, changed));
-  };
-  pad_settings_panel_ = panel.get();
-  pad_settings_pad_ = pad;
-  juce::CallOutBox::launchAsynchronously(
-      std::move(panel),
-      pad_menu_buttons_[static_cast<size_t>(pad)]->getScreenBounds(),
-      nullptr);
+MainComponent::PropertiesTab::PropertiesTab() {
+  heading.setFont(juce::Font(juce::FontOptions(15.0f)).boldened());
+  heading.setColour(juce::Label::textColourId, juce::Colour(0xffc9d1d9));
+  addAndMakeVisible(heading);
+  viewport.setViewedComponent(&panel, false);
+  viewport.setScrollBarsShown(true, false);
+  addAndMakeVisible(viewport);
+}
+
+void MainComponent::PropertiesTab::resized() {
+  auto area = getLocalBounds().reduced(8);
+  heading.setBounds(area.removeFromTop(24));
+  viewport.setBounds(area);
+}
+
+void MainComponent::SelectObject(int object) {
+  if (object < 0 || object >= KitModel::kObjectCount || object == selected_) {
+    return;
+  }
+  const int previous = selected_;
+  selected_ = object;
+  RefreshProperties();
+  if (ObjectOnSurface(previous)) {
+    repaint(ObjectBounds(previous));
+  }
+  if (ObjectOnSurface(selected_)) {
+    repaint(ObjectBounds(selected_));
+  }
+}
+
+void MainComponent::RefreshProperties() {
+  properties_tab_.heading.setText(
+      KitModel::IsTrigger(selected_)
+          ? "Trigger " + juce::String(KitModel::TriggerOf(selected_) + 1)
+          : "Pad " + juce::String(selected_ + 1),
+      juce::dontSendNotification);
+  properties_tab_.panel.SetParams(model_.params(selected_));
 }
 
 void MainComponent::UpdatePadWidgets(int pad) {
@@ -2326,7 +2361,6 @@ void MainComponent::UpdatePadWidgets(int pad) {
   // the Triggers surface, a pad's on Pads.
   const bool shown = ObjectOnSurface(pad);
   mode_boxes_[p]->setVisible(shown);
-  pad_menu_buttons_[p]->setVisible(shown);
   slots_[p * 2]->setVisible(shown);
   slots_[p * 2 + 1]->setVisible(shown);
   fade_point_sliders_[p]->setVisible(shown && UsesFadePoint(params.mode));
@@ -2337,10 +2371,10 @@ void MainComponent::PadParamsChanged(int pad) {
   MarkEdited();
   UpdateSyncButton();
   UpdatePadWidgets(pad);
-  // Keep an open settings panel honest when undo/redo (or anything
-  // else) changes the pad underneath it.
-  if (pad_settings_panel_ != nullptr && pad_settings_pad_ == pad) {
-    pad_settings_panel_->SetParams(model_.params(pad));
+  // Keep the Properties tab honest when undo/redo (or anything else)
+  // changes the object underneath it.
+  if (pad == selected_) {
+    RefreshProperties();
   }
 }
 

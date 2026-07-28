@@ -124,10 +124,12 @@ private:
   void ApplyLayerParams(int pad);
   // Syncs the pad's layer widgets (and their visibility) from the model.
   void UpdatePadWidgets(int pad);
-  // The pad's "..." settings panel (a CallOutBox): dynamics on/off,
-  // dynamics curve, fixed velocity, trigger reserve — the shared
-  // hit-response properties that don't earn permanent header space.
-  void ShowPadSettings(int pad);
+  // Makes the object the selected one: the Properties tab follows it
+  // and its tile wears the selection ring. Clicking a pad (tile or
+  // slot) or hitting it with a digit key selects it; MIDI hits don't.
+  void SelectObject(int object);
+  // Syncs the Properties tab's heading and controls from the model.
+  void RefreshProperties();
   // Moves (or, when copy=true, duplicates) a slot's sample to another
   // slot as a single undoable action.
   void MoveSample(int from, int to, bool copy);
@@ -271,13 +273,24 @@ private:
       fade_point_sliders_;
   std::array<std::unique_ptr<juce::Slider>, KitModel::kObjectCount>
       fade_end_sliders_;
-  std::array<std::unique_ptr<juce::TextButton>, KitModel::kObjectCount>
-      pad_menu_buttons_;
-  // The open "..." settings panel, if any (the CallOutBox owns it; the
-  // SafePointer nulls itself when the box closes), and which pad it
-  // is editing.
-  juce::Component::SafePointer<PadSettingsPanel> pad_settings_panel_;
-  int pad_settings_pad_ = -1;
+
+  // The left panel's Properties tab: a heading naming the selected
+  // object over its settings panel (the controls that used to live in
+  // a per-pad "..." CallOutBox), scrollable when the panel outgrows
+  // the tab.
+  class PropertiesTab : public juce::Component {
+  public:
+    PropertiesTab();
+    void resized() override;
+
+    juce::Label heading;
+    juce::Viewport viewport;
+    PadSettingsPanel panel;
+  };
+
+  PropertiesTab properties_tab_;
+  // The selected object (pad or trigger) the Properties tab shows.
+  int selected_ = 0;
   // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);
   // runtime state, deliberately not persisted.
   std::array<bool, KitModel::kObjectCount> alternate_flip_ {};
