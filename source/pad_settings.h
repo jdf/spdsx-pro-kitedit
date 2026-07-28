@@ -16,12 +16,14 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "kit_model.h"
+#include "knob_look_and_feel.h"
 
 namespace spdsx {
 
 class PadSettingsPanel : public juce::Component {
 public:
   PadSettingsPanel();
+  ~PadSettingsPanel() override;
 
   // Fires on every edit with the complete edited PadParams.
   std::function<void(const PadParams&)> on_change;
@@ -52,6 +54,10 @@ private:
   // The last params set; fields this panel has no control for (trigger
   // reserve) ride through Push unchanged.
   PadParams params_;
+
+  // Draws every knob below as the skeuomorphic bitmap. Declared before
+  // the sliders so it outlives them on destruction.
+  KnobLookAndFeel knob_look_;
 
   int content_width_ = 0;  // 0 = the default width
 

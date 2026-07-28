@@ -48,6 +48,9 @@ enum class ControlMode {
 }  // namespace
 
 PadSettingsPanel::PadSettingsPanel() {
+  // Every rotary in the panel becomes the bitmap knob.
+  setLookAndFeel(&knob_look_);
+
   // The full-width gray bands: the object's name on top, then one
   // header per section.
   auto init_band = [this](juce::Label& label, float font_size) {
@@ -186,6 +189,10 @@ PadSettingsPanel::PadSettingsPanel() {
   init_knob(decay_, decay_label_, 0, kDefaultHiHatDecay);
 
   RefreshSections();
+}
+
+PadSettingsPanel::~PadSettingsPanel() {
+  setLookAndFeel(nullptr);
 }
 
 void PadSettingsPanel::set_title(const juce::String& title) {

@@ -50,7 +50,8 @@ juce_add_gui_app(spdsx-patchedit PRODUCT_NAME "SPD-SX PROgram"
     DOCUMENT_EXTENSIONS spdsx)
 
 # The app icon, embedded so the About box can draw it.
-juce_add_binary_data(spdsx_binary_data SOURCES assets/icon.png)
+juce_add_binary_data(spdsx_binary_data SOURCES assets/icon.png
+                     assets/knob.png)
 
 # Every statically linked dependency's license, concatenated into
 # Contents/Resources. The AGPL/GPL/LGPL/Apache components require their
@@ -90,6 +91,7 @@ target_sources(spdsx-patchedit PRIVATE
     source/disclaimer_dialog.cc
     source/feedback_dialog.cc
     source/kit_chooser.cc
+    source/knob_look_and_feel.cc
     source/layers.cc
     source/main.cc
     source/main_component.cc
@@ -221,6 +223,7 @@ if(SPDSX_TESTS)
         source/disclaimer_dialog.cc
         source/feedback_dialog.cc
         source/kit_chooser.cc
+        source/knob_look_and_feel.cc
         source/layers.cc
         source/main_component.cc
         source/pad_settings.cc

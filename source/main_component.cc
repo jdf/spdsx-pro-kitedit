@@ -156,6 +156,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
   // their own. Low values audition the soft side of the fade modes. A
   // compact knob; click its value to type one in.
+  velocity_slider_.setLookAndFeel(&knob_look_);
   velocity_slider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
   velocity_slider_.setRange(1, 127, 1);
   velocity_slider_.setDoubleClickReturnValue(true, 100);
@@ -275,6 +276,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
 }
 
 MainComponent::~MainComponent() {
+  velocity_slider_.setLookAndFeel(nullptr);
   HideProgress();  // don't leave a modal window behind on quit
   model_.RemoveListener(this);
 }
