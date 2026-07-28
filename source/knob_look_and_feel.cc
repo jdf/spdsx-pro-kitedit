@@ -32,6 +32,8 @@ constexpr juce::uint32 kDotGreen = 0xff3fb950;
 
 }  // namespace
 
+const juce::Identifier KnobLookAndFeel::kMixedValues("mixedValues");
+
 KnobLookAndFeel::KnobLookAndFeel()
     : knob_(juce::ImageCache::getFromMemory(BinaryData::knob_png,
                                             BinaryData::knob_pngSize)) {}
@@ -82,13 +84,20 @@ void KnobLookAndFeel::drawRotarySlider(juce::Graphics& g,
   g.drawImageTransformed(knob_, transform);
 
   // The indicator: a green circle over the bitmap's (too-small) dot,
-  // carried to its rotated position by the same transform. The emboss
-  // arcs keep a fixed light direction whatever the rotation.
-  {
+  // carried to its rotated position by the value's transform. The
+  // emboss arcs keep a fixed light direction whatever the rotation.
+  auto draw_indicator = [&](float at_angle) {
+    const auto at = juce::AffineTransform::rotation(
+                        at_angle - juce::MathConstants<float>::halfPi,
+                        kCircleCentreX,
+                        kCircleCentreY)
+                        .scaled(scale)
+                        .translated(cx - kCircleCentreX * scale,
+                                    cy - kCircleCentreY * scale);
     const float enabled_alpha = slider.isEnabled() ? 1.0f : 0.4f;
     float dot_x = kDotCentreX;
     float dot_y = kDotCentreY;
-    transform.transformPoint(dot_x, dot_y);
+    at.transformPoint(dot_x, dot_y);
     const float r = kDotDrawRadius * scale;
     g.setColour(juce::Colour(kDotGreen).withMultipliedAlpha(enabled_alpha));
     g.fillEllipse(dot_x - r, dot_y - r, 2.0f * r, 2.0f * r);
@@ -111,7 +120,21 @@ void KnobLookAndFeel::drawRotarySlider(juce::Graphics& g,
     inner_arc(0.5f * pi - 0.4f,
               1.0f * pi + 0.4f,
               juce::Colours::white.withAlpha(0.20f));
+  };
+
+  // A multi-selection with differing values: one dot per distinct
+  // value, and no ring (there is no single value to sweep to).
+  const juce::var& mixed = slider.getProperties()[kMixedValues];
+  if (const auto* values = mixed.getArray()) {
+    for (const juce::var& value : *values) {
+      const auto proportion = static_cast<float>(
+          slider.valueToProportionOfLength(static_cast<double>(value)));
+      draw_indicator(rotary_start_angle
+                     + proportion * (rotary_end_angle - rotary_start_angle));
+    }
+    return;
   }
+  draw_indicator(angle);
 
   // The value arc, in short stroked segments so the colour and the
   // width can both grow along it. A segment's look follows its place

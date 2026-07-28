@@ -13,6 +13,11 @@ namespace spdsx {
 
 class KnobLookAndFeel : public juce::LookAndFeel_V4 {
 public:
+  // A slider carrying this property (an Array<var> of distinct values)
+  // shows a multi-selection's mixed state: no value ring, and one green
+  // indicator dot per distinct value instead of a single one.
+  static const juce::Identifier kMixedValues;
+
   KnobLookAndFeel();
 
   void drawRotarySlider(juce::Graphics& g,
