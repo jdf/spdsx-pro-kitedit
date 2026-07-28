@@ -1,15 +1,16 @@
 # spdutil — SPD-SX PRO command-line utility
 
-`spdutil` talks to a Roland SPD-SX PRO over its USB serial port using the
-same reverse-engineered protocol as the SPD-SX PROgram app. It reads and
+`spdutil` talks to a Roland SPD-SX PRO over its USB serial port. It reads and
 writes device state directly: kits, pad parameters, layer settings, and the
 sample pool (including audio upload/download).
 
 ```
 spdutil [--port <dev>] <command> [options]
+spdutil help [command]
 spdutil --version
 ```
 
+`help` prints the full usage; `help <command>` documents one command.
 `--version` prints the SPD-SX PROgram version this tool was built with.
 
 The tool ships inside the SPD-SX PROgram app; the app menu's **Install
@@ -17,127 +18,125 @@ Command-Line Tool** puts it on your PATH as `/usr/local/bin/spdutil`.
 
 ## Connecting
 
-- With no `--port`, spdutil scans `/dev/cu.usbmodem*` and pings each node
-  until the device answers. The node number changes on every replug, so this
-  is the normal way to run it.
+- With no `--port`, spdutil scans `/dev/cu.usbmodem*` and pings each node until
+  the device answers. The node number changes on every replug, so this is the
+  normal way to run it.
 - **Close the official SPD-SX PRO App first** — one program per port.
-- The SPD-SX PROgram app can stay open: it only holds the port during an
-  active device operation.
+- The SPD-SX PROgram app can stay open: it only holds the port during an active
+  device operation.
 
 ## Firmware
 
-Writing requires firmware **2.00** — the only version writing has been
-verified against. Another version may lay its data out differently, and
-a wrong write lands in flash, where it cannot be undone. So every write
-refuses unless the unit reports 2.00, naming what it found:
+Writing requires firmware **2.00** — the only version writing has been verified
+against. Another version may lay its data out differently, and a wrong write
+lands in flash, where it cannot be undone. A write refuses unless the unit
+reports 2.00.
 
-```
-$ spdutil setname --kits 199 --name FOO --commit
-error: this unit reports firmware "1.50", and every write here has only
-been verified against "2.00". Refusing to write: ...
-```
-
-Reading is never gated — `info` tells you what a unit is running, and
-`dump`, `kits`, `kit`, `samples` and `readwave` work on anything.
+Reading is never gated — `info` tells you what a unit is running, and `dump`,
+`kits`, `kit`, `samples` and `readwave` may or may not work, but won't harm
+anything.
 
 ## Working state vs. commit
 
 Device writes land in **working state**: audible immediately, gone on power
-cycle. Write commands take `--commit` to follow the writes with a flash
-commit (the same durable WRITE the official app's WRITE button performs). Uncommitted edits accumulate across
-separate spdutil invocations, and one final `--commit`-ing command flushes
-everything staged. `deletewave` and `sendwave` always commit.
+cycle. Write commands take `--commit` to follow the writes with a flash commit
+(the same durable WRITE the official app's WRITE button performs). Uncommitted
+edits accumulate across separate spdutil invocations, and one final
+`--commit`-ing command flushes everything staged. `deletewave` and `sendwave`
+always commit.
 
 ## Read-only commands
 
-### `ping`
-Opens the port and pings the device; prints the raw reply. The cheapest
-"is anything there" check.
-
 ### `info`
-Port path, ping status, and the firmware version query
-(e.g. `version: 2.00 (build 0094)`).
+
+Port path, ping status, and the firmware version query (e.g.
+`version: 2.00 (build 0094)`).
 
 ### `currentkit`
-Prints the device's **active** kit (1-200). Takes under a second.
+
+Prints the device's **active** kit (1-200).
 
 ### `kits [--from FILE]`
-Lists all 200 kit names — live from the device, or offline from a saved
-`dump` image via `--from`.
+
+Lists all 200 kit names — live from the device, or offline from a saved `dump`
+image via `--from`.
 
 ### `kit <N> [--from FILE]`
-Shows kit N's per-object parameters as a table — the nine pads, then
-the eight external trigger inputs as `t1`-`t8` rows: layer mode, fade
-point/end, dynamics + curve, fixed velocity, trigger reserve, the
-hi-hat closed-pedal trio, the send/receive link groups, and each
-object's top/bottom wave assignment. Live or `--from` a dump.
+
+Shows kit N's per-object parameters as a table — the nine pads, then the eight
+external trigger inputs as `t1`-`t8` rows: layer mode, fade point/end,
+dynamics + curve, fixed velocity, trigger reserve, the hi-hat closed-pedal trio,
+the send/receive link groups, and each object's top/bottom wave assignment. Live
+or `--from` a dump.
 
 ### `samples [--from FILE]`
-Lists the device wave pool: index, wavename, category, duration,
-filename. **Directory only** — the state dump
-carries no audio; use `readwave` for that.
+
+Lists the device wave pool: index, wavename, category, duration, filename.
+**Directory only** — the state dump carries no audio; use `readwave` for that.
 
 ### `dump`
+
 Streams device memory banks to an image file.
 
-| option | meaning |
-| --- | --- |
-| `--bank 0xNN` | one bank (repeatable): `0x10` kits, `0x20` sample directory, `0x30` active-kit mirror/meta, `0x40` config |
-| `--all` | all four banks |
-| `--out FILE` | write the reassembled image |
-| `--verify FILE` | offline: report an existing image's block structure |
+| option          | meaning                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
+| `--bank 0xNN`   | one bank (repeatable): `0x10` kits, `0x20` sample directory, `0x30` active-kit mirror/meta, `0x40` config |
+| `--all`         | all four banks                                                                                            |
+| `--out FILE`    | write the reassembled image                                                                               |
+| `--verify FILE` | offline: report an existing image's block structure                                                       |
 
 With neither `--bank` nor `--all`, dumps the kits bank. The images are what
 `kits`/`kit`/`samples --from` read.
 
 ### `readwave <N> [--out FILE]`
-Reads wave N's audio off the device and reports its format (rate,
-channels, bits, duration). With `--out`, a
-`.wav` path gets a converted WAV; any other path gets the raw `.SMP`.
-Some factory preloads have no exportable file and fail cleanly.
+
+Reads wave N's audio off the device and reports its format (rate, channels,
+bits, duration). With `--out`, a `.wav` path gets a converted WAV; any other
+path gets the raw `.SMP`. Some factory preloads have no exportable file and fail
+cleanly.
 
 ## Kit and pad writes
 
-Every command that writes to kits says which with **`--kits SPEC`**, and
-it is required.
+Every command that writes to kits says which with **`--kits SPEC`**, and it is
+required.
 
-A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST`
-inclusive:
+A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST` inclusive:
 
-| spec | kits |
-| --- | --- |
-| `--kits 108` | just 108 |
-| `--kits 108-200` | 108 through 200 |
+| spec               | kits                    |
+| ------------------ | ----------------------- |
+| `--kits 108`       | just 108                |
+| `--kits 108-200`   | 108 through 200         |
 | `--kits 1,5,10-20` | 1, 5, and 10 through 20 |
-| `--kits 1-200` | every kit |
+| `--kits 1-200`     | every kit               |
 
-`setname`, `assign`, `setparams`, and `setlayer` write one kit, so their
-spec must name exactly one. `setmode` and `padlink` sweep and take any
-spec. All six also honor `--commit` and `--dry-run`. `kit` and `selectkit`
-read or select a single kit and take a positional number instead
-(`spdutil kit 108`).
+`setname`, `assign`, `setparams`, and `setlayer` write one kit, so their spec
+must name exactly one. `setmode` and `padlink` sweep and take any spec. All six
+also honor `--commit` and `--dry-run`. `kit` and `selectkit` read or select a
+single kit and take a positional number instead (`spdutil kit 108`).
 
 ### `selectkit <N>`
-Switches the device's playback kit (1-200). Instant, not a stored edit —
-nothing to commit.
+
+Switches the device's playback kit (1-200).
 
 ### `setname --kits K --name TEXT`
+
 Sets kit K's name (16 characters, space-padded/truncated).
 
 ### `assign --kits K --sample N --pad P.S`
-Assigns pool sample N to a pad layer. `--pad P.S` is pad 1-9 dot slot
-(0 = top layer, 1 = bottom): `--pad 2.1` is pad 2's bottom layer.
-Sample 0 clears the layer.
+
+Assigns pool sample N to a pad layer. `--pad P.S` is pad 1-9 dot slot (0 = top
+layer, 1 = bottom): `--pad 2.1` is pad 2's bottom layer. Sample 0 clears the
+layer.
 
 ### `setparams --kits K --pad N --params ...`
+
 Writes one pad's ten hit-response parameters as a comma list, in order:
 `mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,hhFadeIn,hhDecay,trigRsv`.
 
-Mode is one of `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE HI-HAT`;
-curve is one of `LINEAR LOUD1 LOUD2 LOUD3`; dynamics and trigger reserve
-are `ON` or `OFF`; fade point/end, fixed velocity, and the hi-hat trio
-are numbers, 0-127. An unrecognized token is an error listing the
-accepted values.
+Mode is one of `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE HI-HAT`; curve
+is one of `LINEAR LOUD1 LOUD2 LOUD3`; dynamics and trigger reserve are `ON` or
+`OFF`; fade point/end, fixed velocity, and the hi-hat trio are numbers, 0-127.
+An unrecognized token is an error listing the accepted values.
 
 ```sh
 spdutil setparams --kits 199 --pad 5 \
@@ -145,27 +144,26 @@ spdutil setparams --kits 199 --pad 5 \
 ```
 
 ### `setlayer --kits K --pad P.S [--volume dB] [--fadein N] [--decay N]`
-Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in
-0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave
-out keep their current values — the command reads the kit first to fill
-them in, so naming only `--fadein` is a little slower but changes
-nothing else.
+
+Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in 0.1
+dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave out keep
+their current values — the command reads the kit first to fill them in, so
+naming only `--fadein` is a little slower but changes nothing else.
 
 ### `setmode --kits SPEC --mode M [--pad N] [--if-mode M] [--dry-run]`
-Bulk layer-mode writes across kits. Reads the current kits first and
-writes **only** the pads that need changing, so everything else about a
-pad is untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
-HI-HAT`.
 
-With no `--pad`, this changes **all nine pads** of every kit `--kits`
-names.
+Bulk layer-mode writes across kits. Reads the current kits first and writes
+**only** the pads that need changing, so everything else about a pad is
+untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE HI-HAT`.
 
-| option | meaning |
-| --- | --- |
-| `--pad N` | only pad N, 1-9 (repeatable; default all nine) |
-| `--kits SPEC` | which kits (required) |
-| `--if-mode M` | only pads currently in mode M |
-| `--dry-run` | print the count, send nothing |
+With no `--pad`, this changes **all nine pads** of every kit `--kits` names.
+
+| option        | meaning                                        |
+| ------------- | ---------------------------------------------- |
+| `--pad N`     | only pad N, 1-9 (repeatable; default all nine) |
+| `--kits SPEC` | which kits (required)                          |
+| `--if-mode M` | only pads currently in mode M                  |
+| `--dry-run`   | print the count, send nothing                  |
 
 ```sh
 # pad 9 of kits 108-200 becomes HI-HAT, leaving pads 1-8 alone
@@ -173,41 +171,43 @@ spdutil setmode --kits 108-200 --mode HI-HAT --pad 9 --commit
 ```
 
 ### `padlink`
-Puts triggers/pads into a pad-link group across kits. A link is
-directional: an object **sends** its hits to the group, or **receives**
-the group's hits — so a typical link is two invocations, e.g. trigger 1
-`--direction send` and pad 3 `--direction receive` on the same group.
 
-| option | meaning |
-| --- | --- |
-| `--group N` | link group (required) |
+Puts triggers/pads into a pad-link group across kits. A link is directional: an
+object **sends** its hits to the group, or **receives** the group's hits — so a
+typical link is two invocations, e.g. trigger 1 `--direction send` and pad 3
+`--direction receive` on the same group.
+
+| option                      | meaning                                                          |
+| --------------------------- | ---------------------------------------------------------------- |
+| `--group N`                 | link group (required)                                            |
 | `--direction send\|receive` | whether the objects fire the group or get fired by it (required) |
-| `--trigger N` / `--pad N` | which objects to link (repeatable) |
-| `--kits SPEC` | kits to touch (**required**) |
-| `--dry-run` | print the messages, send nothing |
-| `--verbose` | show device replies |
+| `--trigger N` / `--pad N`   | which objects to link (repeatable)                               |
+| `--kits SPEC`               | kits to touch (**required**)                                     |
+| `--dry-run`                 | print the messages, send nothing                                 |
+| `--verbose`                 | show device replies                                              |
 
 Back the unit up before a padlink run across many kits.
 
 ## Sample pool writes
 
 ### `sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]`
-Uploads one or more waves on a single connection to consecutive pool
-indices starting at N: writes each `.SMP` file to device flash, registers
-it in the pool directory, commits the whole batch once, then reads every
-wave back and reports `MATCH`/`FAIL`.
-Use a fresh index range (`samples` shows what's taken). `--name` overrides
-the stored filename, single-file uploads only.
 
-Input is the device's raw `.SMP` format — the device plays 48 kHz/16-bit
-only, and it checks a checksum in the file's header, so use files the
-SPD-SX PROgram app produced or ones round-tripped via `readwave`.
+Uploads one or more waves on a single connection to consecutive pool indices
+starting at N: writes each `.SMP` file to device flash, registers it in the pool
+directory, commits the whole batch once, then reads every wave back and reports
+`MATCH`/`FAIL`. Use a fresh index range (`samples` shows what's taken). `--name`
+overrides the stored filename, single-file uploads only.
+
+Input is the device's raw `.SMP` format — the device plays 48 kHz/16-bit only,
+and it checks a checksum in the file's header, so use files the SPD-SX PROgram
+app produced or ones round-tripped via `readwave`.
 
 ### `deletewave <N>`
-Deletes sample N from the pool and commits. **DESTRUCTIVE and not undoable
-on the device** — kits referencing the wave lose that layer.
+
+Deletes sample N from the pool and commits. **DESTRUCTIVE and not undoable on
+the device** — kits referencing the wave lose that layer.
 
 ## Exit status
 
-`0` success; `1` a device/protocol operation failed (details on stderr);
-`2` bad arguments (usage printed).
+`0` success; `1` a device/protocol operation failed (details on stderr); `2` bad
+arguments (usage printed).

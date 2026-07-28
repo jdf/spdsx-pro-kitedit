@@ -123,98 +123,124 @@ int UnknownCommand(const std::string& command) {
   return 2;
 }
 
+// One block per command: Usage() prints them all, `help <command>`
+// prints just one.
+struct CommandHelp {
+  const char* name;
+  const char* text;
+};
+
+constexpr CommandHelp kCommandHelp[] = {
+    {"help",
+     "  help [command]  this usage, or one command's (spdutil help kit)\n"},
+    {"info", "  info        serial port, ping status, firmware version\n"},
+    {"dump",
+     "  dump        stream device memory to an image file:\n"
+     "                --bank 0xNN      0x10 kits, 0x20 samples,\n"
+     "                                 0x30 meta, 0x40 config (repeatable)\n"
+     "                --all            all four banks\n"
+     "                --out FILE       write the reassembled image\n"
+     "                --verify FILE    offline: report a file's blocks\n"},
+    {"kits",
+     "  kits        list all kit names (live, or --from <dump file>)\n"},
+    {"kit", "  kit <N>     show kit N's pad params (live, or --from <dump>)\n"},
+    {"samples",
+     "  samples     list the device wave pool (live, or --from <dump>;\n"
+     "              directory only — the dump carries no audio)\n"},
+    {"readwave",
+     "  readwave <N> read wave N's audio off the device (--out FILE:\n"
+     "              .wav = converted, else raw .SMP)\n"},
+    {"setlayer",
+     "  setlayer --kits K --pad P.S [--volume dB] [--fadein N]\n"
+     "           [--decay N]\n"
+     "                  write one layer's volume (dB, e.g. -3.5), fade-in\n"
+     "                  (0-127) and decay (0-127, 127 = none); whatever\n"
+     "                  you leave out keeps its current value; --commit\n"
+     "                  to persist\n"},
+    {"selectkit",
+     "  selectkit <N>   switch the device's playback kit (1-200)\n"},
+    {"currentkit", "  currentkit      print the device's active kit\n"},
+    {"setmode",
+     "  setmode --kits SPEC --mode M [--pad N] [--if-mode M]\n"
+     "          [--dry-run]\n"
+     "                  set pads' layer mode in the given kits (names:\n"
+     "                  MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE\n"
+     "                  HI-HAT); --pad restricts to those pads 1-9\n"
+     "                  (repeatable, default all nine); --if-mode\n"
+     "                  touches only pads currently in that mode;\n"
+     "                  --commit to persist\n"},
+    {"deletewave",
+     "  deletewave <N>  delete sample N from the pool + commit\n"
+     "                  (DESTRUCTIVE, not undoable on the device)\n"},
+    {"sendwave",
+     "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
+     "                  upload one or more waves on one connection to\n"
+     "                  consecutive indices from N: write each file AND\n"
+     "                  register it in the pool, then read every one back\n"
+     "                  and report MATCH/FAIL (use a fresh index; --name\n"
+     "                  applies only to a single file)\n"},
+    {"assign",
+     "  assign --kits K --sample N --pad P.S   assign pool sample N to\n"
+     "                  kit K, pad P (1-9), slot S (0 top/1 bottom);\n"
+     "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
+     "                  not committed (revert with a power cycle)\n"},
+    {"setname",
+     "  setname --kits K --name TEXT   set kit K's name (16 chars,\n"
+     "                  space-padded); --commit to persist\n"},
+    {"setparams",
+     "  setparams --kits K --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
+     "                  hhvol,hhfadein,hhdecay,trig   write pad N's ten\n"
+     "                  hit-response params. Mode and curve are NAMES\n"
+     "                  (MIX FADE1 FADE2 XFADE SWITCH SW(MONO)\n"
+     "                  ALTERNATE HI-HAT; LINEAR LOUD1 LOUD2 LOUD3);\n"
+     "                  dynamics and trig are ON or OFF; --commit\n"
+     "                  to persist\n"},
+    {"padlink",
+     "  padlink     put triggers/pads into a pad-link group:\n"
+     "                --group N        link group (required)\n"
+     "                --direction send|receive   whether the objects\n"
+     "                                 fire the group or get fired by\n"
+     "                                 it (required)\n"
+     "                --trigger N      link trigger N\n"
+     "                --pad N          link pad N\n"
+     "                --kits SPEC      kits to touch (required)\n"
+     "                --dry-run        print, send nothing\n"
+     "                --verbose        show device replies\n"},
+};
+
 int Usage() {
-  std::fprintf(
-      stderr,
-      "usage: spdutil [--port <dev>] <command> [options]\n"
-      "       spdutil --version\n"
-      "\n"
-      "  ping        open the port and ping the device (read-only)\n"
-      "  info        serial port, ping status, firmware version\n"
-      "  dump        stream device memory to an image file:\n"
-      "                --bank 0xNN      0x10 kits, 0x20 samples,\n"
-      "                                 0x30 meta, 0x40 config (repeatable)\n"
-      "                --all            all four banks\n"
-      "                --out FILE       write the reassembled image\n"
-      "                --verify FILE    offline: report a file's blocks\n"
-      "  kits        list all kit names (live, or --from <dump file>)\n"
-      "  kit <N>     show kit N's pad params (live, or --from <dump>)\n"
-      "  samples     list the device wave pool (live, or --from <dump>;\n"
-      "              directory only — the dump carries no audio)\n"
-      "  readwave <N> read wave N's audio off the device (--out FILE:\n"
-      "              .wav = converted, else raw .SMP)\n"
-      "  setlayer --kits K --pad P.S [--volume dB] [--fadein N]\n"
-      "           [--decay N]\n"
-      "                  write one layer's volume (dB, e.g. -3.5), fade-in\n"
-      "                  (0-127) and decay (0-127, 127 = none); whatever\n"
-      "                  you leave out keeps its current value; --commit\n"
-      "                  to persist\n"
-      "  selectkit <N>   switch the device's playback kit (1-200)\n"
-      "  currentkit      print the device's active kit\n"
-      "  setmode --kits SPEC --mode M [--pad N] [--if-mode M]\n"
-      "          [--dry-run]\n"
-      "                  set pads' layer mode in the given kits (names:\n"
-      "                  MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE\n"
-      "                  HI-HAT); --pad restricts to those pads 1-9\n"
-      "                  (repeatable, default all nine); --if-mode\n"
-      "                  touches only pads currently in that mode;\n"
-      "                  --commit to persist\n"
-      "  deletewave <N>  delete sample N from the pool + commit\n"
-      "                  (DESTRUCTIVE, not undoable on the device)\n"
-      "  sendwave <N> --from F.smp [--from G.smp ...] [--name X.wav]\n"
-      "                  upload one or more waves on one connection to\n"
-      "                  consecutive indices from N: write each file AND\n"
-      "                  register it in the pool, then read every one back\n"
-      "                  and report MATCH/FAIL (use a fresh index; --name\n"
-      "                  applies only to a single file)\n"
-      "  assign --kits K --sample N --pad P.S   assign pool sample N to\n"
-      "                  kit K, pad P (1-9), slot S (0 top/1 bottom);\n"
-      "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
-      "                  not committed (revert with a power cycle)\n"
-      "  setname --kits K --name TEXT   set kit K's name (16 chars,\n"
-      "                  space-padded); --commit to persist\n"
-      "  setparams --kits K --pad N --params m,fp,fe,dyn,curve,fixvel,\n"
-      "                  hhvol,hhfadein,hhdecay,trig   write pad N's ten\n"
-      "                  hit-response params. Mode and curve are NAMES\n"
-      "                  (MIX FADE1 FADE2 XFADE SWITCH SW(MONO)\n"
-      "                  ALTERNATE HI-HAT; LINEAR LOUD1 LOUD2 LOUD3);\n"
-      "                  dynamics and trig are ON or OFF; --commit\n"
-      "                  to persist\n"
-      "  padlink     put triggers/pads into a pad-link group:\n"
-      "                --group N        link group (required)\n"
-      "                --direction send|receive   whether the objects\n"
-      "                                 fire the group or get fired by\n"
-      "                                 it (required)\n"
-      "                --trigger N      link trigger N\n"
-      "                --pad N          link pad N\n"
-      "                --kits SPEC      kits to touch (required)\n"
-      "                --dry-run        print, send nothing\n"
-      "                --verbose        show device replies\n"
-      "\n"
+  std::fprintf(stderr,
+               "usage: spdutil [--port <dev>] <command> [options]\n"
+               "       spdutil --version\n"
+               "\n");
+  for (const CommandHelp& entry : kCommandHelp) {
+    std::fputs(entry.text, stderr);
+  }
+  std::fputs(
       "\n"
       "--kits SPEC is comma-separated ranges: 108, 108-200, 1,5,10-20\n"
       "(1-200 is every kit). Required by assign, setname, setparams,\n"
       "setlayer, setmode and padlink; the first four take exactly one\n"
       "kit.\n"
       "\n"
-      "With no --port, scans /dev/cu.usbmodem* and pings each node.\n");
+      "With no --port, scans /dev/cu.usbmodem* and pings each node.\n",
+      stderr);
   return 2;
 }
 
-int RunPing(const std::string& port_arg) {
-  const std::string port = ResolvePort(port_arg);
-  const std::unique_ptr<spdsx::device::SerialPort> serial =
-      spdsx::device::PlatformPorts().Open(port);
-  spdsx::device::SpdsxDevice dev(serial.get());
-  std::printf("opened %s\n", port.c_str());
-  const Bytes reply = dev.Ping();
-  if (reply.empty()) {
-    std::printf("ping: NO REPLY (device connected? official app closed?)\n");
-    return 1;
+// `help` alone is the full usage; `help <command>` documents just that
+// command.
+int Help(const std::string& topic) {
+  if (topic.empty()) {
+    return Usage();
   }
-  std::printf(
-      "ping reply (%zu bytes): %s\n", reply.size(), ToHex(reply).c_str());
-  return 0;
+  for (const CommandHelp& entry : kCommandHelp) {
+    if (topic == entry.name) {
+      std::fputs(entry.text, stdout);
+      return 0;
+    }
+  }
+  return UnknownCommand(topic);
 }
 
 int RunInfo(const std::string& port_arg) {
@@ -1229,6 +1255,7 @@ int main(int argc, char** argv) {
   int sample_arg = -1;
   int pad_num = 0;
   int kit_arg = 0;
+  std::string help_topic;
   auto direction_arg = spdsx::device::LinkDirection::kReceive;
   bool have_direction = false;
   std::string mode_arg;
@@ -1338,6 +1365,9 @@ int main(int argc, char** argv) {
         verbose = true;
       } else if (!arg.empty() && arg[0] != '-' && command.empty()) {
         command = arg;
+      } else if (!arg.empty() && arg[0] != '-' && command == "help"
+                 && help_topic.empty()) {
+        help_topic = arg;
       } else if (!arg.empty() && (std::isdigit((unsigned char)arg[0]))
                  && kit_arg == 0) {
         kit_arg = std::atoi(arg.c_str());  // positional kit number
@@ -1397,8 +1427,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (command == "ping") {
-      return RunPing(port);
+    if (command == "help") {
+      return Help(help_topic);
     }
     if (command == "info") {
       return RunInfo(port);

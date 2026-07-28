@@ -18,7 +18,7 @@ namespace {
 const std::map<std::string, std::vector<std::string>, std::less<>>& Table() {
   static const std::map<std::string, std::vector<std::string>, std::less<>>
       kTable = {
-          {"ping", {}},
+          {"help", {}},
           {"info", {}},
           {"currentkit", {}},
           {"selectkit", {}},
@@ -60,7 +60,7 @@ const std::vector<std::string>& PositionalNumberCommands() {
 
 // Commands that only read the device, for explaining a rejected flag.
 bool IsReadOnly(std::string_view command) {
-  static const std::vector<std::string> kReadOnly = {"ping",
+  static const std::vector<std::string> kReadOnly = {"help",
                                                      "info",
                                                      "currentkit",
                                                      "dump",

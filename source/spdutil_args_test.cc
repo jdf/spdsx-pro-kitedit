@@ -11,7 +11,7 @@ namespace spdsx::spdutil {
 namespace {
 
 TEST(SpdutilCommands, KnowsTheRealOnes) {
-  EXPECT_TRUE(IsCommand("ping"));
+  EXPECT_TRUE(IsCommand("help"));
   EXPECT_TRUE(IsCommand("setmode"));
   EXPECT_TRUE(IsCommand("padlink"));
   EXPECT_FALSE(IsCommand("pnig"));
@@ -19,7 +19,7 @@ TEST(SpdutilCommands, KnowsTheRealOnes) {
 }
 
 TEST(SpdutilCommands, SuggestsANearMiss) {
-  EXPECT_EQ(NearestCommand("pnig"), "ping");
+  EXPECT_EQ(NearestCommand("hlep"), "help");
   EXPECT_EQ(NearestCommand("setmoed"), "setmode");
 }
 
@@ -33,7 +33,7 @@ TEST(UnacceptedFlag, SetmodeTakesThePadFilter) {
 }
 
 TEST(UnacceptedFlag, PingTakesNoPad) {
-  EXPECT_EQ(UnacceptedFlag("ping", {"pad"}), "pad");
+  EXPECT_EQ(UnacceptedFlag("help", {"pad"}), "pad");
 }
 
 // A rehearsal that writes is worse than no rehearsal.
@@ -45,7 +45,7 @@ TEST(UnacceptedFlag, DryRunIsAcceptedByTheWriteCommandsThatHonorIt) {
 }
 
 TEST(UnacceptedFlag, DryRunIsRejectedWhereItCannotWork) {
-  for (const char* command : {"ping", "dump", "readwave", "deletewave"}) {
+  for (const char* command : {"help", "dump", "readwave", "deletewave"}) {
     EXPECT_EQ(UnacceptedFlag(command, {"dry-run"}), "dry-run") << command;
   }
 }
@@ -67,7 +67,7 @@ TEST(UnacceptedFlag, KitsBelongsToTheKitWrites) {
     EXPECT_EQ(UnacceptedFlag(command, {"kits"}), "") << command;
   }
   EXPECT_EQ(UnacceptedFlag("kit", {"kits"}), "kits");
-  EXPECT_EQ(UnacceptedFlag("ping", {"kits"}), "kits");
+  EXPECT_EQ(UnacceptedFlag("help", {"kits"}), "kits");
 }
 
 // --kits is the only spelling; --range is not a flag.
@@ -77,16 +77,16 @@ TEST(UnacceptedFlag, RangeIsNotAFlag) {
 }
 
 TEST(UnacceptedFlag, PortAndVersionAreUniversal) {
-  EXPECT_EQ(UnacceptedFlag("ping", {"port", "version"}), "");
+  EXPECT_EQ(UnacceptedFlag("help", {"port", "version"}), "");
   EXPECT_EQ(UnacceptedFlag("padlink", {"port"}), "");
 }
 
 TEST(UnacceptedFlag, ReportsTheFirstOffender) {
-  EXPECT_EQ(UnacceptedFlag("ping", {"port", "range", "pad"}), "range");
+  EXPECT_EQ(UnacceptedFlag("help", {"port", "range", "pad"}), "range");
 }
 
 TEST(UnacceptedFlag, EmptyWhenNothingWasPassed) {
-  EXPECT_EQ(UnacceptedFlag("ping", {}), "");
+  EXPECT_EQ(UnacceptedFlag("help", {}), "");
 }
 
 TEST(AllowedFlags, UnknownCommandAllowsNothing) {
@@ -108,7 +108,7 @@ TEST(TakesPositionalNumber, TrueForTheKitAndIndexCommands) {
 }
 
 TEST(TakesPositionalNumber, FalseForCommandsWithoutOne) {
-  for (const char* command : {"ping", "info", "dump", "kits"}) {
+  for (const char* command : {"help", "info", "dump", "kits"}) {
     EXPECT_FALSE(TakesPositionalNumber(command)) << command;
   }
 }
@@ -138,13 +138,13 @@ TEST(RequiresKitSpec, FalseForReadsAndPoolCommands) {
 
 TEST(FlagRejectionHint, SaysWhyRatherThanJustNo) {
   // A read-only command is not "about to write" — say the true reason.
-  EXPECT_NE(FlagRejectionHint("ping", "dry-run").find("only reads"),
+  EXPECT_NE(FlagRejectionHint("info", "dry-run").find("only reads"),
             std::string::npos);
   EXPECT_NE(FlagRejectionHint("deletewave", "dry-run").find("go through"),
             std::string::npos);
   EXPECT_NE(FlagRejectionHint("selectkit", "commit").find("nothing to commit"),
             std::string::npos);
-  EXPECT_FALSE(FlagRejectionHint("ping", "sample").empty());
+  EXPECT_FALSE(FlagRejectionHint("info", "sample").empty());
 }
 
 TEST(ParseKitSpec, ASingleKit) {
