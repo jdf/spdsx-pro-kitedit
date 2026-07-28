@@ -109,17 +109,17 @@ PadSettingsPanel::PadSettingsPanel() {
   fade_end_.setRange(1, 127, 1);
 
   // The radio pair: hits play through the curve (dynamics on), or at
-  // one fixed velocity (dynamics off). Clicking a radio selects it;
-  // the active one can't be clicked off.
+  // one fixed velocity (dynamics off). JUCE never click-deselects a
+  // radio-grouped button, so only the newly selected one acts; the
+  // loser's onClick also fires (as the group turns it off) and must do
+  // nothing, or it would fight the selection.
   auto init_radio = [this](juce::ToggleButton& radio) {
     radio.setRadioGroupId(1);
     radio.onClick = [this, &radio] {
-      if (!radio.getToggleState()) {
-        radio.setToggleState(true, juce::dontSendNotification);
-        return;
+      if (radio.getToggleState()) {
+        RefreshEnablement();
+        Push();
       }
-      RefreshEnablement();
-      Push();
     };
     addAndMakeVisible(radio);
   };
