@@ -1258,13 +1258,16 @@ void MainComponent::PollConnection() {
       safe->conn_check_running_ = false;
       if (connected != safe->device_connected_.load()) {
         safe->device_connected_ = connected;
+        if (connected) {
+          // Before UpdateSyncButton, whose firmware gate reads these.
+          safe->device_firmware_ = firmware;
+          safe->device_firmware_version_ = version;
+        }
         safe->connection_dot_.SetConnected(connected);
         safe->commands_.commandStatusChanged();  // re-enable device menu items
         safe->UpdateTransferButton();
         safe->UpdateSyncButton();  // enable/disable with connection
         if (connected) {
-          safe->device_firmware_ = firmware;
-          safe->device_firmware_version_ = version;
           AppLog::Note("device connected, firmware "
                        + (firmware.isEmpty() ? "?" : firmware) + ", kit "
                        + juce::String(device_kit));
