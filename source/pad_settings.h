@@ -29,13 +29,16 @@ public:
   // The title strip's text ("Pad 3", "Trigger 5").
   void set_title(const juce::String& title);
 
+  // The hosting tab's width; header bands span it edge to edge and the
+  // panel resizes to fill it.
+  void set_content_width(int width);
+
   // Updates the controls without firing on_change (initial state, and
   // refreshes when undo/redo changes the object underneath the panel).
   // Shows or hides the fade knobs and the closed-pedal section by the
   // layer mode, resizing the panel (the hosting viewport scrolls).
   void SetParams(const PadParams& params);
 
-  void paint(juce::Graphics& g) override;
   void resized() override;
 
 private:
@@ -50,21 +53,27 @@ private:
   // reserve) ride through Push unchanged.
   PadParams params_;
 
+  int content_width_ = 0;  // 0 = the default width
+
+  // Full-width gray bands: the object's name, then one per section.
   juce::Label title_;
-  juce::Label mode_label_ {{}, "Layer Type"};
+  juce::Label mode_header_ {{}, "Layer Type"};
+  juce::Label dynamics_header_ {{}, "Dynamics"};
+  juce::Label link_header_ {{}, "Link Group"};
+  juce::Label envelopes_header_ {{}, "Layer Envelopes"};
+
   juce::ComboBox mode_;
   juce::Label fade_point_label_ {{}, "Fade Pt"};
   juce::Slider fade_point_;
   juce::Label fade_end_label_ {{}, "Fade End"};
   juce::Slider fade_end_;
 
-  juce::Label dynamics_heading_ {{}, "Dynamics"};
   juce::ToggleButton curve_radio_ {"Curve"};
   juce::ComboBox curve_;
   juce::ToggleButton velocity_radio_ {"Fixed Velocity"};
   juce::Slider velocity_;
 
-  juce::Label pad_link_label_;
+  juce::Label pad_link_hint_ {{}, "0 = none"};
   juce::Slider pad_link_;  // link group, 0 = unlinked
 
   // Per-layer mix (Layer A on top, Layer B below): three small knobs
@@ -81,7 +90,7 @@ private:
 
   std::array<MixControls, 2> mix_;  // [0] = layer A/top, [1] = layer B
   // HI-HAT only: closed-pedal volume/attack/decay knobs.
-  juce::Label pedal_heading_ {{}, "Closed Pedal"};
+  juce::Label pedal_header_ {{}, "Closed Pedal"};
   juce::Label volume_label_ {{}, "Volume"};
   juce::Slider volume_;
   juce::Label fade_in_label_ {{}, "Fade In"};

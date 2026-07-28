@@ -2248,6 +2248,9 @@ MainComponent::PropertiesTab::PropertiesTab() {
 
 void MainComponent::PropertiesTab::resized() {
   viewport.setBounds(getLocalBounds());
+  // Header bands span the tab's full width; the panel resizes to fill
+  // whatever the viewport can show.
+  panel.set_content_width(viewport.getMaximumVisibleWidth());
 }
 
 void MainComponent::SelectObject(int object) {

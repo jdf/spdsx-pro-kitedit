@@ -8,12 +8,13 @@ namespace spdsx {
 
 namespace {
 
-constexpr int kPanelWidth = 210;
+constexpr int kDefaultPanelWidth = 210;
 constexpr int kPadding = 12;
 constexpr int kTitleHeight = 28;
+constexpr int kHeaderHeight = 24;
 constexpr int kRowHeight = 24;
 constexpr int kRowGap = 6;
-constexpr int kSectionGap = 12;
+constexpr int kSectionGap = 16;
 constexpr int kKnobTextHeight = 18;
 constexpr int kKnobSize = 60;  // the dial square, textbox below it
 constexpr int kKnobHeight = kKnobSize + kKnobTextHeight;
@@ -28,6 +29,9 @@ constexpr int kV4RotaryMargin = 10;
 constexpr int kMixLabelHeight = 16;
 constexpr int kMixKnobSize = 48;
 constexpr int kMixKnobHeight = kMixKnobSize + kKnobTextHeight;
+
+// The gray band behind the title and each section header.
+constexpr juce::uint32 kBandColour = 0xff2d333b;
 
 // The dB range the volume knob offers; the device stores 0.1 dB steps in
 // a signed 16-bit, so this is a UI choice, not a protocol limit.
@@ -44,10 +48,21 @@ enum class ControlMode {
 }  // namespace
 
 PadSettingsPanel::PadSettingsPanel() {
-  title_.setFont(juce::Font(juce::FontOptions(15.0f)).boldened());
-  title_.setColour(juce::Label::textColourId, juce::Colour(0xffc9d1d9));
-  title_.setBorderSize(juce::BorderSize<int>(0, kPadding + kAlignInset, 0, 0));
-  addAndMakeVisible(title_);
+  // The full-width gray bands: the object's name on top, then one
+  // header per section.
+  auto init_band = [this](juce::Label& label, float font_size) {
+    label.setFont(juce::Font(juce::FontOptions(font_size)).boldened());
+    label.setColour(juce::Label::textColourId, juce::Colour(0xffc9d1d9));
+    label.setColour(juce::Label::backgroundColourId, juce::Colour(kBandColour));
+    label.setBorderSize(juce::BorderSize<int>(0, kPadding + kAlignInset, 0, 0));
+    addAndMakeVisible(label);
+  };
+  init_band(title_, 15.0f);
+  init_band(mode_header_, 14.0f);
+  init_band(dynamics_header_, 14.0f);
+  init_band(link_header_, 14.0f);
+  init_band(envelopes_header_, 14.0f);
+  init_band(pedal_header_, 14.0f);
 
   for (int m = 0; m < kLayerModeCount; ++m) {
     const auto name = LayerModeName(static_cast<LayerMode>(m));
@@ -55,8 +70,6 @@ PadSettingsPanel::PadSettingsPanel() {
     mode_.addItem(juce::String(name.data(), name.size()), m + 1);
   }
   mode_.onChange = [this] { Push(); };
-  mode_label_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
-  addAndMakeVisible(mode_label_);
   addAndMakeVisible(mode_);
 
   // The small-knob style shared by the fade pair and the mix triples:
@@ -91,10 +104,6 @@ PadSettingsPanel::PadSettingsPanel() {
   // The end can't go below the point; SetParams keeps the range's floor
   // at the current fade point so drags stop there.
   fade_end_.setRange(1, 127, 1);
-
-  dynamics_heading_.setFont(juce::Font(juce::FontOptions(14.0f)).boldened());
-  dynamics_heading_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
-  addAndMakeVisible(dynamics_heading_);
 
   // The radio pair: hits play through the curve (dynamics on), or at
   // one fixed velocity (dynamics off). Clicking a radio selects it;
@@ -131,15 +140,15 @@ PadSettingsPanel::PadSettingsPanel() {
   addAndMakeVisible(velocity_);
 
   // Pad link: hits on one linked pad trigger the others. 0 = unlinked.
-  pad_link_label_.setText("Link Group (0 = none)", juce::dontSendNotification);
-  pad_link_label_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
-  addAndMakeVisible(pad_link_label_);
   pad_link_.setRange(0, 32, 1);
   pad_link_.setSliderStyle(juce::Slider::IncDecButtons);
   pad_link_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 22);
   pad_link_.setTextBoxIsEditable(true);
   pad_link_.onValueChange = [this] { Push(); };
   addAndMakeVisible(pad_link_);
+  pad_link_hint_.setFont(juce::FontOptions(12.0f));
+  pad_link_hint_.setColour(juce::Label::textColourId, juce::Colour(0xff8b949e));
+  addAndMakeVisible(pad_link_hint_);
 
   const char* mix_headings[2] = {"Layer A", "Layer B"};
   for (size_t l = 0; l < mix_.size(); ++l) {
@@ -172,9 +181,6 @@ PadSettingsPanel::PadSettingsPanel() {
         addAndMakeVisible(label);
         addAndMakeVisible(knob);
       };
-  pedal_heading_.setFont(juce::Font(juce::FontOptions(14.0f)).boldened());
-  pedal_heading_.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
-  addAndMakeVisible(pedal_heading_);
   init_knob(volume_, volume_label_, 0, kDefaultHiHatVolume);
   init_knob(fade_in_, fade_in_label_, 0, kDefaultHiHatFadeIn);
   init_knob(decay_, decay_label_, 0, kDefaultHiHatDecay);
@@ -184,6 +190,13 @@ PadSettingsPanel::PadSettingsPanel() {
 
 void PadSettingsPanel::set_title(const juce::String& title) {
   title_.setText(title, juce::dontSendNotification);
+}
+
+void PadSettingsPanel::set_content_width(int width) {
+  if (width > 0 && width != content_width_) {
+    content_width_ = width;
+    RefreshSections();
+  }
 }
 
 void PadSettingsPanel::SetParams(const PadParams& params) {
@@ -221,7 +234,7 @@ void PadSettingsPanel::RefreshSections() {
   fade_end_.setVisible(show_fades_ && UsesFadeEnd(params_.mode));
 
   show_pedal_ = params_.mode == LayerMode::kHiHat;
-  for (juce::Component* c : {static_cast<juce::Component*>(&pedal_heading_),
+  for (juce::Component* c : {static_cast<juce::Component*>(&pedal_header_),
                              static_cast<juce::Component*>(&volume_label_),
                              static_cast<juce::Component*>(&volume_),
                              static_cast<juce::Component*>(&fade_in_label_),
@@ -231,31 +244,30 @@ void PadSettingsPanel::RefreshSections() {
     c->setVisible(show_pedal_);
   }
 
-  const int mix_height =
-      2 * (kSectionGap + kRowHeight + kMixLabelHeight + kMixKnobHeight);
-  int height = kTitleHeight + kPadding  // title strip + top gap
-      + kRowHeight + kRowGap  // layer-type row
-      + (show_fades_ ? kMixLabelHeight + kMixKnobHeight + kRowGap : 0)
-      + kSectionGap + kRowHeight + kRowGap  // Dynamics heading
-      + kRowHeight + kRowGap  // curve radio row
-      + kKnobHeight + kRowGap  // fixed-velocity radio row
-      + kSectionGap + 18 + kRowHeight  // link caption + control
-      + mix_height
-      + (show_pedal_ ? kSectionGap + kRowHeight + (kRowGap + kKnobHeight) * 3
-                     : 0)
-      + kPadding;
-  // The hosting viewport tracks content size and scrolls as needed.
-  setSize(kPanelWidth, height);
-}
-
-void PadSettingsPanel::paint(juce::Graphics& g) {
-  // The title strip: a gray band across the panel's top.
-  g.setColour(juce::Colour(0xff2d333b));
-  g.fillRect(getLocalBounds().removeFromTop(kTitleHeight));
+  // One section = a gap, its header band, a gap, and its content.
+  auto section = [](int content) {
+    return kSectionGap + kHeaderHeight + kRowGap + content;
+  };
+  const int height = kTitleHeight  // the title band
+      + section(kRowHeight  // layer type: the combo row...
+                + (show_fades_ ? kRowGap + kMixLabelHeight + kMixKnobHeight
+                               : 0))  // ...plus fade knobs when it fades
+      + section(kRowHeight + kRowGap + kKnobHeight)  // dynamics radios
+      + section(kRowHeight)  // link group
+      + section(2 * (kRowHeight + kMixLabelHeight + kMixKnobHeight)
+                + kRowGap)  // the two layer envelopes
+      + (show_pedal_ ? section((kKnobHeight + kRowGap) * 3) : 0) + kPadding;
+  setSize(content_width_ > 0 ? content_width_ : kDefaultPanelWidth, height);
 }
 
 void PadSettingsPanel::resized() {
-  title_.setBounds(getLocalBounds().removeFromTop(kTitleHeight));
+  // Header bands span the panel edge to edge; content is inset.
+  auto band = [this](
+                  juce::Rectangle<int>& area, juce::Label& header, int height) {
+    area.removeFromTop(kSectionGap);
+    header.setBounds(area.removeFromTop(height).withX(0).withWidth(getWidth()));
+    area.removeFromTop(kRowGap);
+  };
 
   // A pair/triple of small knobs abreast at the left edge, each with
   // its label above.
@@ -273,27 +285,25 @@ void PadSettingsPanel::resized() {
     }
   };
 
-  auto area = getLocalBounds().withTrimmedTop(kTitleHeight).reduced(kPadding);
+  auto area = getLocalBounds().reduced(kPadding, 0);
+  title_.setBounds(
+      area.removeFromTop(kTitleHeight).withX(0).withWidth(getWidth()));
 
+  band(area, mode_header_, kHeaderHeight);
   auto mode_row = area.removeFromTop(kRowHeight);
   mode_row.removeFromLeft(kAlignInset);
-  mode_label_.setBounds(mode_row.removeFromLeft(76));
-  mode_.setBounds(mode_row);
-  area.removeFromTop(kRowGap);
-
+  mode_.setBounds(mode_row.removeFromLeft(140));
   if (show_fades_) {
+    area.removeFromTop(kRowGap);
     small_knobs(area,
                 {&fade_point_label_, &fade_end_label_},
                 {&fade_point_, &fade_end_});
-    area.removeFromTop(kRowGap);
   }
 
-  area.removeFromTop(kSectionGap);
-  dynamics_heading_.setBounds(area.removeFromTop(kRowHeight));
-  area.removeFromTop(kRowGap);
+  band(area, dynamics_header_, kHeaderHeight);
   auto curve_row = area.removeFromTop(kRowHeight);
   curve_radio_.setBounds(curve_row.removeFromLeft(76));
-  curve_.setBounds(curve_row);
+  curve_.setBounds(curve_row.removeFromLeft(120));
   area.removeFromTop(kRowGap);
   auto velocity_row = area.removeFromTop(kKnobHeight);
   velocity_radio_.setBounds(
@@ -302,17 +312,20 @@ void PadSettingsPanel::resized() {
           .withY(velocity_row.getY() + (kKnobHeight - kRowHeight) / 2));
   velocity_.setBounds(
       velocity_row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
-  area.removeFromTop(kRowGap);
 
-  area.removeFromTop(kSectionGap);
-  pad_link_label_.setBounds(area.removeFromTop(18));
-  pad_link_.setBounds(
-      area.removeFromTop(kRowHeight).removeFromLeft(120).reduced(0, 2));
+  band(area, link_header_, kHeaderHeight);
+  auto link_row = area.removeFromTop(kRowHeight);
+  link_row.removeFromLeft(kAlignInset);
+  pad_link_.setBounds(link_row.removeFromLeft(116).reduced(0, 2));
+  link_row.removeFromLeft(8);
+  pad_link_hint_.setBounds(link_row);
 
-  // The two layer-mix triples: heading, then three knobs abreast with
-  // their small labels above.
-  for (MixControls& m : mix_) {
-    area.removeFromTop(kSectionGap);
+  band(area, envelopes_header_, kHeaderHeight);
+  for (size_t l = 0; l < mix_.size(); ++l) {
+    MixControls& m = mix_[l];
+    if (l > 0) {
+      area.removeFromTop(kRowGap);
+    }
     m.heading.setBounds(area.removeFromTop(kRowHeight));
     small_knobs(area,
                 {&m.volume_label, &m.fade_label, &m.decay_label},
@@ -322,16 +335,15 @@ void PadSettingsPanel::resized() {
   if (!show_pedal_) {
     return;
   }
-  area.removeFromTop(kSectionGap);
-  pedal_heading_.setBounds(area.removeFromTop(kRowHeight));
+  band(area, pedal_header_, kHeaderHeight);
   auto pedal_knob = [&area](juce::Slider& knob, juce::Label& label) {
-    area.removeFromTop(kRowGap);
     auto row = area.removeFromTop(kKnobHeight);
     row.removeFromLeft(kAlignInset);
     knob.setBounds(
         row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
     label.setBounds(row.withHeight(kRowHeight)
                         .withY(row.getY() + (kKnobHeight - kRowHeight) / 2));
+    area.removeFromTop(kRowGap);
   };
   pedal_knob(volume_, volume_label_);
   pedal_knob(fade_in_, fade_in_label_);
