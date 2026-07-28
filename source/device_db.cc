@@ -40,27 +40,16 @@ CREATE TABLE IF NOT EXISTS samples(
   category INTEGER, content_hash INTEGER, audio BLOB);
 )SQL";
 
-// The v1 pad columns, in v1's order — what a migration copies across (the
-// v2 additions take their schema DEFAULTs).
-const char* kV1PadColumns =
-    "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
-    "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
-    "trigger_reserve, top_device, top_local, bottom_device, bottom_local";
-
-// v2 added the per-layer mix trio; v3 adds pad_link. A migration copies
-// the SOURCE version's columns, so a v2 document keeps its mix values.
-const char* kV2PadColumns =
+// The v5 pad columns minus its single pad_link — v6 splits that into
+// the directional link_send/link_receive pair, and what the old column
+// MEANT depends on the row: pad rows held the receive group, trigger
+// rows (pad_idx 9-16) the send group.
+const char* kV5SharedPadColumns =
     "snapshot, kit_idx, pad_idx, mode, fade_point, fade_end, dynamics, "
     "curve, fixed_velocity, hihat_vol, hihat_fadein, hihat_decay, "
     "trigger_reserve, top_device, top_local, bottom_device, bottom_local, "
     "top_volume, top_fadein, top_decay, bottom_volume, bottom_fadein, "
     "bottom_decay";
-
-// v3-v5 carried a single pad_link column; v6 splits it into the
-// directional link_send/link_receive pair. What the old column MEANT
-// depends on the row: pad rows held the receive group, trigger rows
-// (pad_idx 9-16, since v5) the send group — the migration maps each
-// into its half of the pair.
 
 const char* SnapshotName(Snapshot s) {
   return s == Snapshot::kBase ? "base" : "current";
@@ -202,7 +191,9 @@ std::string SqlQuoted(const juce::String& s) {
 // so an older document is never upgraded in place. This migrates it the
 // only allowed way: CREATE a new document at the current version, copy the
 // data across (new columns take their schema defaults), swap it into
-// place, and keep the original beside it as ".v<N>.bak".
+// place, and keep the original beside it as ".v<N>.bak". Only the
+// IMMEDIATELY PREVIOUS schema migrates (single-user policy: paths from
+// anything older were dropped once no such document existed anymore).
 bool MigrateOlderDocument(const juce::File& path,
                           int from_version,
                           juce::String& error) {
@@ -231,35 +222,15 @@ bool MigrateOlderDocument(const juce::File& path,
              .c_str());
     Exec(db, "BEGIN;");
     Exec(db, "INSERT INTO kits SELECT * FROM old.kits;");
-    const char* pad_columns = from_version >= 2 ? kV2PadColumns : kV1PadColumns;
-    if (from_version >= 3) {
-      // The one old pad_link column splits by row kind: pads received,
-      // triggers sent.
-      Exec(db,
-           (std::string("INSERT INTO pads(") + pad_columns
-            + ", link_send, link_receive) SELECT " + pad_columns
-            + ", CASE WHEN pad_idx >= 9 THEN pad_link ELSE 0 END,"
-              " CASE WHEN pad_idx < 9 THEN pad_link ELSE 0 END"
-              " FROM old.pads;")
-               .c_str());
-    } else {
-      Exec(db,
-           (std::string("INSERT INTO pads(") + pad_columns + ") SELECT "
-            + pad_columns + " FROM old.pads;")
-               .c_str());
-    }
-    if (from_version == 4) {
-      // v4 kept trigger links in their own table; since v5 a trigger is
-      // a full pad row at pad_idx 9-16. Only the (send) link was
-      // stored, so the rest of the row gets the factory-default params.
-      Exec(db,
-           "INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, "
-           "fade_end, dynamics, curve, fixed_velocity, hihat_vol, "
-           "hihat_fadein, hihat_decay, trigger_reserve, top_device, "
-           "top_local, bottom_device, bottom_local, link_send) "
-           "SELECT snapshot, kit_idx, trig_idx + 9, 0, 80, 127, 1, 0, 127, "
-           "80, 0, 25, 0, 0, '', 0, '', pad_link FROM old.triggers;");
-    }
+    // The one old pad_link column splits by row kind: pads received,
+    // triggers sent.
+    Exec(db,
+         (std::string("INSERT INTO pads(") + kV5SharedPadColumns
+          + ", link_send, link_receive) SELECT " + kV5SharedPadColumns
+          + ", CASE WHEN pad_idx >= 9 THEN pad_link ELSE 0 END,"
+            " CASE WHEN pad_idx < 9 THEN pad_link ELSE 0 END"
+            " FROM old.pads;")
+             .c_str());
     Exec(db, "INSERT INTO samples SELECT * FROM old.samples;");
     Exec(db,
          "INSERT OR REPLACE INTO meta(key,value) "
@@ -306,7 +277,14 @@ std::unique_ptr<DeviceDb> DeviceDb::Open(const juce::File& path,
     // the current version first (never upgraded in place); a NEWER one is
     // left untouched here and refused by the loader's version check.
     const int stamped = StampedVersion(path);
-    if (stamped > 0 && stamped < kSchemaVersion
+    if (stamped > 0 && stamped < kSchemaVersion - 1) {
+      error = path.getFileName() + " is a v" + juce::String(stamped)
+          + " document; this build migrates only v"
+          + juce::String(kSchemaVersion - 1) + " (open it with the build "
+          + "that wrote v" + juce::String(kSchemaVersion - 1) + " first)";
+      return nullptr;
+    }
+    if (stamped == kSchemaVersion - 1
         && !MigrateOlderDocument(path, stamped, error)) {
       return nullptr;
     }
