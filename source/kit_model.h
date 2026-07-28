@@ -4,6 +4,7 @@
 #ifndef SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_H_
 #define SPDSX_PATCHEDIT_SOURCE_KIT_MODEL_H_
 
+#include <algorithm>
 #include <array>
 #include <utility>
 
@@ -61,6 +62,91 @@ struct PadParams {
 
   bool operator==(const PadParams&) const = default;
 };
+
+// One editable field of PadParams — the granularity at which the
+// Properties panel reports an edit, so a change to one control can land
+// on several selected pads without disturbing their other fields.
+enum class PadParamsField {
+  kMode,
+  kFadePoint,
+  kFadeEnd,
+  kDynamics,
+  kCurve,
+  kFixedVelocity,
+  kLinkSend,
+  kLinkReceive,
+  kMixTopVolume,
+  kMixTopFadeIn,
+  kMixTopDecay,
+  kMixBottomVolume,
+  kMixBottomFadeIn,
+  kMixBottomDecay,
+  kHiHatVolume,
+  kHiHatFadeIn,
+  kHiHatDecay,
+};
+
+// Copies one field of src into dst, leaving everything else alone. The
+// fade pair keeps its structural invariant per destination: the end
+// never sits below the point.
+inline void ApplyPadParamsField(PadParams& dst,
+                                const PadParams& src,
+                                PadParamsField field) {
+  switch (field) {
+    case PadParamsField::kMode:
+      dst.mode = src.mode;
+      break;
+    case PadParamsField::kFadePoint:
+      dst.fade_point = src.fade_point;
+      dst.fade_end = std::max(dst.fade_end, dst.fade_point);
+      break;
+    case PadParamsField::kFadeEnd:
+      dst.fade_end = std::max(dst.fade_point, src.fade_end);
+      break;
+    case PadParamsField::kDynamics:
+      dst.dynamics = src.dynamics;
+      break;
+    case PadParamsField::kCurve:
+      dst.curve = src.curve;
+      break;
+    case PadParamsField::kFixedVelocity:
+      dst.fixed_velocity = src.fixed_velocity;
+      break;
+    case PadParamsField::kLinkSend:
+      dst.link_send = src.link_send;
+      break;
+    case PadParamsField::kLinkReceive:
+      dst.link_receive = src.link_receive;
+      break;
+    case PadParamsField::kMixTopVolume:
+      dst.mix_top.volume_db10 = src.mix_top.volume_db10;
+      break;
+    case PadParamsField::kMixTopFadeIn:
+      dst.mix_top.fade_in = src.mix_top.fade_in;
+      break;
+    case PadParamsField::kMixTopDecay:
+      dst.mix_top.decay = src.mix_top.decay;
+      break;
+    case PadParamsField::kMixBottomVolume:
+      dst.mix_bottom.volume_db10 = src.mix_bottom.volume_db10;
+      break;
+    case PadParamsField::kMixBottomFadeIn:
+      dst.mix_bottom.fade_in = src.mix_bottom.fade_in;
+      break;
+    case PadParamsField::kMixBottomDecay:
+      dst.mix_bottom.decay = src.mix_bottom.decay;
+      break;
+    case PadParamsField::kHiHatVolume:
+      dst.hi_hat_volume = src.hi_hat_volume;
+      break;
+    case PadParamsField::kHiHatFadeIn:
+      dst.hi_hat_fade_in = src.hi_hat_fade_in;
+      break;
+    case PadParamsField::kHiHatDecay:
+      dst.hi_hat_decay = src.hi_hat_decay;
+      break;
+  }
+}
 
 // One layer's assignment: nothing, a local audio file, or a wave in
 // the device's sample pool (referenced by pool index). Device waves

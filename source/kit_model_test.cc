@@ -242,5 +242,89 @@ TEST_F(KitModelTest, RemovedListenersStopHearingChanges) {
   model.AddListener(&listener);  // TearDown removes it again.
 }
 
+// ---- ApplyPadParamsField ----
+
+// A PadParams with every field away from its default, so any field the
+// apply misses (or touches when it shouldn't) shows up.
+PadParams DistinctParams() {
+  PadParams p;
+  p.mode = LayerMode::kXfade;
+  p.fade_point = 33;
+  p.fade_end = 99;
+  p.dynamics = false;
+  p.curve = DynamicsCurve::kLoud2;
+  p.fixed_velocity = 55;
+  p.trigger_reserve = true;
+  p.link_send = 4;
+  p.link_receive = 7;
+  p.hi_hat_volume = 11;
+  p.hi_hat_fade_in = 22;
+  p.hi_hat_decay = 44;
+  p.mix_top = {-120, 5, 60};
+  p.mix_bottom = {30, 9, 80};
+  return p;
+}
+
+TEST(ApplyPadParamsFieldTest, AppliesOnlyTheNamedField) {
+  const PadParams src = DistinctParams();
+  PadParams dst;
+  ApplyPadParamsField(dst, src, PadParamsField::kCurve);
+
+  PadParams expected;
+  expected.curve = src.curve;
+  EXPECT_EQ(dst, expected);
+}
+
+TEST(ApplyPadParamsFieldTest, EveryFieldTogetherReconstructsTheSource) {
+  const PadParams src = DistinctParams();
+  PadParams dst;
+  for (PadParamsField field : {PadParamsField::kMode,
+                               PadParamsField::kFadePoint,
+                               PadParamsField::kFadeEnd,
+                               PadParamsField::kDynamics,
+                               PadParamsField::kCurve,
+                               PadParamsField::kFixedVelocity,
+                               PadParamsField::kLinkSend,
+                               PadParamsField::kLinkReceive,
+                               PadParamsField::kMixTopVolume,
+                               PadParamsField::kMixTopFadeIn,
+                               PadParamsField::kMixTopDecay,
+                               PadParamsField::kMixBottomVolume,
+                               PadParamsField::kMixBottomFadeIn,
+                               PadParamsField::kMixBottomDecay,
+                               PadParamsField::kHiHatVolume,
+                               PadParamsField::kHiHatFadeIn,
+                               PadParamsField::kHiHatDecay}) {
+    ApplyPadParamsField(dst, src, field);
+  }
+
+  // Trigger reserve has no panel control and so no field; everything
+  // else lands.
+  PadParams expected = src;
+  expected.trigger_reserve = PadParams().trigger_reserve;
+  EXPECT_EQ(dst, expected);
+}
+
+TEST(ApplyPadParamsFieldTest, FadePointDragsTheEndUpWithIt) {
+  PadParams src;
+  src.fade_point = 100;
+  PadParams dst;
+  dst.fade_point = 40;
+  dst.fade_end = 60;
+  ApplyPadParamsField(dst, src, PadParamsField::kFadePoint);
+  EXPECT_EQ(dst.fade_point, 100);
+  EXPECT_EQ(dst.fade_end, 100);
+}
+
+TEST(ApplyPadParamsFieldTest, FadeEndClampsToTheDestinationsPoint) {
+  PadParams src;
+  src.fade_end = 10;
+  PadParams dst;
+  dst.fade_point = 50;
+  ApplyPadParamsField(dst, src, PadParamsField::kFadeEnd);
+  EXPECT_EQ(dst.fade_point, 50);
+  EXPECT_EQ(dst.fade_end, 50);
+}
+
 }  // namespace
 }  // namespace spdsx
