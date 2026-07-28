@@ -881,6 +881,10 @@ void MainComponent::RefreshDocumentState() {
   // device tab and any device-wave slots.
   RefreshDeviceSamples();
   UpdateTransferButton();
+  // The opened document brings its own dirty-vs-base state; without
+  // this the button only appears after the next edit or connection
+  // change, hiding kits that already need a sync.
+  UpdateSyncButton();
 }
 
 void MainComponent::LoadDeviceState() {
