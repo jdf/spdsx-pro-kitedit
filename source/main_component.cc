@@ -32,6 +32,9 @@ constexpr int kMidiNoteBase = 60;
 constexpr int kHeaderHeight = 44;  // the kit-editor row (chooser, VEL)
 constexpr int kGlobalBarHeight = 36;  // connection dot, status, sync button
 constexpr int kTabBarHeight = 32;
+// Digit-key hits (and the keyboard hi-hat chick) play at this velocity;
+// mouse clicks carry cursor height and MIDI carries its own.
+constexpr int kKeyVelocity = 100;
 constexpr int kSurfaceBarHeight = 30;
 constexpr int kBrowserWidth = 260;
 constexpr int kGridPadding = 14;
@@ -156,38 +159,6 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     UpdatePadWidgets(pad);
   }
-  // Keyboard pad hits (keys 1-9) carry this velocity; MIDI hits carry
-  // their own. Low values audition the soft side of the fade modes. A
-  // compact knob; click its value to type one in.
-  velocity_slider_.setLookAndFeel(&knob_look_);
-  velocity_slider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-  velocity_slider_.setRange(1, 127, 1);
-  velocity_slider_.setDoubleClickReturnValue(true, 100);
-  velocity_slider_.setValue(
-      settings_.getUserSettings()->getIntValue("uiVelocity", 100),
-      juce::dontSendNotification);
-  velocity_slider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 30, 18);
-  velocity_slider_.setTextBoxIsEditable(true);
-  // Tint the dial with the same blue->amber->red velocity colour the
-  // fade bars use.
-  auto tint_velocity_slider = [this] {
-    velocity_slider_.setColour(
-        juce::Slider::rotarySliderFillColourId,
-        VelocityColour(static_cast<int>(velocity_slider_.getValue())));
-  };
-  tint_velocity_slider();
-  velocity_slider_.onValueChange = [this, tint_velocity_slider] {
-    settings_.getUserSettings()->setValue(
-        "uiVelocity", static_cast<int>(velocity_slider_.getValue()));
-    tint_velocity_slider();
-  };
-  addAndMakeVisible(velocity_slider_);
-  velocity_caption_.setText("VEL", juce::dontSendNotification);
-  velocity_caption_.setFont(juce::Font(juce::FontOptions(12.0f)).boldened());
-  velocity_caption_.setColour(juce::Label::textColourId, kPadLabel);
-  velocity_caption_.setJustificationType(juce::Justification::centredRight);
-  addAndMakeVisible(velocity_caption_);
-
   // Appears in the header only when the active kit references device
   // waves not yet in the local cache; one click downloads them.
   transfer_button_.onClick = [this] { DownloadKitSamples(); };
@@ -291,7 +262,6 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
 }
 
 MainComponent::~MainComponent() {
-  velocity_slider_.setLookAndFeel(nullptr);
   HideProgress();  // don't leave a modal window behind on quit
   model_.RemoveListener(this);
 }
@@ -1966,15 +1936,9 @@ void MainComponent::resized() {
   bulk_panel_.setBounds(bounds);
 
   // Everything below lays out the Edit Kits tab within `bounds`.
-  // Right edge of the kit header, right-to-left: the compact velocity
-  // knob, then (when visible) the transfer button.
   auto header = bounds.removeFromTop(kHeaderHeight);
   header.removeFromLeft(10);
   header.removeFromRight(10);
-  auto vel = header.removeFromRight(104);
-  velocity_slider_.setBounds(
-      vel.removeFromRight(70).withSizeKeepingCentre(70, kHeaderHeight - 8));
-  velocity_caption_.setBounds(vel);
   if (transfer_button_.isVisible()) {
     header.removeFromRight(8);
     transfer_button_.setBounds(
@@ -2075,8 +2039,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     if (!held && object >= 0) {
       held = true;
       SelectObject(object);
-      TriggerPad(
-          object, static_cast<int>(velocity_slider_.getValue()), pedal_down);
+      TriggerPad(object, kKeyVelocity, pedal_down);
     }
     return true;
   }
@@ -2120,7 +2083,7 @@ void MainComponent::SetHiHatKeyDown(bool down) {
   }
   // Foot-close: the closing pedal cuts the open layer and sounds the
   // closed one.
-  const int velocity = static_cast<int>(velocity_slider_.getValue());
+  const int velocity = kKeyVelocity;
   for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     if (model_.params(pad).mode != LayerMode::kHiHat) {
       continue;

@@ -20,7 +20,6 @@
 #include "device_sync.h"
 #include "kit_chooser.h"
 #include "kit_model.h"
-#include "knob_look_and_feel.h"
 #include "pad_settings.h"
 #include "progress_dialog.h"
 #include "sample_browser.h"
@@ -297,11 +296,6 @@ private:
   // keyStateChanged clears the mark on release.
   std::array<bool, KitModel::kPadCount> held_pad_keys_ {};
   bool held_space_ = false;
-  // Velocity used by keyboard pad triggers (keys 1-9). The knob wears
-  // the bitmap look; declared after its LookAndFeel so it dies first.
-  KnobLookAndFeel knob_look_;
-  juce::Slider velocity_slider_;
-  juce::Label velocity_caption_;
   // Shown in the header when the active kit has uncached device waves.
   juce::TextButton transfer_button_ {"Download samples"};
   // Header connection light + its polling state.
