@@ -106,6 +106,20 @@ void KnobLookAndFeel::drawRotarySlider(juce::Graphics& g,
   }
 }
 
+juce::Slider::SliderLayout KnobLookAndFeel::getSliderLayout(
+    juce::Slider& slider) {
+  if (slider.isRotary()
+      && slider.getTextBoxPosition() == juce::Slider::TextBoxBelow) {
+    juce::Slider::SliderLayout layout;
+    const int box_w = juce::jmin(slider.getTextBoxWidth(), slider.getWidth());
+    const int box_h = slider.getTextBoxHeight();
+    layout.textBoxBounds = {0, slider.getHeight() - box_h, box_w, box_h};
+    layout.sliderBounds = {0, 0, box_w, slider.getHeight() - box_h};
+    return layout;
+  }
+  return LookAndFeel_V4::getSliderLayout(slider);
+}
+
 void KnobLookAndFeel::drawTickBox(juce::Graphics& g,
                                   juce::Component& component,
                                   float x,

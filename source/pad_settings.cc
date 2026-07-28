@@ -21,10 +21,6 @@ constexpr int kKnobHeight = kKnobSize + kKnobTextHeight;
 // The LookAndFeel draws checkbox squares at a small inset; labels and
 // the knobs get the same nudge so everything left-aligns.
 constexpr int kAlignInset = 4;
-// LookAndFeel_V4::drawRotarySlider draws the dial reduced(10) inside
-// the slider bounds.
-constexpr int kV4RotaryMargin = 10;
-
 // The small knobs used in triples/pairs so they fit abreast.
 constexpr int kMixLabelHeight = 16;
 constexpr int kMixKnobSize = 48;
@@ -317,8 +313,7 @@ void PadSettingsPanel::resized() {
       velocity_row.removeFromLeft(120)
           .withHeight(kRowHeight)
           .withY(velocity_row.getY() + (kKnobHeight - kRowHeight) / 2));
-  velocity_.setBounds(
-      velocity_row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
+  velocity_.setBounds(velocity_row.removeFromLeft(kKnobSize));
 
   band(area, link_header_, kHeaderHeight);
   auto link_row = area.removeFromTop(kRowHeight);
@@ -346,8 +341,7 @@ void PadSettingsPanel::resized() {
   auto pedal_knob = [&area](juce::Slider& knob, juce::Label& label) {
     auto row = area.removeFromTop(kKnobHeight);
     row.removeFromLeft(kAlignInset);
-    knob.setBounds(
-        row.removeFromLeft(kKnobSize).translated(-kV4RotaryMargin, 0));
+    knob.setBounds(row.removeFromLeft(kKnobSize));
     label.setBounds(row.withHeight(kRowHeight)
                         .withY(row.getY() + (kKnobHeight - kRowHeight) / 2));
     area.removeFromTop(kRowGap);

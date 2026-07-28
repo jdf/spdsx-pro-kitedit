@@ -25,6 +25,11 @@ public:
                         float rotary_end_angle,
                         juce::Slider& slider) override;
 
+  // A rotary with its value box below left-aligns ON the box: the box
+  // sits at the widget's left edge and the dial centres over the box's
+  // span, so a knob's left alignment point IS the box's left line.
+  juce::Slider::SliderLayout getSliderLayout(juce::Slider& slider) override;
+
   // A ToggleButton in a radio group draws as a proper radio — a circle
   // with a filled dot — instead of V4's square-and-tick checkbox.
   void drawTickBox(juce::Graphics& g,
