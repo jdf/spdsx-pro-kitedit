@@ -97,6 +97,10 @@ PadSettingsPanel::PadSettingsPanel() {
     knob.setDoubleClickReturnValue(true, default_value);
     knob.setTextBoxStyle(
         juce::Slider::TextBoxBelow, false, kMixKnobSize, kKnobTextHeight);
+    // One undo step per adjustment, not one per drag pixel —
+    // otherwise a drag leaves a pile of transactions and a single
+    // undo can never get back to clean.
+    knob.setChangeNotificationOnlyOnRelease(true);
     knob.setTextBoxIsEditable(true);
     knob.onValueChange = [this] { Push(); };
     label.setJustificationType(juce::Justification::centred);
@@ -144,6 +148,10 @@ PadSettingsPanel::PadSettingsPanel() {
   velocity_.setDoubleClickReturnValue(true, kDefaultFixedVelocity);
   velocity_.setTextBoxStyle(
       juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
+  // One undo step per adjustment, not one per drag pixel —
+  // otherwise a drag leaves a pile of transactions and a single
+  // undo can never get back to clean.
+  velocity_.setChangeNotificationOnlyOnRelease(true);
   velocity_.setTextBoxIsEditable(true);
   velocity_.onValueChange = [this] { Push(); };
   addAndMakeVisible(velocity_);
@@ -153,6 +161,7 @@ PadSettingsPanel::PadSettingsPanel() {
   pad_link_.setSliderStyle(juce::Slider::IncDecButtons);
   pad_link_.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 22);
   pad_link_.setTextBoxIsEditable(true);
+  pad_link_.setChangeNotificationOnlyOnRelease(true);
   pad_link_.onValueChange = [this] { Push(); };
   addAndMakeVisible(pad_link_);
   pad_link_hint_.setFont(juce::FontOptions(12.0f));
@@ -184,6 +193,10 @@ PadSettingsPanel::PadSettingsPanel() {
         knob.setDoubleClickReturnValue(true, default_value);
         knob.setTextBoxStyle(
             juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
+        // One undo step per adjustment, not one per drag pixel —
+        // otherwise a drag leaves a pile of transactions and a single
+        // undo can never get back to clean.
+        knob.setChangeNotificationOnlyOnRelease(true);
         knob.setTextBoxIsEditable(true);
         knob.onValueChange = [this] { Push(); };
         label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
