@@ -157,6 +157,22 @@ juce::Slider::SliderLayout KnobLookAndFeel::getSliderLayout(
     layout.sliderBounds = {0, 0, box_w, slider.getHeight() - box_h};
     return layout;
   }
+  if (slider.isRotary()
+      && slider.getTextBoxPosition() == juce::Slider::TextBoxRight) {
+    // A clear gap between the dial's ring and the box (V4 sets them
+    // flush against each other).
+    constexpr int kBoxGap = 6;
+    juce::Slider::SliderLayout layout;
+    const int box_w = juce::jmin(slider.getTextBoxWidth(), slider.getWidth());
+    const int box_h = juce::jmin(slider.getTextBoxHeight(), slider.getHeight());
+    layout.textBoxBounds = {slider.getWidth() - box_w,
+                            (slider.getHeight() - box_h) / 2,
+                            box_w,
+                            box_h};
+    layout.sliderBounds = {
+        0, 0, slider.getWidth() - box_w - kBoxGap, slider.getHeight()};
+    return layout;
+  }
   return LookAndFeel_V4::getSliderLayout(slider);
 }
 

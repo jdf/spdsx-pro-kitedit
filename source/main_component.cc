@@ -1971,9 +1971,9 @@ void MainComponent::resized() {
   auto header = bounds.removeFromTop(kHeaderHeight);
   header.removeFromLeft(10);
   header.removeFromRight(10);
-  auto vel = header.removeFromRight(96);
+  auto vel = header.removeFromRight(104);
   velocity_slider_.setBounds(
-      vel.removeFromRight(62).withSizeKeepingCentre(62, kHeaderHeight - 8));
+      vel.removeFromRight(70).withSizeKeepingCentre(70, kHeaderHeight - 8));
   velocity_caption_.setBounds(vel);
   if (transfer_button_.isVisible()) {
     header.removeFromRight(8);
