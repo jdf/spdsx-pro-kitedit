@@ -13,7 +13,10 @@ constexpr int kPadding = 12;
 constexpr int kTitleHeight = 28;
 constexpr int kHeaderHeight = 24;
 constexpr int kRowHeight = 24;
-constexpr int kRowGap = 6;
+constexpr int kRowGap = 6;  // horizontal spacing within a row
+// The one precise amount of clear vertical space between any two lines
+// of controls (and between a section header and its first line).
+constexpr int kControlGap = 12;
 constexpr int kSectionGap = 16;
 constexpr int kKnobTextHeight = 18;
 constexpr int kKnobSize = 60;  // the dial square, textbox below it
@@ -247,19 +250,22 @@ void PadSettingsPanel::RefreshSections() {
     c->setVisible(show_pedal_);
   }
 
-  // One section = a gap, its header band, a gap, and its content.
+  // One section = a gap, its header band, a gap, and its content;
+  // every two lines inside the content sit kControlGap apart.
   auto section = [](int content) {
-    return kSectionGap + kHeaderHeight + kRowGap + content;
+    return kSectionGap + kHeaderHeight + kControlGap + content;
   };
+  const int knob_unit = kMixLabelHeight + kMixKnobHeight;
   const int height = kTitleHeight  // the title band
       + section(kRowHeight  // layer type: the combo row...
-                + (show_fades_ ? kRowGap + kMixLabelHeight + kMixKnobHeight
+                + (show_fades_ ? kControlGap + knob_unit
                                : 0))  // ...plus fade knobs when it fades
-      + section(kRowHeight + kRowGap + kKnobHeight)  // dynamics radios
+      + section(kKnobHeight + kControlGap + kRowHeight)  // dynamics radios
       + section(kRowHeight)  // link group
-      + section(2 * (kRowHeight + kMixLabelHeight + kMixKnobHeight)
-                + kRowGap)  // the two layer envelopes
-      + (show_pedal_ ? section((kKnobHeight + kRowGap) * 3) : 0) + kPadding;
+      + section(2 * (kRowHeight + kControlGap + knob_unit)
+                + kControlGap)  // the two layer envelopes
+      + (show_pedal_ ? section(3 * kKnobHeight + 2 * kControlGap) : 0)
+      + kPadding;
   setSize(content_width_ > 0 ? content_width_ : kDefaultPanelWidth, height);
 }
 
@@ -269,7 +275,7 @@ void PadSettingsPanel::resized() {
                   juce::Rectangle<int>& area, juce::Label& header, int height) {
     area.removeFromTop(kSectionGap);
     header.setBounds(area.removeFromTop(height).withX(0).withWidth(getWidth()));
-    area.removeFromTop(kRowGap);
+    area.removeFromTop(kControlGap);
   };
 
   // A pair/triple of small knobs abreast at the left edge, each with
@@ -301,7 +307,7 @@ void PadSettingsPanel::resized() {
   mode_row.removeFromLeft(kAlignInset);
   mode_.setBounds(mode_row.removeFromLeft(140));
   if (show_fades_) {
-    area.removeFromTop(kRowGap);
+    area.removeFromTop(kControlGap);
     small_knobs(area,
                 {&fade_point_label_, &fade_end_label_},
                 {&fade_point_, &fade_end_});
@@ -309,12 +315,14 @@ void PadSettingsPanel::resized() {
 
   band(area, dynamics_header_, kHeaderHeight);
   auto velocity_row = area.removeFromTop(kKnobHeight);
-  // The radio's text sits on the rotary control's bottom line.
-  velocity_radio_.setBounds(velocity_row.removeFromLeft(120)
-                                .withHeight(kRowHeight)
-                                .withY(velocity_row.getBottom() - kRowHeight));
+  // The radio matches the knob's value box exactly — same height, same
+  // bottom — so the two texts share a centreline.
+  velocity_radio_.setBounds(
+      velocity_row.removeFromLeft(120)
+          .withHeight(kKnobTextHeight)
+          .withY(velocity_row.getBottom() - kKnobTextHeight));
   velocity_.setBounds(velocity_row.removeFromLeft(kKnobSize));
-  area.removeFromTop(kRowGap);
+  area.removeFromTop(kControlGap);
   auto curve_row = area.removeFromTop(kRowHeight);
   curve_radio_.setBounds(curve_row.removeFromLeft(76));
   curve_.setBounds(curve_row.removeFromLeft(120));
@@ -330,9 +338,10 @@ void PadSettingsPanel::resized() {
   for (size_t l = 0; l < mix_.size(); ++l) {
     MixControls& m = mix_[l];
     if (l > 0) {
-      area.removeFromTop(kRowGap);
+      area.removeFromTop(kControlGap);
     }
     m.heading.setBounds(area.removeFromTop(kRowHeight));
+    area.removeFromTop(kControlGap);
     small_knobs(area,
                 {&m.volume_label, &m.fade_label, &m.decay_label},
                 {&m.volume, &m.fade_in, &m.decay});
@@ -342,13 +351,19 @@ void PadSettingsPanel::resized() {
     return;
   }
   band(area, pedal_header_, kHeaderHeight);
-  auto pedal_knob = [&area](juce::Slider& knob, juce::Label& label) {
+  bool first_pedal = true;
+  auto pedal_knob = [&area, &first_pedal](juce::Slider& knob,
+                                          juce::Label& label) {
+    if (!first_pedal) {
+      area.removeFromTop(kControlGap);
+    }
+    first_pedal = false;
     auto row = area.removeFromTop(kKnobHeight);
     row.removeFromLeft(kAlignInset);
     knob.setBounds(row.removeFromLeft(kKnobSize));
-    label.setBounds(row.withHeight(kRowHeight)
-                        .withY(row.getY() + (kKnobHeight - kRowHeight) / 2));
-    area.removeFromTop(kRowGap);
+    // The label matches the knob's value box: same height, same bottom.
+    label.setBounds(row.withHeight(kKnobTextHeight)
+                        .withY(row.getBottom() - kKnobTextHeight));
   };
   pedal_knob(volume_, volume_label_);
   pedal_knob(fade_in_, fade_in_label_);
