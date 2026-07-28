@@ -40,6 +40,8 @@ constexpr int kSurfaceBarHeight = 30;
 // persisted member.
 constexpr int kBrowserMinWidth = 200;
 constexpr int kBrowserMaxWidth = 520;
+// The selected object's Properties panel, down the window's right side.
+constexpr int kPropertiesWidth = 260;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
 constexpr int kPadPadding = 8;
@@ -86,7 +88,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   const juce::Colour tab_bg(0xff161b22);
   panel_tabs_.addTab("Files", tab_bg, &browser_, false);
   panel_tabs_.addTab("Device", tab_bg, &device_samples_, false);
-  panel_tabs_.addTab("Properties", tab_bg, &properties_tab_, false);
+  addAndMakeVisible(properties_tab_);
   properties_tab_.panel.on_change = [this](const PadParams& edited) {
     // The panel edits the whole PadParams; fields it has no control
     // for (trigger reserve) ride through unchanged.
@@ -107,10 +109,10 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
       settings_.getUserSettings()->getIntValue("browserWidth", 260));
   panel_divider_.width_at_drag_start = [this] { return browser_width_; };
   panel_divider_.on_drag = [this](int width) {
-    const int clamped =
-        juce::jlimit(kBrowserMinWidth,
-                     juce::jmin(kBrowserMaxWidth, getWidth() - 300),
-                     width);
+    const int clamped = juce::jlimit(
+        kBrowserMinWidth,
+        juce::jmin(kBrowserMaxWidth, getWidth() - kPropertiesWidth - 300),
+        width);
     if (clamped != browser_width_) {
       browser_width_ = clamped;
       settings_.getUserSettings()->setValue("browserWidth", clamped);
@@ -1920,6 +1922,7 @@ juce::Rectangle<int> MainComponent::GridArea() const {
   if (browser_visible_) {
     area.removeFromLeft(browser_width_);
   }
+  area.removeFromRight(kPropertiesWidth);
   return area;
 }
 
@@ -1977,12 +1980,17 @@ void MainComponent::resized() {
       browser_width_ - 3, panel_top, 6, getHeight() - panel_top);
   panel_divider_.setVisible(browser_visible_ && on_edit_tab_);
   panel_divider_.toFront(false);
+  properties_tab_.setBounds(getWidth() - kPropertiesWidth,
+                            panel_top,
+                            kPropertiesWidth,
+                            getHeight() - panel_top);
   // The Pads/Triggers surface switch sits in its own strip between the
   // kit header and the grid, spanning the grid's width.
   auto surface_strip = bounds.removeFromTop(kSurfaceBarHeight);
   if (browser_visible_) {
     surface_strip.removeFromLeft(browser_width_);
   }
+  surface_strip.removeFromRight(kPropertiesWidth);
   surface_tabs_.setBounds(
       surface_strip.withTrimmedLeft(kGridPadding).withTrimmedTop(4));
   for (int r = 0; r < SurfaceRows(); ++r) {
