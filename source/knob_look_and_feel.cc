@@ -106,4 +106,41 @@ void KnobLookAndFeel::drawRotarySlider(juce::Graphics& g,
   }
 }
 
+void KnobLookAndFeel::drawTickBox(juce::Graphics& g,
+                                  juce::Component& component,
+                                  float x,
+                                  float y,
+                                  float w,
+                                  float h,
+                                  bool ticked,
+                                  bool is_enabled,
+                                  bool should_draw_button_as_highlighted,
+                                  bool should_draw_button_as_down) {
+  const auto* button = dynamic_cast<juce::Button*>(&component);
+  if (button == nullptr || button->getRadioGroupId() == 0) {
+    LookAndFeel_V4::drawTickBox(g,
+                                component,
+                                x,
+                                y,
+                                w,
+                                h,
+                                ticked,
+                                is_enabled,
+                                should_draw_button_as_highlighted,
+                                should_draw_button_as_down);
+    return;
+  }
+  const auto bounds = juce::Rectangle<float>(x, y, w, h)
+                          .reduced(1.0f)
+                          .withSizeKeepingCentre(juce::jmin(w, h) - 2.0f,
+                                                 juce::jmin(w, h) - 2.0f);
+  g.setColour(component.findColour(juce::ToggleButton::tickDisabledColourId));
+  g.drawEllipse(bounds, 1.5f);
+  if (ticked) {
+    g.setColour(component.findColour(juce::ToggleButton::tickColourId)
+                    .withMultipliedAlpha(is_enabled ? 1.0f : 0.5f));
+    g.fillEllipse(bounds.reduced(bounds.getWidth() * 0.25f));
+  }
+}
+
 }  // namespace spdsx

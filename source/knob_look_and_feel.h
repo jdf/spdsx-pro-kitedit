@@ -25,6 +25,19 @@ public:
                         float rotary_end_angle,
                         juce::Slider& slider) override;
 
+  // A ToggleButton in a radio group draws as a proper radio — a circle
+  // with a filled dot — instead of V4's square-and-tick checkbox.
+  void drawTickBox(juce::Graphics& g,
+                   juce::Component& component,
+                   float x,
+                   float y,
+                   float w,
+                   float h,
+                   bool ticked,
+                   bool is_enabled,
+                   bool should_draw_button_as_highlighted,
+                   bool should_draw_button_as_down) override;
+
 private:
   juce::Image knob_;
 };
