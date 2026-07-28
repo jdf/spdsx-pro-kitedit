@@ -60,6 +60,10 @@ public:
   // Edit. 0 = Edit Kits, 1 = Bulk Edit.
   void SelectTab(int index);
 
+  // Which editing surface the kit editor shows: 0 = the nine pads,
+  // 1 = the eight external trigger inputs.
+  void SelectSurface(int surface);
+
   // A line of device/sync narration in the strip along the bottom of the
   // window — where it stays visible whatever panel or tab is showing.
   // Empty clears it.
@@ -236,6 +240,16 @@ private:
   void timerCallback() override;
   juce::Rectangle<int> GridArea() const;
   juce::Rectangle<int> PadBounds(int row, int col) const;
+  // Whether the object (pad or trigger) lives on the active surface.
+  bool ObjectOnSurface(int object) const;
+  // The active surface's grid shape: 3x3 pads, or 2x4 triggers.
+  int SurfaceRows() const;
+  int SurfaceCols() const;
+  // The object at a grid cell of the active surface, and its bounds.
+  int SurfaceObject(int row, int col) const;
+  juce::Rectangle<int> ObjectBounds(int object) const;
+  // The label painted in an object's corner ("3", or "TRIG 3").
+  static juce::String ObjectLabel(int object);
 
   // The current kit's undo history. Histories are per-kit (created
   // lazily) so switching kits doesn't destroy them; document-level
@@ -251,12 +265,13 @@ private:
   AudioEngine engine_ {kSlotCount};
   std::array<std::unique_ptr<SampleSlot>, kSlotCount> slots_;
   // Per-pad layer controls, living in each pad's header row.
-  std::array<std::unique_ptr<juce::ComboBox>, KitModel::kPadCount> mode_boxes_;
-  std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>
+  std::array<std::unique_ptr<juce::ComboBox>, KitModel::kObjectCount>
+      mode_boxes_;
+  std::array<std::unique_ptr<juce::Slider>, KitModel::kObjectCount>
       fade_point_sliders_;
-  std::array<std::unique_ptr<juce::Slider>, KitModel::kPadCount>
+  std::array<std::unique_ptr<juce::Slider>, KitModel::kObjectCount>
       fade_end_sliders_;
-  std::array<std::unique_ptr<juce::TextButton>, KitModel::kPadCount>
+  std::array<std::unique_ptr<juce::TextButton>, KitModel::kObjectCount>
       pad_menu_buttons_;
   // The open "..." settings panel, if any (the CallOutBox owns it; the
   // SafePointer nulls itself when the box closes), and which pad it
@@ -265,11 +280,11 @@ private:
   int pad_settings_pad_ = -1;
   // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);
   // runtime state, deliberately not persisted.
-  std::array<bool, KitModel::kPadCount> alternate_flip_ {};
+  std::array<bool, KitModel::kObjectCount> alternate_flip_ {};
   // Velocity-coloured pad flash: velocity of the last hit (0 = idle)
   // and when it landed; the timer fades and expires it.
-  std::array<int, KitModel::kPadCount> pad_flash_velocity_ {};
-  std::array<juce::uint32, KitModel::kPadCount> pad_flash_ms_ {};
+  std::array<int, KitModel::kObjectCount> pad_flash_velocity_ {};
+  std::array<juce::uint32, KitModel::kObjectCount> pad_flash_ms_ {};
   // Last seen hi-hat pedal position (MIDI CC4), written on the MIDI
   // thread; >= 64 means pedal down (closed).
   std::atomic<int> hihat_cc_ {0};
@@ -317,6 +332,9 @@ private:
   };
 
   TabsBar tabs_ {juce::TabbedButtonBar::TabsAtTop};
+  // The kit editor's own surface switch: Pads / Triggers.
+  TabsBar surface_tabs_ {juce::TabbedButtonBar::TabsAtTop};
+  int surface_ = 0;  // 0 = pads, 1 = triggers
   BulkEditPanel bulk_panel_;
   // Every child that belongs to the Edit Kits tab (snapshot at the end
   // of the constructor); hidden wholesale when Bulk Edit is showing.

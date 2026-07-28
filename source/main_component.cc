@@ -32,6 +32,7 @@ constexpr int kMidiNoteBase = 60;
 constexpr int kHeaderHeight = 44;  // the kit-editor row (chooser, VEL)
 constexpr int kGlobalBarHeight = 36;  // connection dot, status, sync button
 constexpr int kTabBarHeight = 32;
+constexpr int kSurfaceBarHeight = 30;
 constexpr int kBrowserWidth = 260;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
@@ -135,7 +136,7 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     };
     addAndMakeVisible(slot);
   }
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     const auto p = static_cast<size_t>(pad);
     mode_boxes_[p] = std::make_unique<juce::ComboBox>();
     for (int m = 0; m < kLayerModeCount; ++m) {
@@ -258,6 +259,13 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   document_.ResetToUntitled();
   RefreshKitSelector();
   OpenMidiInputs();
+
+  // The kit editor's surface switch: the pads, or the external trigger
+  // inputs (structurally pads since the trigger-table mapping).
+  surface_tabs_.addTab("Pads", juce::Colour(0xff161b22), 0);
+  surface_tabs_.addTab("Triggers", juce::Colour(0xff161b22), 1);
+  surface_tabs_.on_change = [this](int index) { SelectSurface(index); };
+  addAndMakeVisible(surface_tabs_);
 
   // The tab bar and the Bulk Edit tab. Everything constructed above
   // belongs to Edit Kits; snapshot the list now so switching tabs can
@@ -662,12 +670,56 @@ void MainComponent::SelectTab(int index) {
     // The wholesale show above is too blunt for the conditional widgets;
     // re-apply their own rules.
     panel_tabs_.setVisible(browser_visible_);
-    for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+    for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
       UpdatePadWidgets(pad);
     }
     UpdateTransferButton();
   }
   repaint();
+}
+
+void MainComponent::SelectSurface(int surface) {
+  if (surface_tabs_.getCurrentTabIndex() != surface) {
+    surface_tabs_.setCurrentTabIndex(surface, false);
+  }
+  if (surface_ == surface) {
+    return;
+  }
+  surface_ = surface;
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
+    UpdatePadWidgets(pad);
+  }
+  resized();  // the two surfaces have different grid shapes
+  repaint();
+}
+
+bool MainComponent::ObjectOnSurface(int object) const {
+  return (surface_ == 1) == KitModel::IsTrigger(object);
+}
+
+int MainComponent::SurfaceRows() const {
+  return surface_ == 0 ? 3 : 2;
+}
+
+int MainComponent::SurfaceCols() const {
+  return surface_ == 0 ? 3 : 4;
+}
+
+int MainComponent::SurfaceObject(int row, int col) const {
+  const int cell = row * SurfaceCols() + col;
+  return surface_ == 0 ? cell : KitModel::TriggerObject(cell);
+}
+
+juce::Rectangle<int> MainComponent::ObjectBounds(int object) const {
+  const int cell =
+      KitModel::IsTrigger(object) ? KitModel::TriggerOf(object) : object;
+  return PadBounds(cell / SurfaceCols(), cell % SurfaceCols());
+}
+
+juce::String MainComponent::ObjectLabel(int object) {
+  return KitModel::IsTrigger(object)
+      ? "TRIG " + juce::String(KitModel::TriggerOf(object) + 1)
+      : juce::String(object + 1);
 }
 
 juce::String MainComponent::ApplyBulkPadLink(
@@ -942,7 +994,7 @@ void MainComponent::DownloadKitSamples() {
   // The active kit's device waves whose audio isn't cached in the
   // document yet (computed here on the message thread).
   std::vector<int> want;
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       const LayerSample& s = model_.sample(pad, layer);
       if (!s.is_device() || document_.HasCachedAudio(s.device_index)) {
@@ -1031,7 +1083,7 @@ void MainComponent::DownloadKitSamples() {
 
 int MainComponent::UncachedDeviceWaveCount() const {
   std::vector<int> seen;
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       const LayerSample& s = model_.sample(pad, layer);
       if (!s.is_device()) {
@@ -1627,7 +1679,7 @@ void MainComponent::UpdateDownloadIndicators() {
   const float progress = download_permille_ != nullptr
       ? download_permille_->load() / 1000.0f
       : 0.0f;
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       const LayerSample& s = model_.sample(pad, layer);
       if (!s.is_device()
@@ -1658,7 +1710,7 @@ void MainComponent::OnWaveDownloaded(int sample_index,
 
 void MainComponent::OnWaveCached(int sample_index) {
   // Refresh any slot in the active kit now backed by this cached wave.
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       const LayerSample& s = model_.sample(pad, layer);
       if (s.is_device() && s.device_index == sample_index) {
@@ -1679,7 +1731,7 @@ void MainComponent::FinishKitSampleDownload(const juce::String& error,
   download_indices_.clear();
   download_current_.reset();
   download_permille_.reset();
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       if (model_.sample(pad, layer).is_device()) {
         SyncSlotFromModel(pad, layer);
@@ -1712,7 +1764,7 @@ void MainComponent::FinishKitSampleDownload(const juce::String& error,
 void MainComponent::RefreshDeviceSamples() {
   device_samples_.Refresh();
   // Re-resolve device-wave slot displays against the (new) pool.
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     for (int layer = 0; layer < KitModel::kLayersPerPad; ++layer) {
       if (model_.sample(pad, layer).is_device()) {
         SyncSlotFromModel(pad, layer);
@@ -1821,13 +1873,14 @@ void MainComponent::paint(juce::Graphics& g) {
   }
 
   const auto now = juce::Time::getMillisecondCounter();
-  for (int r = 0; r < 3; ++r) {
-    for (int c = 0; c < 3; ++c) {
+  for (int r = 0; r < SurfaceRows(); ++r) {
+    for (int c = 0; c < SurfaceCols(); ++c) {
       auto pad = PadBounds(r, c);
+      const int object = SurfaceObject(r, c);
       g.setColour(kPadBg);
       g.fillRoundedRectangle(pad.toFloat(), 10.0f);
       // A hit washes the pad in the velocity colour and fades out.
-      const auto idx = static_cast<size_t>(r * 3 + c);
+      const auto idx = static_cast<size_t>(object);
       const int flash_velocity = pad_flash_velocity_[idx];
       if (flash_velocity > 0) {
         const float age = static_cast<float>(now - pad_flash_ms_[idx])
@@ -1845,7 +1898,7 @@ void MainComponent::paint(juce::Graphics& g) {
       g.setColour(kPadLabel);
       g.setFont(juce::Font(juce::FontOptions(13.0f)).boldened());
       g.drawText(
-          juce::String(r * 3 + c + 1),
+          ObjectLabel(object),
           pad.reduced(kPadPadding + 2, kPadPadding).removeFromTop(kPadHeader),
           juce::Justification::centredLeft);
     }
@@ -1854,7 +1907,8 @@ void MainComponent::paint(juce::Graphics& g) {
 
 juce::Rectangle<int> MainComponent::GridArea() const {
   auto area = getLocalBounds();
-  area.removeFromTop(kGlobalBarHeight + kTabBarHeight + kHeaderHeight);
+  area.removeFromTop(kGlobalBarHeight + kTabBarHeight + kHeaderHeight
+                     + kSurfaceBarHeight);
   if (browser_visible_) {
     area.removeFromLeft(kBrowserWidth);
   }
@@ -1863,10 +1917,12 @@ juce::Rectangle<int> MainComponent::GridArea() const {
 
 juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const {
   const auto area = GridArea();
+  const int cols = SurfaceCols();
+  const int rows = SurfaceRows();
   const int cell_w =
-      (area.getWidth() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+      (area.getWidth() - 2 * kGridPadding - (cols - 1) * kGridSpacing) / cols;
   const int cell_h =
-      (area.getHeight() - 2 * kGridPadding - 2 * kGridSpacing) / 3;
+      (area.getHeight() - 2 * kGridPadding - (rows - 1) * kGridSpacing) / rows;
   return {area.getX() + kGridPadding + col * (cell_w + kGridSpacing),
           area.getY() + kGridPadding + row * (cell_h + kGridSpacing),
           cell_w,
@@ -1918,10 +1974,18 @@ void MainComponent::resized() {
       kGlobalBarHeight + kTabBarHeight + kHeaderHeight,
       kBrowserWidth,
       getHeight() - kGlobalBarHeight - kTabBarHeight - kHeaderHeight);
-  for (int r = 0; r < 3; ++r) {
-    for (int c = 0; c < 3; ++c) {
+  // The Pads/Triggers surface switch sits in its own strip between the
+  // kit header and the grid, spanning the grid's width.
+  auto surface_strip = bounds.removeFromTop(kSurfaceBarHeight);
+  if (browser_visible_) {
+    surface_strip.removeFromLeft(kBrowserWidth);
+  }
+  surface_tabs_.setBounds(
+      surface_strip.withTrimmedLeft(kGridPadding).withTrimmedTop(4));
+  for (int r = 0; r < SurfaceRows(); ++r) {
+    for (int c = 0; c < SurfaceCols(); ++c) {
       auto inner = PadBounds(r, c).reduced(kPadPadding);
-      const int pad = r * 3 + c;
+      const int pad = SurfaceObject(r, c);
       // Layer controls share the header row with the painted pad number:
       // fade point, fade end, mode box, right-aligned in that order.
       auto header = inner.removeFromTop(kPadHeader).withTrimmedBottom(2);
@@ -1994,11 +2058,16 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     pedal_down = true;
   }
   if (pad >= 0) {
+    // The digits hit whatever the surface shows: pads 1-9, or triggers
+    // 1-8 (the 9 key idles there).
+    const int object = surface_ == 0    ? pad
+        : pad < KitModel::kTriggerCount ? KitModel::TriggerObject(pad)
+                                        : -1;
     auto& held = held_pad_keys_[static_cast<size_t>(pad)];
-    if (!held) {
+    if (!held && object >= 0) {
       held = true;
       TriggerPad(
-          pad, static_cast<int>(velocity_slider_.getValue()), pedal_down);
+          object, static_cast<int>(velocity_slider_.getValue()), pedal_down);
     }
     return true;
   }
@@ -2043,7 +2112,7 @@ void MainComponent::SetHiHatKeyDown(bool down) {
   // Foot-close: the closing pedal cuts the open layer and sounds the
   // closed one.
   const int velocity = static_cast<int>(velocity_slider_.getValue());
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     if (model_.params(pad).mode != LayerMode::kHiHat) {
       continue;
     }
@@ -2104,9 +2173,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event) {
 }
 
 int MainComponent::PadAt(juce::Point<int> point) const {
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    if (PadBounds(pad / 3, pad % 3).contains(point)) {
-      return pad;
+  for (int r = 0; r < SurfaceRows(); ++r) {
+    for (int c = 0; c < SurfaceCols(); ++c) {
+      if (PadBounds(r, c).contains(point)) {
+        return SurfaceObject(r, c);
+      }
     }
   }
   return -1;
@@ -2114,7 +2185,7 @@ int MainComponent::PadAt(juce::Point<int> point) const {
 
 int MainComponent::VelocityForPointInPad(int pad,
                                          juce::Point<int> point) const {
-  const auto bounds = PadBounds(pad / 3, pad % 3);
+  const auto bounds = ObjectBounds(pad);
   const float height_fraction = static_cast<float>(bounds.getBottom() - point.y)
       / static_cast<float>(juce::jmax(1, bounds.getHeight()));
   return juce::jlimit(
@@ -2122,14 +2193,16 @@ int MainComponent::VelocityForPointInPad(int pad,
 }
 
 void MainComponent::TriggerPad(int pad, int velocity, bool pedal_down) {
-  if (pad < 0 || pad >= KitModel::kPadCount) {
+  if (pad < 0 || pad >= KitModel::kObjectCount) {
     return;
   }
   const auto p = static_cast<size_t>(pad);
   // Flash the pad in the velocity colour; the timer fades it out.
   pad_flash_velocity_[p] = velocity;
   pad_flash_ms_[p] = juce::Time::getMillisecondCounter();
-  repaint(PadBounds(pad / 3, pad % 3));
+  if (ObjectOnSurface(pad)) {
+    repaint(ObjectBounds(pad));
+  }
   const PadParams& params = model_.params(pad);
   LayerWeights weights = ComputeLayerWeights(params.mode,
                                              velocity,
@@ -2249,8 +2322,15 @@ void MainComponent::UpdatePadWidgets(int pad) {
   fade_end_sliders_[p]->setColour(
       juce::Slider::trackColourId,
       VelocityColour(params.fade_end).withAlpha(0.5f));
-  fade_point_sliders_[p]->setVisible(UsesFadePoint(params.mode));
-  fade_end_sliders_[p]->setVisible(UsesFadeEnd(params.mode));
+  // Visibility folds in the surface: a trigger's widgets only exist on
+  // the Triggers surface, a pad's on Pads.
+  const bool shown = ObjectOnSurface(pad);
+  mode_boxes_[p]->setVisible(shown);
+  pad_menu_buttons_[p]->setVisible(shown);
+  slots_[p * 2]->setVisible(shown);
+  slots_[p * 2 + 1]->setVisible(shown);
+  fade_point_sliders_[p]->setVisible(shown && UsesFadePoint(params.mode));
+  fade_end_sliders_[p]->setVisible(shown && UsesFadeEnd(params.mode));
 }
 
 void MainComponent::PadParamsChanged(int pad) {
@@ -2400,13 +2480,15 @@ void MainComponent::timerCallback() {
 
   // Animate the pad flashes: repaint while fading, drop when expired.
   const auto now = juce::Time::getMillisecondCounter();
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     const auto p = static_cast<size_t>(pad);
     if (pad_flash_velocity_[p] > 0) {
       if (now - pad_flash_ms_[p] >= kPadFlashMs) {
         pad_flash_velocity_[p] = 0;
       }
-      repaint(PadBounds(pad / 3, pad % 3));
+      if (ObjectOnSurface(pad)) {
+        repaint(ObjectBounds(pad));
+      }
     }
   }
 
