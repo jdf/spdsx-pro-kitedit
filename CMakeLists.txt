@@ -20,7 +20,7 @@ endif()
 
 project(
     spdsx-patchedit
-    VERSION 0.6.0
+    VERSION 0.6.1
     DESCRIPTION "Interactive kit designer for the Roland SPD-SX"
     LANGUAGES C CXX
 )
