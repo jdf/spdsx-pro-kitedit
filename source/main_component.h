@@ -277,6 +277,36 @@ private:
   };
 
   PropertiesTab properties_tab_;
+
+  // The draggable divider on the left panel's right edge.
+  class PanelDivider : public juce::Component {
+  public:
+    PanelDivider() { setMouseCursor(juce::MouseCursor::LeftRightResizeCursor); }
+
+    std::function<int()> width_at_drag_start;
+    std::function<void(int)> on_drag;  // the new panel width
+
+    void mouseDown(const juce::MouseEvent&) override {
+      start_width_ = width_at_drag_start ? width_at_drag_start() : 0;
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+      if (on_drag) {
+        on_drag(start_width_ + event.getDistanceFromDragStartX());
+      }
+    }
+
+    void paint(juce::Graphics& g) override {
+      g.setColour(juce::Colour(0xff222831));
+      g.fillRect(getLocalBounds().withSizeKeepingCentre(2, getHeight()));
+    }
+
+  private:
+    int start_width_ = 0;
+  };
+
+  PanelDivider panel_divider_;
+  int browser_width_ = 260;
   // The selected object (pad or trigger) the Properties tab shows.
   int selected_ = 0;
   // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);

@@ -36,7 +36,10 @@ constexpr int kTabBarHeight = 32;
 // mouse clicks carry cursor height and MIDI carries its own.
 constexpr int kKeyVelocity = 100;
 constexpr int kSurfaceBarHeight = 30;
-constexpr int kBrowserWidth = 260;
+// The left panel's width limits; the width itself is a dragged,
+// persisted member.
+constexpr int kBrowserMinWidth = 200;
+constexpr int kBrowserMaxWidth = 520;
 constexpr int kGridPadding = 14;
 constexpr int kGridSpacing = 14;
 constexpr int kPadPadding = 8;
@@ -98,6 +101,24 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   };
   panel_tabs_.setOutline(0);
   panel_tabs_.setVisible(browser_visible_);
+  browser_width_ = juce::jlimit(
+      kBrowserMinWidth,
+      kBrowserMaxWidth,
+      settings_.getUserSettings()->getIntValue("browserWidth", 260));
+  panel_divider_.width_at_drag_start = [this] { return browser_width_; };
+  panel_divider_.on_drag = [this](int width) {
+    const int clamped =
+        juce::jlimit(kBrowserMinWidth,
+                     juce::jmin(kBrowserMaxWidth, getWidth() - 300),
+                     width);
+    if (clamped != browser_width_) {
+      browser_width_ = clamped;
+      settings_.getUserSettings()->setValue("browserWidth", clamped);
+      resized();
+      repaint();
+    }
+  };
+  addChildComponent(panel_divider_);
   panel_tabs_.on_change = [this](int index) {
     settings_.getUserSettings()->setValue("uiPanelTab", index);
   };
@@ -643,6 +664,7 @@ void MainComponent::SelectTab(int index) {
     // The wholesale show above is too blunt for the conditional widgets;
     // re-apply their own rules.
     panel_tabs_.setVisible(browser_visible_);
+    panel_divider_.setVisible(browser_visible_);
     for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
       UpdatePadWidgets(pad);
     }
@@ -1896,7 +1918,7 @@ juce::Rectangle<int> MainComponent::GridArea() const {
   area.removeFromTop(kGlobalBarHeight + kTabBarHeight + kHeaderHeight
                      + kSurfaceBarHeight);
   if (browser_visible_) {
-    area.removeFromLeft(kBrowserWidth);
+    area.removeFromLeft(browser_width_);
   }
   return area;
 }
@@ -1949,16 +1971,17 @@ void MainComponent::resized() {
   // what keeps the chooser clear of the transfer button.
   kit_chooser_.setBounds(header.withSizeKeepingCentre(
       juce::jmin(500, header.getWidth() - 16), 28));
-  panel_tabs_.setBounds(
-      0,
-      kGlobalBarHeight + kTabBarHeight + kHeaderHeight,
-      kBrowserWidth,
-      getHeight() - kGlobalBarHeight - kTabBarHeight - kHeaderHeight);
+  const int panel_top = kGlobalBarHeight + kTabBarHeight + kHeaderHeight;
+  panel_tabs_.setBounds(0, panel_top, browser_width_, getHeight() - panel_top);
+  panel_divider_.setBounds(
+      browser_width_ - 3, panel_top, 6, getHeight() - panel_top);
+  panel_divider_.setVisible(browser_visible_ && on_edit_tab_);
+  panel_divider_.toFront(false);
   // The Pads/Triggers surface switch sits in its own strip between the
   // kit header and the grid, spanning the grid's width.
   auto surface_strip = bounds.removeFromTop(kSurfaceBarHeight);
   if (browser_visible_) {
-    surface_strip.removeFromLeft(kBrowserWidth);
+    surface_strip.removeFromLeft(browser_width_);
   }
   surface_tabs_.setBounds(
       surface_strip.withTrimmedLeft(kGridPadding).withTrimmedTop(4));
