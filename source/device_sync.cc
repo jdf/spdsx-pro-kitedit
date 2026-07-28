@@ -1,6 +1,7 @@
 #include "device_sync.h"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 
 #include "layers.h"
@@ -388,9 +389,8 @@ int NextFreeSampleIndex(const std::vector<device::SampleRecord>& pool,
   return candidate < device::kSampleSlots ? candidate : 0;
 }
 
-std::vector<UploadPlan> PlanUploads(
-    const std::vector<std::pair<int, KitSyncPlan>>& plans,
-    const std::vector<device::SampleRecord>& pool) {
+std::vector<juce::File> PlannedUploadFiles(
+    const std::vector<std::pair<int, KitSyncPlan>>& plans) {
   // Distinct files, in path order so index assignment is deterministic.
   std::map<juce::String, juce::File> files;
   for (const auto& [kit, plan] : plans) {
@@ -407,10 +407,53 @@ std::vector<UploadPlan> PlanUploads(
       }
     }
   }
-  std::vector<UploadPlan> uploads;
-  uploads.reserve(files.size());
-  int index = 0;
+  std::vector<juce::File> ordered;
+  ordered.reserve(files.size());
   for (const auto& [path, file] : files) {
+    ordered.push_back(file);
+  }
+  return ordered;
+}
+
+std::vector<UploadPlan> MatchPoolWaves(
+    const std::vector<std::pair<int, KitSyncPlan>>& plans,
+    const std::vector<device::SampleRecord>& pool,
+    const std::map<juce::String, double>& durations) {
+  std::vector<UploadPlan> matches;
+  for (const juce::File& file : PlannedUploadFiles(plans)) {
+    const auto duration = durations.find(file.getFullPathName());
+    if (duration == durations.end()) {
+      continue;  // unreadable file; the upload path will report why
+    }
+    const juce::String filename(SanitizedAscii(file.getFileName(), 84));
+    for (const device::SampleRecord& record : pool) {
+      if (!filename.equalsIgnoreCase(juce::String(record.filename))) {
+        continue;
+      }
+      // Pool frames are per-channel at the device's fixed 48 kHz.
+      const double pool_seconds = static_cast<double>(record.frames) / 48000.0;
+      if (std::abs(pool_seconds - duration->second)
+          > kPoolMatchToleranceSeconds) {
+        continue;
+      }
+      UploadPlan m;
+      m.file = file;
+      m.index = record.index;
+      m.wavename = record.wavename;
+      m.filename = record.filename;
+      matches.push_back(std::move(m));
+      break;  // first (lowest-index) match wins
+    }
+  }
+  return matches;
+}
+
+std::vector<UploadPlan> PlanUploads(
+    const std::vector<std::pair<int, KitSyncPlan>>& plans,
+    const std::vector<device::SampleRecord>& pool) {
+  std::vector<UploadPlan> uploads;
+  int index = 0;
+  for (const juce::File& file : PlannedUploadFiles(plans)) {
     index = NextFreeSampleIndex(pool, index);
     if (index == 0) {
       break;  // pool full; the caller sees fewer uploads than files

@@ -557,6 +557,84 @@ TEST(DeviceSyncUploads, SubstitutionTurnsFilesIntoWavesInBothSnapshots) {
   EXPECT_EQ(plans[0].second.new_base.pads[0].samples.first, expected);
 }
 
+// ---- MatchPoolWaves ----
+
+device::SampleRecord PoolWave(int index,
+                              const std::string& filename,
+                              double seconds) {
+  device::SampleRecord record;
+  record.index = index;
+  record.wavename = filename.substr(0, filename.rfind('.'));
+  record.filename = filename;
+  record.frames = static_cast<uint32_t>(seconds * 48000.0);
+  return record;
+}
+
+std::vector<std::pair<int, KitSyncPlan>> PlansWithFile(const juce::File& file) {
+  const KitData base = SyncBase();
+  KitData current = base;
+  current.pads[0].samples.first = LayerSample(file);
+  std::vector<std::pair<int, KitSyncPlan>> plans;
+  plans.emplace_back(
+      0, PlanKitSync(current, base, base, SyncResolution::kMine, AllMine()));
+  return plans;
+}
+
+TEST(DeviceSyncPoolMatch, ReusesAWaveMatchingByFilenameAndDuration) {
+  const juce::File kick("/tmp/kick.wav");
+  auto plans = PlansWithFile(kick);
+  const std::vector<device::SampleRecord> pool = {PoolWave(7, "other.wav", 1.0),
+                                                  PoolWave(9, "kick.wav", 1.0)};
+
+  const auto matches =
+      MatchPoolWaves(plans, pool, {{kick.getFullPathName(), 1.0}});
+
+  ASSERT_EQ(matches.size(), 1u);
+  EXPECT_EQ(matches[0].file, kick);
+  EXPECT_EQ(matches[0].index, 9);
+  EXPECT_EQ(matches[0].filename, "kick.wav");
+
+  // Substituted like an upload, the match leaves nothing to upload.
+  SubstituteUploads(plans, matches);
+  EXPECT_EQ(plans[0].second.new_current.pads[0].samples.first,
+            LayerSample::DeviceWave(9));
+  EXPECT_TRUE(PlanUploads(plans, pool).empty());
+}
+
+TEST(DeviceSyncPoolMatch, FilenameMatchIsCaseInsensitive) {
+  const juce::File kick("/tmp/KICK.WAV");
+  const auto matches = MatchPoolWaves(PlansWithFile(kick),
+                                      {PoolWave(3, "kick.wav", 2.0)},
+                                      {{kick.getFullPathName(), 2.0}});
+  ASSERT_EQ(matches.size(), 1u);
+  EXPECT_EQ(matches[0].index, 3);
+}
+
+TEST(DeviceSyncPoolMatch, ADifferentDurationIsNotTheSameWave) {
+  const juce::File kick("/tmp/kick.wav");
+  EXPECT_TRUE(MatchPoolWaves(PlansWithFile(kick),
+                             {PoolWave(3, "kick.wav", 2.0)},
+                             {{kick.getFullPathName(), 1.5}})
+                  .empty());
+}
+
+TEST(DeviceSyncPoolMatch, AnUnknownDurationNeverMatches) {
+  const juce::File kick("/tmp/kick.wav");
+  EXPECT_TRUE(
+      MatchPoolWaves(PlansWithFile(kick), {PoolWave(3, "kick.wav", 2.0)}, {})
+          .empty());
+}
+
+TEST(DeviceSyncPoolMatch, TheLowestMatchingIndexWins) {
+  const juce::File kick("/tmp/kick.wav");
+  const auto matches = MatchPoolWaves(
+      PlansWithFile(kick),
+      {PoolWave(3, "kick.wav", 2.0), PoolWave(8, "kick.wav", 2.0)},
+      {{kick.getFullPathName(), 2.0}});
+  ASSERT_EQ(matches.size(), 1u);
+  EXPECT_EQ(matches[0].index, 3);
+}
+
 // ---- BuildKitWrite ----
 
 TEST(DeviceSyncWrite, CarriesOnlyThePadsThatNeedWrites) {

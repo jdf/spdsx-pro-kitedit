@@ -19,6 +19,7 @@
 
 #include <array>
 #include <functional>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -118,7 +119,25 @@ int NextFreeSampleIndex(const std::vector<device::SampleRecord>& pool,
                         int after = 0);
 
 // The distinct local files referenced by layers the plans will write,
-// each assigned a free pool index (in file-path order).
+// in file-path order.
+std::vector<juce::File> PlannedUploadFiles(
+    const std::vector<std::pair<int, KitSyncPlan>>& plans);
+
+// Planned files whose content the pool already holds — matched by the
+// directory-record filename (the sanitized basename, case-insensitive)
+// AND duration, within kPoolMatchToleranceSeconds. Durations come from
+// `durations` (seconds, keyed by full path); a file with no entry never
+// matches. Each match is returned as an UploadPlan bound to the
+// EXISTING pool wave: substitute it like an upload, but nothing needs
+// sending. Run before PlanUploads so only unmatched files upload.
+inline constexpr double kPoolMatchToleranceSeconds = 0.06;
+std::vector<UploadPlan> MatchPoolWaves(
+    const std::vector<std::pair<int, KitSyncPlan>>& plans,
+    const std::vector<device::SampleRecord>& pool,
+    const std::map<juce::String, double>& durations);
+
+// The planned files (minus any already substituted), each assigned a
+// free pool index.
 std::vector<UploadPlan> PlanUploads(
     const std::vector<std::pair<int, KitSyncPlan>>& plans,
     const std::vector<device::SampleRecord>& pool);

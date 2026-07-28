@@ -430,6 +430,10 @@ private:
     std::vector<SyncConflict> conflicts;
     std::vector<std::pair<int, KitSyncPlan>> plans;
     std::vector<UploadPlan> uploads;
+    // Local files the pool already held (matched by filename +
+    // duration): repointed at the existing wave, nothing uploaded. On
+    // success their local audio becomes the wave's cache.
+    std::vector<UploadPlan> reused;
     bool pulled = false;  // device-side changes landed locally
 
     // Uploads recorded this push. Each is written into the document

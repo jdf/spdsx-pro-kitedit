@@ -1559,6 +1559,30 @@ void MainComponent::RunSyncPush(
     return;
   }
 
+  // Files the device pool already holds are REUSED, not uploaded again:
+  // matched by filename + duration against the pool directory, the
+  // matched layers repoint at the existing wave and drop out of the
+  // upload plan.
+  {
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::map<juce::String, double> durations;
+    for (const juce::File& file : PlannedUploadFiles(sync_->plans)) {
+      const std::unique_ptr<juce::AudioFormatReader> reader(
+          formats.createReaderFor(file));
+      if (reader != nullptr && reader->sampleRate > 0) {
+        durations[file.getFullPathName()] =
+            static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+      }
+    }
+    sync_->reused =
+        MatchPoolWaves(sync_->plans, device_.sample_pool(), durations);
+    SubstituteUploads(sync_->plans, sync_->reused);
+    if (!sync_->reused.empty()) {
+      AppLog::Note("sync reusing " + juce::String(sync_->reused.size())
+                   + " wave(s) the device pool already holds");
+    }
+  }
   sync_->uploads = PlanUploads(sync_->plans, device_.sample_pool());
   SubstituteUploads(sync_->plans, sync_->uploads);
   std::vector<KitWrite> writes;
@@ -1735,6 +1759,18 @@ void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
     document_.ApplySyncedKit(kit, plan.new_current, plan.new_base);
   }
   document_.PersistSync();
+  // A reused pool wave's content IS its matched local file, so that
+  // file's audio becomes the wave's cache and the pads keep playing
+  // without a download.
+  for (const UploadPlan& match : sync_->reused) {
+    if (!document_.HasCachedAudio(match.index)) {
+      juce::MemoryBlock bytes;
+      if (match.file.loadFileAsData(bytes)) {
+        document_.StoreWaveAudio(match.index, bytes);
+      }
+    }
+    OnWaveCached(match.index);
+  }
   if (sync_->pulled) {
     // Device-side changes replaced local content outside the undo
     // system; stale histories would undo into nonsense.
