@@ -204,9 +204,10 @@ private:
   void AdoptKit(int index);
   // Periodically probes for the device on a worker thread (throttled),
   // updating device_connected_ + the header dot + command enablement.
-  // Skipped while a device operation holds the port. On the transition
-  // to connected (app launch included) it also reads the device's
-  // ACTIVE kit and adopts it, so the app opens on what the unit shows.
+  // Skipped while a device operation holds the port. Every poll reads
+  // the device's ACTIVE kit and adopts a change (so the app opens on
+  // what the unit shows, and follows kit switches made on the
+  // hardware); the transition to connected also reads the firmware.
   void PollConnection();
   // Shows/enables the header "Sync Changes with Device" button: visible
   // when any kit differs from the last-synced base snapshot, enabled
@@ -402,6 +403,11 @@ private:
       std::make_shared<std::atomic<int>>(0);
   std::shared_ptr<std::atomic<bool>> kit_select_running_ =
       std::make_shared<std::atomic<bool>>(false);
+  // When the app last told the unit which kit to show; the poll's
+  // follow-the-device adoption holds off for an interval after it, so a
+  // read that raced the select can't drag the app back (message-thread
+  // only).
+  juce::uint32 last_app_kit_select_ms_ = 0;
   // "Sync Changes with Device" header button. Dirtiness is computed, not
   // tracked: a kit is dirty when its content differs from the document's
   // base snapshot (DeviceDocument::DirtyKits). model_loading_ marks kit

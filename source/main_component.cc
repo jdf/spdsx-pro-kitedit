@@ -24,6 +24,10 @@ namespace spdsx {
 
 namespace {
 
+// How often the app probes for the device; also the holdoff between an
+// app-side kit select and the poll's follow-the-device adoption.
+constexpr juce::uint32 kPollIntervalMs = 2000;
+
 // The SPD-SX PRO sends pad hits as note-on on channel 10, pads 1-9 on
 // notes 60-68.
 constexpr int kMidiChannel = 10;
@@ -1174,6 +1178,9 @@ void MainComponent::SyncDeviceKit() {
     return;
   }
   pending_select_kit_->store(device_.current_kit() + 1);  // device is 1-based
+  // Holds off the follow-the-device poll: a poll that read the unit's
+  // kit before this select lands must not adopt the stale answer.
+  last_app_kit_select_ms_ = juce::Time::getMillisecondCounter();
   if (kit_select_running_->exchange(true)) {
     return;  // a worker is already running; it will pick up the new pending
   }
@@ -1207,7 +1214,6 @@ void MainComponent::PollConnection() {
   // One probe at a time, throttled; skip while a device operation holds
   // the port (we're plainly connected then, and a second open would
   // clash).
-  constexpr juce::uint32 kPollIntervalMs = 2000;
   if (device_fetching_ || conn_check_running_.load()
       || kit_select_running_->load()) {
     return;
@@ -1228,20 +1234,23 @@ void MainComponent::PollConnection() {
     try {
       const std::string path = device::FindDevicePort();
       connected = !path.empty();
-      // On the way from disconnected to connected (app launch included),
-      // learn the unit's active kit (so the app can open on it) and its
-      // firmware (for the header of a bug report). Steady-state polls
-      // stay a cheap ping.
-      if (connected && !was_connected) {
+      if (connected) {
         const std::unique_ptr<device::SerialPort> serial =
             device::PlatformPorts().Open(path);
         device::SpdsxDevice dev(serial.get());
+        // Every poll learns the unit's active kit, so a kit switch made
+        // on the hardware shows up in the app within a poll interval.
         device_kit = dev.CurrentKit();
-        version = juce::String(dev.FirmwareField(0));
-        firmware = version;
-        const std::string build = dev.FirmwareField(3);
-        if (!build.empty()) {
-          firmware << " (" << juce::String(build) << ")";
+        // On the way from disconnected to connected (app launch
+        // included), also learn its firmware (the write gate + the
+        // header of a bug report).
+        if (!was_connected) {
+          version = juce::String(dev.FirmwareField(0));
+          firmware = version;
+          const std::string build = dev.FirmwareField(3);
+          if (!build.empty()) {
+            firmware << " (" << juce::String(build) << ")";
+          }
         }
       }
     } catch (const std::exception&) {
@@ -1277,6 +1286,19 @@ void MainComponent::PollConnection() {
         } else {
           AppLog::Note("device disconnected");
         }
+      } else if (connected && device_kit > 0
+                 && device_kit - 1 != safe->device_.current_kit()
+                 && !safe->kit_select_running_->load()
+                 && juce::Time::getMillisecondCounter()
+                         - safe->last_app_kit_select_ms_
+                     >= kPollIntervalMs) {
+        // A kit switch made on the hardware: follow it. Not while the
+        // app is telling the unit which kit to show (or just finished —
+        // a poll that read the unit BEFORE that select landed could
+        // yank the app back to the old kit).
+        AppLog::Note("device switched to kit " + juce::String(device_kit)
+                     + "; following");
+        safe->AdoptKit(device_kit - 1);  // follow the unit, no echo back
       }
     });
   }).detach();
