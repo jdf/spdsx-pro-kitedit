@@ -40,15 +40,6 @@ been verified against "2.00". Refusing to write: ...
 Reading is never gated — `info` tells you what a unit is running, and
 `dump`, `kits`, `kit`, `samples` and `readwave` work on anything.
 
-## Flags are checked against the command
-
-Every flag is rejected by any command that would not act on it: `spdutil
-ping --dry-run` and `spdutil kits --kits 1-5` are errors, and so is a bare
-number for a command that takes none (`spdutil kits 5`).
-
-`--dry-run` is honored by `assign`, `setname`, `setparams`, `setlayer`,
-`setmode`, and `padlink`; the other commands reject it.
-
 ## Working state vs. commit
 
 Device writes land in **working state**: audible immediately, gone on power
