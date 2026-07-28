@@ -27,7 +27,7 @@ constexpr float kRingMaxWidth = 3.0f;
 // marker drawn over it is bigger, since the baked-in dot reads small.
 constexpr float kDotCentreX = 100.0f;
 constexpr float kDotCentreY = 62.0f;
-constexpr float kDotDrawRadius = 13.5f;  // in image pixels, pre-scale
+constexpr float kDotDrawRadius = 11.0f;  // in image pixels, pre-scale
 constexpr juce::uint32 kDotGreen = 0xff3fb950;
 
 }  // namespace
