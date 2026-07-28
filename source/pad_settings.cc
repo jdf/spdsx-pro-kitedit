@@ -17,6 +17,8 @@ constexpr int kRowGap = 6;  // horizontal spacing within a row
 // The one precise amount of clear vertical space between any two lines
 // of controls (and between a section header and its first line).
 constexpr int kControlGap = 12;
+// The Layer A/B captions sit tight against their own knobs.
+constexpr int kCaptionGap = 2;
 constexpr int kSectionGap = 16;
 constexpr int kKnobTextHeight = 18;
 constexpr int kKnobSize = 60;  // the dial square, textbox below it
@@ -269,7 +271,7 @@ void PadSettingsPanel::RefreshSections() {
                 kSectionGap)
       + section(kKnobHeight + kControlGap + kRowHeight)  // dynamics radios
       + section(kRowHeight)  // link group
-      + section(2 * (kRowHeight + kControlGap + knob_unit)
+      + section(2 * (kRowHeight + kCaptionGap + knob_unit)
                 + kControlGap)  // the two layer envelopes
       + (show_pedal_ ? section(3 * kKnobHeight + 2 * kControlGap) : 0)
       + kPadding;
@@ -351,7 +353,8 @@ void PadSettingsPanel::resized() {
       area.removeFromTop(kControlGap);
     }
     m.heading.setBounds(area.removeFromTop(kRowHeight));
-    area.removeFromTop(kControlGap);
+    // The caption belongs to its knobs; just a sliver of air.
+    area.removeFromTop(kCaptionGap);
     small_knobs(area,
                 {&m.volume_label, &m.fade_label, &m.decay_label},
                 {&m.volume, &m.fade_in, &m.decay});
