@@ -3,8 +3,7 @@
 `spdutil` talks to a Roland SPD-SX PRO over its USB serial port using the
 same reverse-engineered protocol as the SPD-SX PROgram app. It reads and
 writes device state directly: kits, pad parameters, layer settings, and the
-sample pool (including audio upload/download). It is also the repro and
-verification tool the protocol work itself is driven with.
+sample pool (including audio upload/download).
 
 ```
 spdutil [--port <dev>] <command> [options]
@@ -13,9 +12,8 @@ spdutil --version
 
 `--version` prints the SPD-SX PROgram version this tool was built with.
 
-Built by the normal CMake build; the binary lands at `build/spdutil`. It
-also ships inside the app bundle, and the app menu's **Install
-Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
+The tool ships inside the SPD-SX PROgram app; the app menu's **Install
+Command-Line Tool** puts it on your PATH as `/usr/local/bin/spdutil`.
 
 ## Connecting
 
@@ -24,16 +22,14 @@ Command-Line Tool** symlinks it to `/usr/local/bin/spdutil`.
   is the normal way to run it.
 - **Close the official SPD-SX PRO App first** — one program per port.
 - The SPD-SX PROgram app can stay open: it only holds the port during an
-  active device operation, and its 2-second connection poll retries around
-  short collisions.
+  active device operation.
 
 ## Firmware
 
-Writing requires firmware **2.00**. The protocol here was mapped from that
-firmware and is checked byte-for-byte against captures of it; another
-version may lay its records out differently, and a wrong write lands in
-flash, where it cannot be undone. So every write refuses unless the unit
-reports 2.00, naming what it found:
+Writing requires firmware **2.00** — the only version writing has been
+verified against. Another version may lay its data out differently, and
+a wrong write lands in flash, where it cannot be undone. So every write
+refuses unless the unit reports 2.00, naming what it found:
 
 ```
 $ spdutil setname --kits 199 --name FOO --commit
@@ -57,8 +53,7 @@ number for a command that takes none (`spdutil kits 5`).
 
 Device writes land in **working state**: audible immediately, gone on power
 cycle. Write commands take `--commit` to follow the writes with a flash
-commit (the same `6a 21`/`22` handshake the official app's WRITE button
-uses), which makes them durable. Uncommitted edits accumulate across
+commit (the same durable WRITE the official app's WRITE button performs). Uncommitted edits accumulate across
 separate spdutil invocations, and one final `--commit`-ing command flushes
 everything staged. `deletewave` and `sendwave` always commit.
 
@@ -73,8 +68,7 @@ Port path, ping status, and the firmware version query
 (e.g. `version: 2.00 (build 0094)`).
 
 ### `currentkit`
-Prints the device's **active** kit (1-200). Read by streaming only the head
-of the kits bank, so it is sub-second.
+Prints the device's **active** kit (1-200). Takes under a second.
 
 ### `kits [--from FILE]`
 Lists all 200 kit names — live from the device, or offline from a saved
@@ -88,8 +82,8 @@ hi-hat closed-pedal trio, the send/receive link groups, and each
 object's top/bottom wave assignment. Live or `--from` a dump.
 
 ### `samples [--from FILE]`
-Lists the device wave pool from the bank 0x20 sample directory: index,
-wavename, category, duration, filename. **Directory only** — the state dump
+Lists the device wave pool: index, wavename, category, duration,
+filename. **Directory only** — the state dump
 carries no audio; use `readwave` for that.
 
 ### `dump`
@@ -103,11 +97,11 @@ Streams device memory banks to an image file.
 | `--verify FILE` | offline: report an existing image's block structure |
 
 With neither `--bank` nor `--all`, dumps the kits bank. The images are what
-`kits`/`kit`/`samples --from` read, and what the protocol RE diffs against.
+`kits`/`kit`/`samples --from` read.
 
 ### `readwave <N> [--out FILE]`
-Reads wave N's audio off the device over the remote-file protocol and
-reports its RFWV header (rate, channels, bits, duration). With `--out`, a
+Reads wave N's audio off the device and reports its format (rate,
+channels, bits, duration). With `--out`, a
 `.wav` path gets a converted WAV; any other path gets the raw `.SMP`.
 Some factory preloads have no exportable file and fail cleanly.
 
@@ -163,13 +157,13 @@ spdutil setparams --kits 199 --pad 5 \
 Writes one layer's mix trio: volume in dB (e.g. `--volume -3.5`; stored in
 0.1 dB steps), fade-in 0-127, decay 0-127 (127 = none). Options you leave
 out keep their current values — the command reads the kit first to fill
-them in, so naming only `--fadein` costs a bank read but changes nothing
-else.
+them in, so naming only `--fadein` is a little slower but changes
+nothing else.
 
 ### `setmode --kits SPEC --mode M [--pad N] [--if-mode M] [--dry-run]`
-Bulk layer-mode writes across kits. Reads the kits bank first and writes
-**only** the pads that need changing, so everything else about a pad is
-untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
+Bulk layer-mode writes across kits. Reads the current kits first and
+writes **only** the pads that need changing, so everything else about a
+pad is untouched. Mode names: `MIX FADE1 FADE2 XFADE SWITCH SW(MONO) ALTERNATE
 HI-HAT`.
 
 With no `--pad`, this changes **all nine pads** of every kit `--kits`
@@ -214,9 +208,9 @@ wave back and reports `MATCH`/`FAIL`.
 Use a fresh index range (`samples` shows what's taken). `--name` overrides
 the stored filename, single-file uploads only.
 
-Input is raw `.SMP` (RFWV) — the device plays 48 kHz/16-bit only, and the
-header carries an MD5 the device checks, so build inputs with the app's
-converter or round-trip them via `readwave`.
+Input is the device's raw `.SMP` format — the device plays 48 kHz/16-bit
+only, and it checks a checksum in the file's header, so use files the
+SPD-SX PROgram app produced or ones round-tripped via `readwave`.
 
 ### `deletewave <N>`
 Deletes sample N from the pool and commits. **DESTRUCTIVE and not undoable
