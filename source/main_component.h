@@ -122,10 +122,22 @@ private:
   bool HiHatPedalDown() const;
   // Syncs an object's grid widgets (slot visibility) with the surface.
   void UpdatePadWidgets(int pad);
-  // Makes the object the selected one: the Properties tab follows it
-  // and its tile wears the selection ring. Clicking a pad (tile or
+  // Makes the object the ONLY selected one: the Properties tab follows
+  // it and its tile wears the selection ring. Clicking a pad (tile or
   // slot) or hitting it with a digit key selects it; MIDI hits don't.
   void SelectObject(int object);
+  // Multi-selection: ⌘-click toggles an object in the selection (the
+  // last one can't leave), ⇧-click extends it from the anchor to the
+  // clicked object. The Properties panel edits every selected object.
+  void ToggleSelected(int object);
+  void ExtendSelectionTo(int object);
+  bool IsSelected(int object) const;
+  // The selected objects, anchor first, the rest in grid order.
+  std::vector<int> SelectionObjects() const;
+  // Lands a new selection set + anchor: repaints the tiles that changed
+  // and refreshes the Properties panel.
+  void ApplySelection(const std::array<bool, KitModel::kObjectCount>& next,
+                      int anchor);
   // Syncs the Properties tab's heading and controls from the model.
   void RefreshProperties();
   // Moves (or, when copy=true, duplicates) a slot's sample to another
@@ -307,7 +319,11 @@ private:
 
   PanelDivider panel_divider_;
   int browser_width_ = 260;
-  // The selected object (pad or trigger) the Properties tab shows.
+  // The selection the Properties panel edits: which objects are in it,
+  // and the anchor — the most recently clicked member, which ⇧-click
+  // ranges extend from and whose values a mixed control displays.
+  // Never empty: the anchor is always a member.
+  std::array<bool, KitModel::kObjectCount> selected_set_ {{true}};
   int selected_ = 0;
   // ALTERNATE mode's per-pad flip-flop (false = layer A fires next);
   // runtime state, deliberately not persisted.

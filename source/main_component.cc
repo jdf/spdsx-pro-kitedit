@@ -89,17 +89,31 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
   panel_tabs_.addTab("Files", tab_bg, &browser_, false);
   panel_tabs_.addTab("Device", tab_bg, &device_samples_, false);
   addAndMakeVisible(properties_tab_);
-  properties_tab_.panel.on_change = [this](const PadParams& edited) {
-    // The panel edits the whole PadParams; fields it has no control
-    // for (trigger reserve) ride through unchanged.
-    if (edited == model_.params(selected_)) {
+  properties_tab_.panel.on_change = [this](PadParamsField field,
+                                           const PadParams& edited) {
+    // The panel reports which field the touched control governs; only
+    // that field lands, on every selected object, in one transaction —
+    // the rest of each object's params (mixed fields included) stay put.
+    const auto objects = SelectionObjects();
+    std::vector<std::pair<int, PadParams>> changes;
+    for (int object : objects) {
+      PadParams next = model_.params(object);
+      ApplyPadParamsField(next, edited, field);
+      if (next != model_.params(object)) {
+        changes.emplace_back(object, next);
+      }
+    }
+    if (changes.empty()) {
       return;
     }
-    const juce::String which = KitModel::IsTrigger(selected_)
+    const juce::String which = objects.size() > 1 ? juce::String("selected pad")
+        : KitModel::IsTrigger(selected_)
         ? "trigger " + juce::String(KitModel::TriggerOf(selected_) + 1)
         : "pad " + juce::String(selected_ + 1);
     undo().beginNewTransaction("change " + which + " settings");
-    undo().perform(new SetPadParamsAction(model_, selected_, edited));
+    for (const auto& [object, next] : changes) {
+      undo().perform(new SetPadParamsAction(model_, object, next));
+    }
   };
   panel_tabs_.setOutline(0);
   panel_tabs_.setVisible(browser_visible_);
@@ -150,8 +164,18 @@ MainComponent::MainComponent(juce::ApplicationCommandManager& commands)
     };
     slot.on_click = [this](int idx) {
       // A click anywhere in a pad is a hit on the whole pad, at the
-      // cursor-height velocity — and it selects the pad.
+      // cursor-height velocity — and it selects the pad. ⌘-click and
+      // ⇧-click are selection gestures only (toggle / extend), no hit.
       const int pad = idx / KitModel::kLayersPerPad;
+      const auto mods = juce::ModifierKeys::getCurrentModifiers();
+      if (mods.isCommandDown()) {
+        ToggleSelected(pad);
+        return;
+      }
+      if (mods.isShiftDown()) {
+        ExtendSelectionTo(pad);
+        return;
+      }
       SelectObject(pad);
       const auto pos = getMouseXYRelative();
       TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
@@ -686,6 +710,16 @@ void MainComponent::SelectSurface(int surface) {
   settings_.getUserSettings()->setValue("uiSurface", surface);
   if (!ObjectOnSurface(selected_)) {
     SelectObject(SurfaceObject(0, 0));
+  } else {
+    // Members left behind on the other surface would be invisible yet
+    // still edited; drop them.
+    auto next = selected_set_;
+    for (int i = 0; i < KitModel::kObjectCount; ++i) {
+      if (!ObjectOnSurface(i)) {
+        next[static_cast<size_t>(i)] = false;
+      }
+    }
+    ApplySelection(next, selected_);
   }
   for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     UpdatePadWidgets(pad);
@@ -1900,8 +1934,9 @@ void MainComponent::paint(juce::Graphics& g) {
       }
       g.setColour(kPadBorder);
       g.drawRoundedRectangle(pad.toFloat().reduced(0.5f), 10.0f, 1.0f);
-      if (object == selected_) {
-        // The selection ring: the Properties tab is showing this object.
+      if (IsSelected(object)) {
+        // The selection ring: the Properties panel is editing this
+        // object (possibly as one of several).
         g.setColour(juce::Colour(0xff58a6ff).withAlpha(0.85f));
         g.drawRoundedRectangle(pad.toFloat().reduced(1.0f), 10.0f, 1.5f);
       }
@@ -2171,6 +2206,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event) {
   }
   const auto pos = event.getPosition();
   if (const int pad = PadAt(pos); pad >= 0) {
+    // ⌘-click toggles the pad in the selection, ⇧-click extends the
+    // selection to it; both are selection-only, no hit.
+    if (event.mods.isCommandDown()) {
+      ToggleSelected(pad);
+      return;
+    }
+    if (event.mods.isShiftDown()) {
+      ExtendSelectionTo(pad);
+      return;
+    }
     SelectObject(pad);
     TriggerPad(pad, VelocityForPointInPad(pad, pos), HiHatPedalDown());
   }
@@ -2271,26 +2316,112 @@ void MainComponent::PropertiesTab::resized() {
 }
 
 void MainComponent::SelectObject(int object) {
-  if (object < 0 || object >= KitModel::kObjectCount || object == selected_) {
+  if (object < 0 || object >= KitModel::kObjectCount) {
     return;
   }
-  const int previous = selected_;
-  selected_ = object;
+  std::array<bool, KitModel::kObjectCount> next {};
+  next[static_cast<size_t>(object)] = true;
+  ApplySelection(next, object);
+}
+
+void MainComponent::ToggleSelected(int object) {
+  if (object < 0 || object >= KitModel::kObjectCount) {
+    return;
+  }
+  auto next = selected_set_;
+  auto& member = next[static_cast<size_t>(object)];
+  int anchor = object;
+  if (member) {
+    // Leaving the selection — unless it's the last member, which stays
+    // (the panel always has something to show).
+    if (std::count(next.begin(), next.end(), true) == 1) {
+      return;
+    }
+    member = false;
+    anchor = selected_;
+    if (object == selected_) {
+      // The anchor left; the first remaining member takes over.
+      for (int i = 0; i < KitModel::kObjectCount; ++i) {
+        if (next[static_cast<size_t>(i)]) {
+          anchor = i;
+          break;
+        }
+      }
+    }
+  } else {
+    member = true;
+  }
+  ApplySelection(next, anchor);
+}
+
+void MainComponent::ExtendSelectionTo(int object) {
+  if (object < 0 || object >= KitModel::kObjectCount) {
+    return;
+  }
+  // A range spans one surface; objects are in grid order there.
+  if (KitModel::IsTrigger(object) != KitModel::IsTrigger(selected_)) {
+    SelectObject(object);
+    return;
+  }
+  std::array<bool, KitModel::kObjectCount> next {};
+  for (int i = juce::jmin(selected_, object);
+       i <= juce::jmax(selected_, object);
+       ++i) {
+    next[static_cast<size_t>(i)] = true;
+  }
+  ApplySelection(next, selected_);
+}
+
+bool MainComponent::IsSelected(int object) const {
+  return object >= 0 && object < KitModel::kObjectCount
+      && selected_set_[static_cast<size_t>(object)];
+}
+
+std::vector<int> MainComponent::SelectionObjects() const {
+  std::vector<int> objects {selected_};
+  for (int i = 0; i < KitModel::kObjectCount; ++i) {
+    if (i != selected_ && selected_set_[static_cast<size_t>(i)]) {
+      objects.push_back(i);
+    }
+  }
+  return objects;
+}
+
+void MainComponent::ApplySelection(
+    const std::array<bool, KitModel::kObjectCount>& next, int anchor) {
+  if (next == selected_set_ && anchor == selected_) {
+    return;
+  }
+  for (int i = 0; i < KitModel::kObjectCount; ++i) {
+    if (next[static_cast<size_t>(i)] != selected_set_[static_cast<size_t>(i)]
+        && ObjectOnSurface(i)) {
+      repaint(ObjectBounds(i));
+    }
+  }
+  selected_set_ = next;
+  selected_ = anchor;
   RefreshProperties();
-  if (ObjectOnSurface(previous)) {
-    repaint(ObjectBounds(previous));
-  }
-  if (ObjectOnSurface(selected_)) {
-    repaint(ObjectBounds(selected_));
-  }
 }
 
 void MainComponent::RefreshProperties() {
-  properties_tab_.panel.set_title(
-      KitModel::IsTrigger(selected_)
-          ? "Trigger " + juce::String(KitModel::TriggerOf(selected_) + 1)
-          : "Pad " + juce::String(selected_ + 1));
-  properties_tab_.panel.SetParams(model_.params(selected_));
+  const auto objects = SelectionObjects();
+  juce::String title;
+  if (objects.size() == 1) {
+    title = KitModel::IsTrigger(selected_)
+        ? "Trigger " + juce::String(KitModel::TriggerOf(selected_) + 1)
+        : "Pad " + juce::String(selected_ + 1);
+  } else {
+    const bool all_triggers =
+        std::all_of(objects.begin(), objects.end(), &KitModel::IsTrigger);
+    title = all_triggers ? "Selected Triggers" : "Selected Pads";
+  }
+  properties_tab_.panel.set_title(title);
+  std::vector<PadParams> selection;
+  selection.reserve(objects.size());
+  for (int object : objects) {
+    selection.push_back(model_.params(object));
+  }
+  properties_tab_.panel.SetParams(selection);
 }
 
 void MainComponent::UpdatePadWidgets(int pad) {
@@ -2307,8 +2438,8 @@ void MainComponent::PadParamsChanged(int pad) {
   UpdateSyncButton();
   UpdatePadWidgets(pad);
   // Keep the Properties tab honest when undo/redo (or anything else)
-  // changes the object underneath it.
-  if (pad == selected_) {
+  // changes an object underneath it.
+  if (IsSelected(pad)) {
     RefreshProperties();
   }
 }

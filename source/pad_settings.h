@@ -1,17 +1,21 @@
-// The selected object's settings panel, hosted in the left panel's
-// Properties tab: a title strip naming the object, then real controls
-// for everything about how it responds to a hit — layer type, fade
-// knobs, the Dynamics section (a radio pair: velocity through a curve,
-// or a fixed velocity), the link group, the per-layer mixes, and (for
-// HI-HAT objects) the closed-pedal shaping. Checkboxes/radios for
-// choices, knobs (with a click-to-type value box) for scalars. Pure
-// view: set_title/SetParams in, on_change out with the FULL PadParams
-// (fields without controls pass through unchanged).
+// The selection's settings panel, hosted in the window's right-side
+// Properties panel: a title strip naming the selection, then real
+// controls for everything about how a pad responds to a hit — layer
+// type, fade knobs, the Dynamics section (a radio pair: velocity
+// through a curve, or a fixed velocity), the link group, the per-layer
+// mixes, and (for HI-HAT objects) the closed-pedal shaping.
+// Checkboxes/radios for choices, knobs (with a click-to-type value box)
+// for scalars. Multiple objects can be selected at once: a field they
+// disagree on renders as a dash (knobs add one green dot per distinct
+// value), and touching a control writes that one field to the whole
+// selection. Pure view: set_title/SetParams in, on_change out with the
+// touched field and the edited PadParams.
 #ifndef SPDSX_PATCHEDIT_SOURCE_PAD_SETTINGS_H_
 #define SPDSX_PATCHEDIT_SOURCE_PAD_SETTINGS_H_
 
 #include <array>
 #include <functional>
+#include <vector>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -25,10 +29,12 @@ public:
   PadSettingsPanel();
   ~PadSettingsPanel() override;
 
-  // Fires on every edit with the complete edited PadParams.
-  std::function<void(const PadParams&)> on_change;
+  // Fires on every edit with the field the touched control governs and
+  // the edited PadParams; the receiver applies just that field to each
+  // selected object.
+  std::function<void(PadParamsField, const PadParams&)> on_change;
 
-  // The title strip's text ("Pad 3", "Trigger 5").
+  // The title strip's text ("Pad 3", "Trigger 5", "Selected Pads").
   void set_title(const juce::String& title);
 
   // The hosting tab's width; header bands span it edge to edge and the
@@ -36,24 +42,35 @@ public:
   void set_content_width(int width);
 
   // Updates the controls without firing on_change (initial state, and
-  // refreshes when undo/redo changes the object underneath the panel).
-  // Shows or hides the fade knobs and the closed-pedal section by the
-  // layer mode, resizing the panel (the hosting viewport scrolls).
-  void SetParams(const PadParams& params);
+  // refreshes when undo/redo changes the objects underneath the panel).
+  // The first entry is the selection's anchor and speaks for uniform
+  // fields; a field the selection disagrees on shows as mixed. Shows or
+  // hides the fade knobs and the closed-pedal section by the layer
+  // modes present, resizing the panel (the hosting viewport scrolls).
+  void SetParams(const std::vector<PadParams>& selection);
 
   void resized() override;
 
 private:
-  void Push();
+  void Push(PadParamsField field);
   // Selecting the Curve radio is dynamics on; Fixed Velocity is off.
-  // Grey out whichever control is dormant.
+  // Grey out whichever control is dormant (with the selection mixed on
+  // dynamics, neither is).
   void RefreshEnablement();
   // Applies the mode-dependent section visibility and the panel height.
   void RefreshSections();
+  // Shows the values a scalar control holds across the selection: the
+  // anchor's value, plus the mixed marker (dashed box, multi-dot dial)
+  // when they differ.
+  static void SetKnobValues(juce::Slider& knob,
+                            const std::vector<double>& values);
 
-  // The last params set; fields this panel has no control for (trigger
-  // reserve) ride through Push unchanged.
+  // The last selection set; the anchor's params_ is the base every Push
+  // starts from, so fields this panel has no control for (trigger
+  // reserve) ride through unchanged.
+  std::vector<PadParams> selection_ {PadParams {}};
   PadParams params_;
+  bool dynamics_mixed_ = false;
 
   // Draws every knob below as the skeuomorphic bitmap. Declared before
   // the sliders so it outlives them on destruction.

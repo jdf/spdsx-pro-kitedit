@@ -1,5 +1,6 @@
 #include "pad_settings.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "layers.h"
@@ -7,6 +8,11 @@
 namespace spdsx {
 
 namespace {
+
+// The mixed-state marker a multi-selection shows where values differ.
+const juce::String MixedDash() {
+  return juce::String::fromUTF8("—");
+}
 
 constexpr int kDefaultPanelWidth = 210;
 constexpr int kPadding = 12;
@@ -78,15 +84,49 @@ PadSettingsPanel::PadSettingsPanel() {
     // Item ids are mode + 1; 0 means "nothing selected" to ComboBox.
     mode_.addItem(juce::String(name.data(), name.size()), m + 1);
   }
-  mode_.onChange = [this] { Push(); };
+  // "Nothing selected" is how a combo shows a mixed multi-selection.
+  mode_.setTextWhenNothingSelected(MixedDash());
+  mode_.onChange = [this] {
+    if (mode_.getSelectedId() > 0) {
+      Push(PadParamsField::kMode);
+    }
+  };
   addAndMakeVisible(mode_);
+
+  // The mixed-state plumbing every scalar control gets: the value box
+  // shows a dash while the selection disagrees, confirming the dash (or
+  // an empty box) keeps the value, and grabbing the dial resolves the
+  // display to the value being dragged.
+  auto init_mixed_text = [](juce::Slider& knob, int decimals) {
+    knob.textFromValueFunction = [&knob, decimals](double value) {
+      if (knob.getProperties().contains(KnobLookAndFeel::kMixedValues)) {
+        return MixedDash();
+      }
+      return decimals > 0 ? juce::String(value, decimals)
+                          : juce::String(juce::roundToInt(value));
+    };
+    knob.valueFromTextFunction = [&knob](const juce::String& text) {
+      const auto trimmed = text.trim();
+      if (trimmed.isEmpty() || trimmed == MixedDash()) {
+        return knob.getValue();
+      }
+      return trimmed.getDoubleValue();
+    };
+    knob.onDragStart = [&knob] {
+      if (knob.getProperties().contains(KnobLookAndFeel::kMixedValues)) {
+        knob.getProperties().remove(KnobLookAndFeel::kMixedValues);
+        knob.updateText();
+      }
+    };
+  };
 
   // The small-knob style shared by the fade pair and the mix triples:
   // a dial with its label above and a type-in value box below.
-  auto init_small_knob = [this](juce::Slider& knob,
-                                juce::Label& label,
-                                ControlMode control,
-                                double default_value) {
+  auto init_small_knob = [this, &init_mixed_text](juce::Slider& knob,
+                                                  juce::Label& label,
+                                                  ControlMode control,
+                                                  double default_value,
+                                                  PadParamsField field) {
     knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     if (control == ControlMode::kDecibels) {
       knob.setRange(kMinVolumeDb, kMaxVolumeDb, 0.1);
@@ -102,18 +142,25 @@ PadSettingsPanel::PadSettingsPanel() {
     // undo can never get back to clean.
     knob.setChangeNotificationOnlyOnRelease(true);
     knob.setTextBoxIsEditable(true);
-    knob.onValueChange = [this] { Push(); };
+    init_mixed_text(knob, control == ControlMode::kDecibels ? 1 : 0);
+    knob.onValueChange = [this, field] { Push(field); };
     label.setJustificationType(juce::Justification::centred);
     label.setFont(juce::FontOptions(12.0f));
     addAndMakeVisible(label);
     addAndMakeVisible(knob);
   };
 
-  init_small_knob(
-      fade_point_, fade_point_label_, ControlMode::kLinear, kDefaultFadePoint);
+  init_small_knob(fade_point_,
+                  fade_point_label_,
+                  ControlMode::kLinear,
+                  kDefaultFadePoint,
+                  PadParamsField::kFadePoint);
   fade_point_.setRange(1, 127, 1);
-  init_small_knob(
-      fade_end_, fade_end_label_, ControlMode::kLinear, kDefaultFadeEnd);
+  init_small_knob(fade_end_,
+                  fade_end_label_,
+                  ControlMode::kLinear,
+                  kDefaultFadeEnd,
+                  PadParamsField::kFadeEnd);
   // The end can't go below the point; SetParams keeps the range's floor
   // at the current fade point so drags stop there.
   fade_end_.setRange(1, 127, 1);
@@ -127,8 +174,9 @@ PadSettingsPanel::PadSettingsPanel() {
     radio.setRadioGroupId(1);
     radio.onClick = [this, &radio] {
       if (radio.getToggleState()) {
+        dynamics_mixed_ = false;
         RefreshEnablement();
-        Push();
+        Push(PadParamsField::kDynamics);
       }
     };
     addAndMakeVisible(radio);
@@ -140,7 +188,12 @@ PadSettingsPanel::PadSettingsPanel() {
     const auto name = DynamicsCurveName(static_cast<DynamicsCurve>(c));
     curve_.addItem(juce::String(name.data(), name.size()), c + 1);
   }
-  curve_.onChange = [this] { Push(); };
+  curve_.setTextWhenNothingSelected(MixedDash());
+  curve_.onChange = [this] {
+    if (curve_.getSelectedId() > 0) {
+      Push(PadParamsField::kCurve);
+    }
+  };
   addAndMakeVisible(curve_);
 
   velocity_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -153,29 +206,39 @@ PadSettingsPanel::PadSettingsPanel() {
   // undo can never get back to clean.
   velocity_.setChangeNotificationOnlyOnRelease(true);
   velocity_.setTextBoxIsEditable(true);
-  velocity_.onValueChange = [this] { Push(); };
+  init_mixed_text(velocity_, 0);
+  velocity_.onValueChange = [this] { Push(PadParamsField::kFixedVelocity); };
   addAndMakeVisible(velocity_);
 
   // The directional link pair: send fires the group, receive gets
   // fired by it. 0 = none.
-  auto init_link = [this](juce::Slider& stepper, juce::Label& label) {
+  auto init_link = [this, &init_mixed_text](juce::Slider& stepper,
+                                            juce::Label& label,
+                                            PadParamsField field) {
     stepper.setRange(0, 32, 1);
     stepper.setSliderStyle(juce::Slider::IncDecButtons);
     stepper.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 22);
     stepper.setTextBoxIsEditable(true);
     stepper.setChangeNotificationOnlyOnRelease(true);
-    stepper.onValueChange = [this] { Push(); };
+    init_mixed_text(stepper, 0);
+    stepper.onValueChange = [this, field] { Push(field); };
     label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
     addAndMakeVisible(label);
     addAndMakeVisible(stepper);
   };
-  init_link(link_send_, link_send_label_);
-  init_link(link_receive_, link_receive_label_);
+  init_link(link_send_, link_send_label_, PadParamsField::kLinkSend);
+  init_link(link_receive_, link_receive_label_, PadParamsField::kLinkReceive);
   pad_link_hint_.setFont(juce::FontOptions(12.0f));
   pad_link_hint_.setColour(juce::Label::textColourId, juce::Colour(0xff8b949e));
   addAndMakeVisible(pad_link_hint_);
 
   const char* mix_headings[2] = {"Layer A", "Layer B"};
+  const PadParamsField mix_fields[2][3] = {{PadParamsField::kMixTopVolume,
+                                            PadParamsField::kMixTopFadeIn,
+                                            PadParamsField::kMixTopDecay},
+                                           {PadParamsField::kMixBottomVolume,
+                                            PadParamsField::kMixBottomFadeIn,
+                                            PadParamsField::kMixBottomDecay}};
   for (size_t l = 0; l < mix_.size(); ++l) {
     MixControls& m = mix_[l];
     m.heading.setText(mix_headings[l], juce::dontSendNotification);
@@ -184,35 +247,54 @@ PadSettingsPanel::PadSettingsPanel() {
     init_small_knob(m.volume,
                     m.volume_label,
                     ControlMode::kDecibels,
-                    kDefaultLayerVolumeDb10 / 10.0);
-    init_small_knob(
-        m.fade_in, m.fade_label, ControlMode::kLinear, kDefaultLayerFadeIn);
-    init_small_knob(
-        m.decay, m.decay_label, ControlMode::kLinear, kDefaultLayerDecay);
+                    kDefaultLayerVolumeDb10 / 10.0,
+                    mix_fields[l][0]);
+    init_small_knob(m.fade_in,
+                    m.fade_label,
+                    ControlMode::kLinear,
+                    kDefaultLayerFadeIn,
+                    mix_fields[l][1]);
+    init_small_knob(m.decay,
+                    m.decay_label,
+                    ControlMode::kLinear,
+                    kDefaultLayerDecay,
+                    mix_fields[l][2]);
   }
 
   // A knob with its label to the right, for the pedal section.
-  auto init_knob =
-      [this](
-          juce::Slider& knob, juce::Label& label, int min, int default_value) {
-        knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knob.setRange(min, 127, 1);
-        knob.setDoubleClickReturnValue(true, default_value);
-        knob.setTextBoxStyle(
-            juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
-        // One undo step per adjustment, not one per drag pixel —
-        // otherwise a drag leaves a pile of transactions and a single
-        // undo can never get back to clean.
-        knob.setChangeNotificationOnlyOnRelease(true);
-        knob.setTextBoxIsEditable(true);
-        knob.onValueChange = [this] { Push(); };
-        label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
-        addAndMakeVisible(label);
-        addAndMakeVisible(knob);
-      };
-  init_knob(volume_, volume_label_, 0, kDefaultHiHatVolume);
-  init_knob(fade_in_, fade_in_label_, 0, kDefaultHiHatFadeIn);
-  init_knob(decay_, decay_label_, 0, kDefaultHiHatDecay);
+  auto init_knob = [this, &init_mixed_text](juce::Slider& knob,
+                                            juce::Label& label,
+                                            int min,
+                                            int default_value,
+                                            PadParamsField field) {
+    knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    knob.setRange(min, 127, 1);
+    knob.setDoubleClickReturnValue(true, default_value);
+    knob.setTextBoxStyle(
+        juce::Slider::TextBoxBelow, false, 48, kKnobTextHeight);
+    // One undo step per adjustment, not one per drag pixel —
+    // otherwise a drag leaves a pile of transactions and a single
+    // undo can never get back to clean.
+    knob.setChangeNotificationOnlyOnRelease(true);
+    knob.setTextBoxIsEditable(true);
+    init_mixed_text(knob, 0);
+    knob.onValueChange = [this, field] { Push(field); };
+    label.setBorderSize(juce::BorderSize<int>(0, kAlignInset, 0, 0));
+    addAndMakeVisible(label);
+    addAndMakeVisible(knob);
+  };
+  init_knob(volume_,
+            volume_label_,
+            0,
+            kDefaultHiHatVolume,
+            PadParamsField::kHiHatVolume);
+  init_knob(fade_in_,
+            fade_in_label_,
+            0,
+            kDefaultHiHatFadeIn,
+            PadParamsField::kHiHatFadeIn);
+  init_knob(
+      decay_, decay_label_, 0, kDefaultHiHatDecay, PadParamsField::kHiHatDecay);
 
   RefreshSections();
 }
@@ -232,42 +314,122 @@ void PadSettingsPanel::set_content_width(int width) {
   }
 }
 
-void PadSettingsPanel::SetParams(const PadParams& params) {
-  params_ = params;
-  mode_.setSelectedId(static_cast<int>(params.mode) + 1,
-                      juce::dontSendNotification);
-  fade_point_.setValue(params.fade_point, juce::dontSendNotification);
-  fade_end_.setRange(params.fade_point, 127, 1);
-  fade_end_.setValue(params.fade_end, juce::dontSendNotification);
-  curve_radio_.setToggleState(params.dynamics, juce::dontSendNotification);
-  velocity_radio_.setToggleState(!params.dynamics, juce::dontSendNotification);
-  curve_.setSelectedId(static_cast<int>(params.curve) + 1,
-                       juce::dontSendNotification);
-  velocity_.setValue(params.fixed_velocity, juce::dontSendNotification);
-  link_send_.setValue(params.link_send, juce::dontSendNotification);
-  link_receive_.setValue(params.link_receive, juce::dontSendNotification);
-  const PadParams::LayerMix* mixes[2] = {&params.mix_top, &params.mix_bottom};
-  for (size_t l = 0; l < mix_.size(); ++l) {
-    mix_[l].volume.setValue(mixes[l]->volume_db10 / 10.0,
-                            juce::dontSendNotification);
-    mix_[l].fade_in.setValue(mixes[l]->fade_in, juce::dontSendNotification);
-    mix_[l].decay.setValue(mixes[l]->decay, juce::dontSendNotification);
+void PadSettingsPanel::SetKnobValues(juce::Slider& knob,
+                                     const std::vector<double>& values) {
+  juce::Array<juce::var> distinct;
+  for (double v : values) {
+    if (!distinct.contains(juce::var(v))) {
+      distinct.add(juce::var(v));
+    }
   }
-  volume_.setValue(params.hi_hat_volume, juce::dontSendNotification);
-  fade_in_.setValue(params.hi_hat_fade_in, juce::dontSendNotification);
-  decay_.setValue(params.hi_hat_decay, juce::dontSendNotification);
+  knob.setValue(values.front(), juce::dontSendNotification);
+  if (distinct.size() > 1) {
+    knob.getProperties().set(KnobLookAndFeel::kMixedValues, distinct);
+  } else {
+    knob.getProperties().remove(KnobLookAndFeel::kMixedValues);
+  }
+  knob.updateText();
+  knob.repaint();
+}
+
+void PadSettingsPanel::SetParams(const std::vector<PadParams>& selection) {
+  jassert(!selection.empty());
+  selection_ = selection;
+  const PadParams& params = selection.front();
+  params_ = params;
+
+  // Per-field values across the selection, anchor first.
+  auto values = [this](auto get) {
+    std::vector<double> v;
+    v.reserve(selection_.size());
+    for (const PadParams& p : selection_) {
+      v.push_back(static_cast<double>(get(p)));
+    }
+    return v;
+  };
+  auto mixed = [&values](auto get) {
+    const auto v = values(get);
+    return std::any_of(
+        v.begin(), v.end(), [&v](double x) { return x != v.front(); });
+  };
+
+  // Combos say "mixed" by selecting nothing (the dash placeholder).
+  mode_.setSelectedId(
+      mixed([](const PadParams& p) { return static_cast<int>(p.mode); })
+          ? 0
+          : static_cast<int>(params.mode) + 1,
+      juce::dontSendNotification);
+  SetKnobValues(fade_point_,
+                values([](const PadParams& p) { return p.fade_point; }));
+  // The end can't go below the point; with a mixed selection the floor
+  // is the lowest point present (each pad still clamps on apply).
+  int min_point = 127;
+  for (const PadParams& p : selection_) {
+    min_point = std::min(min_point, p.fade_point);
+  }
+  fade_end_.setRange(min_point, 127, 1);
+  SetKnobValues(fade_end_,
+                values([](const PadParams& p) { return p.fade_end; }));
+  // A selection mixed on dynamics shows NEITHER radio selected; the
+  // first radio click unifies it.
+  dynamics_mixed_ = mixed([](const PadParams& p) { return p.dynamics; });
+  curve_radio_.setToggleState(!dynamics_mixed_ && params.dynamics,
+                              juce::dontSendNotification);
+  velocity_radio_.setToggleState(!dynamics_mixed_ && !params.dynamics,
+                                 juce::dontSendNotification);
+  curve_.setSelectedId(
+      mixed([](const PadParams& p) { return static_cast<int>(p.curve); })
+          ? 0
+          : static_cast<int>(params.curve) + 1,
+      juce::dontSendNotification);
+  SetKnobValues(velocity_,
+                values([](const PadParams& p) { return p.fixed_velocity; }));
+  SetKnobValues(link_send_,
+                values([](const PadParams& p) { return p.link_send; }));
+  SetKnobValues(link_receive_,
+                values([](const PadParams& p) { return p.link_receive; }));
+  auto layer_mix = [](const PadParams& p, size_t l) -> const auto& {
+    return l == 0 ? p.mix_top : p.mix_bottom;
+  };
+  for (size_t l = 0; l < mix_.size(); ++l) {
+    SetKnobValues(mix_[l].volume, values([&layer_mix, l](const PadParams& p) {
+                    return layer_mix(p, l).volume_db10 / 10.0;
+                  }));
+    SetKnobValues(mix_[l].fade_in, values([&layer_mix, l](const PadParams& p) {
+                    return layer_mix(p, l).fade_in;
+                  }));
+    SetKnobValues(mix_[l].decay, values([&layer_mix, l](const PadParams& p) {
+                    return layer_mix(p, l).decay;
+                  }));
+  }
+  SetKnobValues(volume_,
+                values([](const PadParams& p) { return p.hi_hat_volume; }));
+  SetKnobValues(fade_in_,
+                values([](const PadParams& p) { return p.hi_hat_fade_in; }));
+  SetKnobValues(decay_,
+                values([](const PadParams& p) { return p.hi_hat_decay; }));
   RefreshEnablement();
   RefreshSections();
 }
 
 void PadSettingsPanel::RefreshSections() {
-  show_fades_ = UsesFadePoint(params_.mode) || UsesFadeEnd(params_.mode);
-  fade_point_label_.setVisible(show_fades_ && UsesFadePoint(params_.mode));
-  fade_point_.setVisible(show_fades_ && UsesFadePoint(params_.mode));
-  fade_end_label_.setVisible(show_fades_ && UsesFadeEnd(params_.mode));
-  fade_end_.setVisible(show_fades_ && UsesFadeEnd(params_.mode));
+  // A control shows when ANY selected object's mode reads it, so a
+  // mixed-mode selection can still edit what applies to part of it.
+  bool any_point = false;
+  bool any_end = false;
+  bool any_pedal = false;
+  for (const PadParams& p : selection_) {
+    any_point = any_point || UsesFadePoint(p.mode);
+    any_end = any_end || UsesFadeEnd(p.mode);
+    any_pedal = any_pedal || p.mode == LayerMode::kHiHat;
+  }
+  show_fades_ = any_point || any_end;
+  fade_point_label_.setVisible(any_point);
+  fade_point_.setVisible(any_point);
+  fade_end_label_.setVisible(any_end);
+  fade_end_.setVisible(any_end);
 
-  show_pedal_ = params_.mode == LayerMode::kHiHat;
+  show_pedal_ = any_pedal;
   for (juce::Component* c : {static_cast<juce::Component*>(&pedal_header_),
                              static_cast<juce::Component*>(&volume_label_),
                              static_cast<juce::Component*>(&volume_),
@@ -410,17 +572,26 @@ void PadSettingsPanel::resized() {
   pedal_knob(decay_, decay_label_);
 }
 
-void PadSettingsPanel::Push() {
+void PadSettingsPanel::Push(PadParamsField field) {
   if (on_change == nullptr) {
     return;
   }
+  // Only `field` will be applied; the rest is read anyway so the value
+  // travels with a complete, coherent PadParams. Combos showing the
+  // mixed dash (nothing selected) keep the anchor's value.
   PadParams params = params_;  // uncontrolled fields ride through
-  params.mode = static_cast<LayerMode>(mode_.getSelectedId() - 1);
+  if (mode_.getSelectedId() > 0) {
+    params.mode = static_cast<LayerMode>(mode_.getSelectedId() - 1);
+  }
   params.fade_point = static_cast<int>(fade_point_.getValue());
   params.fade_end =
       juce::jmax(params.fade_point, static_cast<int>(fade_end_.getValue()));
-  params.dynamics = curve_radio_.getToggleState();
-  params.curve = static_cast<DynamicsCurve>(curve_.getSelectedId() - 1);
+  if (!dynamics_mixed_) {
+    params.dynamics = curve_radio_.getToggleState();
+  }
+  if (curve_.getSelectedId() > 0) {
+    params.curve = static_cast<DynamicsCurve>(curve_.getSelectedId() - 1);
+  }
   params.fixed_velocity = static_cast<int>(velocity_.getValue());
   params.link_send = static_cast<int>(link_send_.getValue());
   params.link_receive = static_cast<int>(link_receive_.getValue());
@@ -434,10 +605,17 @@ void PadSettingsPanel::Push() {
     mixes[l]->fade_in = static_cast<int>(mix_[l].fade_in.getValue());
     mixes[l]->decay = static_cast<int>(mix_[l].decay.getValue());
   }
-  on_change(params);
+  on_change(field, params);
 }
 
 void PadSettingsPanel::RefreshEnablement() {
+  if (dynamics_mixed_) {
+    // Neither radio selected: both dependents stay live, so either can
+    // be edited without first unifying the dynamics choice.
+    curve_.setEnabled(true);
+    velocity_.setEnabled(true);
+    return;
+  }
   const bool dynamics = curve_radio_.getToggleState();
   curve_.setEnabled(dynamics);
   velocity_.setEnabled(!dynamics);
