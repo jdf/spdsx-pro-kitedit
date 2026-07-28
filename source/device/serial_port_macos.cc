@@ -126,8 +126,16 @@ MacOSSerialPort::~MacOSSerialPort() {
   if (fd_ >= 0) {
     // close() on a tty may discard untransmitted output, and a
     // fire-and-forget write (kit-select is one) can be microseconds old
-    // when the port closes — drain first so it reaches the device.
-    ::tcdrain(fd_);
+    // when the port closes — wait for the output queue to empty so it
+    // reaches the device. BOUNDED, not tcdrain: tcdrain blocks forever
+    // when the device has stopped reading (a unit wedged mid-upload),
+    // which turned a push error into a silent hang of the whole sync.
+    const double deadline = NowSeconds() + 2.0;
+    int pending = 0;
+    while (::ioctl(fd_, TIOCOUTQ, &pending) == 0 && pending > 0
+           && NowSeconds() < deadline) {
+      ::usleep(20'000);
+    }
     ::close(fd_);
   }
 }

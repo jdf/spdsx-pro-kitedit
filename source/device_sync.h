@@ -159,23 +159,30 @@ struct KitWrite {
 // Call after SubstituteUploads so wave numbers are pool indices.
 KitWrite BuildKitWrite(int kit_index, const KitSyncPlan& plan);
 
-// Default no-op for ExecutePush's on_uploaded (a named function is a safe
+// Default no-op for ExecutePush's callbacks (a named function is a safe
 // FunctionRef default).
 inline void IgnoreUpload(const SmpUpload&) {}
 
 // Drives the push: primes the batch, uploads each wave into working state
-// (on_uploaded fires after each lands), writes every kit's name/wave/params,
-// then ONE flash Commit to make the whole batch durable. Returns the Commit
-// verdict (true when there was nothing to commit); throws what the port
-// throws. should_abort lets a caller stop waiting on the commit (a user
-// Abort) — a false return then makes no claim it finished.
+// (on_written fires per wave, for progress), writes every kit's
+// name/wave/params, ONE flash Commit for the whole batch, and only THEN
+// reads every upload back and fires on_uploaded per verified wave — the
+// exact order of the official app's import, and the only one the device
+// tolerates: a file read inside the open import batch wedged the unit
+// (live, 2026-07-28). Returns the Commit verdict (true when there was
+// nothing to commit); throws what the port throws, and throws if a wave
+// does not read back as written (the commit has happened by then, but
+// nothing gets recorded as landed). should_abort lets a caller stop
+// waiting on the commit (a user Abort) — a false return then makes no
+// claim it finished.
 bool ExecutePush(
     device::SpdsxDevice& dev,
     const std::vector<SmpUpload>& uploads,
     const std::vector<KitWrite>& kits,
     absl::FunctionRef<void(const SmpUpload&)> on_uploaded = IgnoreUpload,
     double pace_seconds = 0.02,
-    absl::FunctionRef<bool()> should_abort = device::NeverAbort);
+    absl::FunctionRef<bool()> should_abort = device::NeverAbort,
+    absl::FunctionRef<void(const SmpUpload&)> on_written = IgnoreUpload);
 
 }  // namespace spdsx
 

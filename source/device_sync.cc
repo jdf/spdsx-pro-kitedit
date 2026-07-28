@@ -481,29 +481,20 @@ bool ExecutePush(device::SpdsxDevice& dev,
                  const std::vector<KitWrite>& kits,
                  absl::FunctionRef<void(const SmpUpload&)> on_uploaded,
                  double pace_seconds,
-                 absl::FunctionRef<bool()> should_abort) {
+                 absl::FunctionRef<bool()> should_abort,
+                 absl::FunctionRef<void(const SmpUpload&)> on_written) {
   // Uploads and kit writes all land in working state; ONE Commit at the end
-  // flushes the whole batch to flash. Per-file commits wedge the device.
+  // flushes the whole batch to flash. Per-file commits wedge the device —
+  // and so does READING a wave back while the import batch is open (live,
+  // 2026-07-28), so verification waits until after the commit, exactly the
+  // official app's order.
   bool wrote = false;
   if (!uploads.empty()) {
     dev.PrepareUploadBatch();
     wrote = true;
     for (const SmpUpload& u : uploads) {
       dev.UploadWave(u.index, u.smp, u.wavename, u.filename);
-      // Read it back before telling anyone it landed. The caller records
-      // an upload as soon as it is reported, so that a sync interrupted
-      // later does not upload the same file twice; that is only safe if
-      // what reached the device is known to be what was sent, rather
-      // than assumed from a write that returned.
-      const device::Bytes readback = dev.ReadRemoteWave(u.index);
-      if (readback.size() < u.smp.size()
-          || !std::equal(u.smp.begin(), u.smp.end(), readback.begin())) {
-        throw std::runtime_error(
-            "sample " + std::to_string(u.index)
-            + " did not read back as written, so it was not recorded; "
-              "nothing was left pointing at it");
-      }
-      on_uploaded(u);  // a no-op by default (IgnoreUpload)
+      on_written(u);  // progress only; landing is reported after read-back
     }
   }
   for (const KitWrite& kw : kits) {
@@ -561,8 +552,27 @@ bool ExecutePush(device::SpdsxDevice& dev,
   if (!wrote) {
     return true;
   }
-  return uploads.empty() ? dev.Commit(should_abort)
-                         : dev.CommitUploadBatch(should_abort);
+  const bool committed = uploads.empty() ? dev.Commit(should_abort)
+                                         : dev.CommitUploadBatch(should_abort);
+  if (!committed) {
+    return false;
+  }
+  // Read each upload back before telling anyone it landed. The caller
+  // records an upload as soon as it is reported, so that a sync
+  // interrupted later does not upload the same file twice; that is only
+  // safe if what reached the device is known to be what was sent.
+  for (const SmpUpload& u : uploads) {
+    const device::Bytes readback = dev.ReadRemoteWave(u.index);
+    if (readback.size() < u.smp.size()
+        || !std::equal(u.smp.begin(), u.smp.end(), readback.begin())) {
+      throw std::runtime_error(
+          "sample " + std::to_string(u.index)
+          + " did not read back as written, so it was not recorded; "
+            "nothing was left pointing at it");
+    }
+    on_uploaded(u);  // a no-op by default (IgnoreUpload)
+  }
+  return true;
 }
 
 }  // namespace spdsx

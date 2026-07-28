@@ -749,8 +749,9 @@ TEST(DeviceSyncPush, AnAbortedCommitReportsNotCommitted) {
 }
 
 // ---- Read-back replies ----
-// ExecutePush reads every upload back off the device before reporting it,
-// so a push test has to answer that read as well as the write.
+// ExecutePush reads every upload back off the device (after the commit —
+// a read inside the open import batch wedges the unit) before reporting
+// it, so a push test has to answer that read as well as the write.
 
 // A file data frame: 14 header bytes, the payload, then the SysEx f7.
 Bytes FileDataFrame(const Bytes& data) {
@@ -795,7 +796,7 @@ void QueueWaveReadback(FakeSerialPort& port, const Bytes& content) {
   port.QueueReply({0x7a});  // session close
 }
 
-TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
+TEST(DeviceSyncPush, UploadsCommitOnceThenVerifyAndReport) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
   dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
@@ -809,9 +810,10 @@ TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
   // A push with one upload: the batch preamble query (1) + UploadWave (24
   // here — the generic replies carry no dir handle, so the mkdir walk runs;
   // one of its reads is the raw 16-byte free-space fragment followed by its
-  // ack frame) + the import-style commit (4). 14 framed replies land before
-  // the free-space raw read, then its ack and 8 more, then the commit's
-  // begin ack, its two epilogue replies, and the done poll.
+  // ack frame) + the import-style commit (4) + the post-commit read-back
+  // (10). 14 framed replies land before the free-space raw read, then its
+  // ack and 8 more, then the commit's begin ack, its two epilogue replies,
+  // the done poll, and finally the read-back's session.
   for (int i = 0; i < 14; ++i) {
     port.QueueReply({0x7a});
   }
@@ -819,33 +821,37 @@ TEST(DeviceSyncPush, UploadsGoOutFirstAndReportAsTheyLand) {
   for (int i = 0; i < 9; ++i) {
     port.QueueReply({0x7a});  // ...its ack frame, then the rest
   }
-  QueueWaveReadback(port, upload.smp);  // the read-back before it reports
   port.QueueReply({0x7a});  // commit begin ack
   port.QueueReply({0x7a});  // commit epilogue 0c
   port.QueueReply({0x7a});  // commit epilogue 02
   port.QueueReply(SyncCommitDone());  // commit poll: done
+  QueueWaveReadback(port, upload.smp);  // the read-back after the commit
 
+  std::vector<int> written;
   std::vector<int> reported;
   EXPECT_TRUE(ExecutePush(
       dev,
       {upload},
       {},
       [&reported](const SmpUpload& u) { reported.push_back(u.index); },
-      0.0));
+      0.0,
+      device::NeverAbort,
+      [&written](const SmpUpload& u) { written.push_back(u.index); }));
 
+  EXPECT_EQ(written, std::vector<int>({1587}));
   EXPECT_EQ(reported, std::vector<int>({1587}));
-  // 1 preamble + 24 upload + 10 read-back + 4 commit.
+  // 1 preamble + 24 upload + 4 commit + 10 read-back.
   ASSERT_EQ(port.payloads().size(), 39u);
   EXPECT_EQ(port.payloads()[0][4], 0x0D);  // the batch preamble query
   EXPECT_EQ(port.payloads()[1][4], 0x09);  // the file's session open
   EXPECT_EQ(port.payloads()[1][15], 0x01);
   EXPECT_EQ(port.payloads()[2][4], 0x0A);
   EXPECT_EQ(port.payloads()[3][4], 0x0A);  // upload's stat tmp
-  EXPECT_EQ(port.payloads()[25][4], 0x09);  // read-back's session open
-  EXPECT_EQ(port.payloads()[35][4], 0x21);  // the single flash commit begin
-  EXPECT_EQ(port.payloads()[36][4], 0x0C);  // with the import epilogue
-  EXPECT_EQ(port.payloads()[37][4], 0x02);
-  EXPECT_EQ(port.payloads()[38][4], 0x22);
+  EXPECT_EQ(port.payloads()[25][4], 0x21);  // the single flash commit begin
+  EXPECT_EQ(port.payloads()[26][4], 0x0C);  // with the import epilogue
+  EXPECT_EQ(port.payloads()[27][4], 0x02);
+  EXPECT_EQ(port.payloads()[28][4], 0x22);
+  EXPECT_EQ(port.payloads()[29][4], 0x09);  // read-back AFTER the commit
 }
 
 // An upload that does not read back as written is not reported, so
@@ -869,6 +875,10 @@ TEST(DeviceSyncPush, AnUploadThatReadsBackWrongIsNotReported) {
   for (int i = 0; i < 9; ++i) {
     port.QueueReply({0x7a});
   }
+  port.QueueReply({0x7a});  // commit begin ack
+  port.QueueReply({0x7a});  // commit epilogue 0c
+  port.QueueReply({0x7a});  // commit epilogue 02
+  port.QueueReply(SyncCommitDone());  // commit poll: done
   Bytes corrupted = upload.smp;
   corrupted[600] ^= 0xFF;  // one byte of payload differs
   QueueWaveReadback(port, corrupted);

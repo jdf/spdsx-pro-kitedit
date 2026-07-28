@@ -1647,7 +1647,17 @@ void MainComponent::RunSyncPush(
           /*pace_seconds=*/0.02,
           // The commit polls until the device reports done, however long
           // that takes; the user's Abort button is the only way to stop it.
-          /*should_abort=*/[&abort] { return abort->load(); });
+          /*should_abort=*/[&abort] { return abort->load(); },
+          // Progress only — landing (and recording) waits for the
+          // post-commit read-back.
+          /*on_written=*/
+          [safe](const SmpUpload&) {
+            juce::MessageManager::callAsync([safe] {
+              if (safe != nullptr) {
+                ++safe->sync_pushed_;
+              }
+            });
+          });
     } catch (const std::exception& e) {
       error = e.what();
     }
@@ -1689,7 +1699,6 @@ void MainComponent::OnWaveUploaded(UploadPlan plan,
   if (sync_ != nullptr) {
     sync_->landed.push_back({std::move(plan), std::move(wav), frames});
   }
-  ++sync_pushed_;  // advances the progress bar's "X of N" line
 }
 
 void MainComponent::FinishSyncPush(const juce::String& error, bool committed) {
