@@ -35,10 +35,6 @@ CREATE TABLE IF NOT EXISTS pads(
   bottom_decay INTEGER DEFAULT 127,
   pad_link INTEGER DEFAULT 0,
   PRIMARY KEY(snapshot, kit_idx, pad_idx));
-CREATE TABLE IF NOT EXISTS triggers(
-  snapshot TEXT NOT NULL, kit_idx INTEGER NOT NULL, trig_idx INTEGER NOT NULL,
-  pad_link INTEGER DEFAULT 0,
-  PRIMARY KEY(snapshot, kit_idx, trig_idx));
 CREATE TABLE IF NOT EXISTS samples(
   idx INTEGER PRIMARY KEY, wavename TEXT, filename TEXT, frames INTEGER,
   category INTEGER, content_hash INTEGER, audio BLOB);
@@ -245,6 +241,18 @@ bool MigrateOlderDocument(const juce::File& path,
          (std::string("INSERT INTO pads(") + pad_columns + ") SELECT "
           + pad_columns + " FROM old.pads;")
              .c_str());
+    if (from_version == 4) {
+      // v4 kept trigger links in their own table; since v5 a trigger is
+      // a full pad row at pad_idx 9-16. Only the link was stored, so the
+      // rest of the row gets the factory-default params.
+      Exec(db,
+           "INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, "
+           "fade_end, dynamics, curve, fixed_velocity, hihat_vol, "
+           "hihat_fadein, hihat_decay, trigger_reserve, top_device, "
+           "top_local, bottom_device, bottom_local, pad_link) "
+           "SELECT snapshot, kit_idx, trig_idx + 9, 0, 80, 127, 1, 0, 127, "
+           "80, 0, 25, 0, 0, '', 0, '', pad_link FROM old.triggers;");
+    }
     Exec(db, "INSERT INTO samples SELECT * FROM old.samples;");
     Exec(db,
          "INSERT OR REPLACE INTO meta(key,value) "
@@ -345,9 +353,6 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
       Stmt delp(db_, "DELETE FROM pads WHERE snapshot=?1;");
       delp.Text(1, snap);
       delp.RunOnce();
-      Stmt delt(db_, "DELETE FROM triggers WHERE snapshot=?1;");
-      delt.Text(1, snap);
-      delt.RunOnce();
     }
     Stmt kit(db_, "INSERT INTO kits(snapshot, idx, name) VALUES(?1,?2,?3);");
     Stmt pad(
@@ -365,7 +370,7 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
       kit.Int(2, k);
       kit.Text(3, kd.name);
       kit.RunOnce();
-      for (int p = 0; p < KitModel::kPadCount; ++p) {
+      for (int p = 0; p < KitModel::kObjectCount; ++p) {
         const Pad& pd = kd.pads[static_cast<size_t>(p)];
         const PadParams& pp = pd.params;
         pad.Text(1, snap);
@@ -395,20 +400,6 @@ void DeviceDb::WriteKits(const DeviceModel& model, Snapshot snapshot) {
         pad.RunOnce();
       }
     }
-    Stmt trig(db_,
-              "INSERT INTO triggers(snapshot, kit_idx, trig_idx, pad_link) "
-              "VALUES(?1,?2,?3,?4);");
-    for (int k = 0; k < DeviceModel::kKitCount; ++k) {
-      const KitData& kd = model.kit(k);
-      for (int tr = 0; tr < device::kTriggersPerKit; ++tr) {
-        trig.Text(1, snap);
-        trig.Int(2, k);
-        trig.Int(3, tr);
-        trig.Int(4, kd.trigger_links[static_cast<size_t>(tr)]);
-        trig.RunOnce();
-      }
-    }
-
     if (snapshot == Snapshot::kCurrent) {
       Stmt meta(db_,
                 "INSERT INTO meta(key, value) VALUES('current_kit', ?1) "
@@ -453,7 +444,7 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
       const int k = pad.ColInt(0);
       const int p = pad.ColInt(1);
       if (k < 0 || k >= DeviceModel::kKitCount || p < 0
-          || p >= KitModel::kPadCount) {
+          || p >= KitModel::kObjectCount) {
         continue;
       }
       Pad& pd = model.kit(k).pads[static_cast<size_t>(p)];
@@ -486,22 +477,7 @@ void DeviceDb::ReadKits(DeviceModel& model, Snapshot snapshot) {
       pp.pad_link = juce::jlimit(0, 127, pad.ColInt(22));
     }
   }
-  {
-    Stmt trig(db_,
-              "SELECT kit_idx, trig_idx, pad_link FROM triggers "
-              "WHERE snapshot=?1;");
-    trig.Text(1, snap);
-    while (trig.Step()) {
-      const int k = trig.ColInt(0);
-      const int tr = trig.ColInt(1);
-      if (k < 0 || k >= DeviceModel::kKitCount || tr < 0
-          || tr >= device::kTriggersPerKit) {
-        continue;
-      }
-      model.kit(k).trigger_links[static_cast<size_t>(tr)] =
-          juce::jlimit(0, 127, trig.ColInt(2));
-    }
-  }
+  {}
   if (snapshot == Snapshot::kCurrent) {
     Stmt meta(db_, "SELECT value FROM meta WHERE key='current_kit';");
     if (meta.Step()) {
@@ -590,11 +566,6 @@ void DeviceDb::CaptureBase() {
   try {
     Exec(db_, "DELETE FROM kits WHERE snapshot='base';");
     Exec(db_, "DELETE FROM pads WHERE snapshot='base';");
-    Exec(db_, "DELETE FROM triggers WHERE snapshot='base';");
-    Exec(db_,
-         "INSERT INTO triggers(snapshot, kit_idx, trig_idx, pad_link) "
-         "SELECT 'base', kit_idx, trig_idx, pad_link FROM triggers "
-         "WHERE snapshot='current';");
     Exec(db_,
          "INSERT INTO kits(snapshot, idx, name) "
          "SELECT 'base', idx, name FROM kits WHERE snapshot='current';");

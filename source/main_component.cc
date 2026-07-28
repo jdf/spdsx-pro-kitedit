@@ -1381,13 +1381,9 @@ void MainComponent::RunSyncPush(
   // whatever the table says.
   struct KitResolutions {
     SyncResolution name = SyncResolution::kMine;
-    std::array<SyncResolution, KitModel::kPadCount> pads;
-    std::array<SyncResolution, device::kTriggersPerKit> triggers;
+    std::array<SyncResolution, KitModel::kObjectCount> objects;
 
-    KitResolutions() {
-      pads.fill(SyncResolution::kMine);
-      triggers.fill(SyncResolution::kMine);
-    }
+    KitResolutions() { objects.fill(SyncResolution::kMine); }
   };
 
   std::map<int, KitResolutions> by_kit;
@@ -1397,11 +1393,8 @@ void MainComponent::RunSyncPush(
     auto& kit = by_kit[conflict.kit];
     if (conflict.pad < 0) {
       kit.name = resolutions[i];
-    } else if (conflict.pad >= KitModel::kPadCount) {
-      kit.triggers[static_cast<size_t>(conflict.pad - KitModel::kPadCount)] =
-          resolutions[i];
     } else {
-      kit.pads[static_cast<size_t>(conflict.pad)] = resolutions[i];
+      kit.objects[static_cast<size_t>(conflict.pad)] = resolutions[i];
     }
   }
 
@@ -1415,7 +1408,7 @@ void MainComponent::RunSyncPush(
     const KitResolutions res =
         by_kit.count(i) != 0 ? by_kit[i] : KitResolutions();
     KitSyncPlan plan =
-        PlanKitSync(current, base, theirs, res.name, res.pads, res.triggers);
+        PlanKitSync(current, base, theirs, res.name, res.objects);
     const bool relevant = plan.WritesDevice() || plan.new_current != current
         || plan.new_base != base;
     if (!relevant) {

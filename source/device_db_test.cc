@@ -38,8 +38,8 @@ DeviceModel EditedModel() {
   // Both halves of the dual identity, so neither read path is missed.
   pad.samples.first = LayerSample::DeviceWave(1590);
   pad.samples.second = LayerSample(juce::File("/tmp/snare.wav"));
-  kit.trigger_links[6] = 11;
-  kit.trigger_links[0] = 3;
+  kit.trigger(6).params.pad_link = 11;
+  kit.trigger(0).params.pad_link = 3;
 
   model.set_current_kit(7);
   return model;
@@ -62,7 +62,7 @@ void ExecSql(const juce::File& path, const char* sql) {
 void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected) {
   for (int k = 0; k < DeviceModel::kKitCount; ++k) {
     EXPECT_EQ(actual.kit(k).name, expected.kit(k).name) << "kit " << k;
-    for (int p = 0; p < KitModel::kPadCount; ++p) {
+    for (int p = 0; p < KitModel::kObjectCount; ++p) {
       const Pad& a = actual.kit(k).pads[static_cast<size_t>(p)];
       const Pad& e = expected.kit(k).pads[static_cast<size_t>(p)];
       EXPECT_EQ(a.params, e.params) << "kit " << k << " pad " << p;
@@ -71,8 +71,6 @@ void ExpectKitsEqual(const DeviceModel& actual, const DeviceModel& expected) {
       EXPECT_EQ(a.samples.second, e.samples.second)
           << "kit " << k << " pad " << p;
     }
-    EXPECT_EQ(actual.kit(k).trigger_links, expected.kit(k).trigger_links)
-        << "kit " << k;
   }
 }
 
@@ -229,7 +227,7 @@ INSERT INTO pads(snapshot, kit_idx, pad_idx, mode, fade_point, fade_end,
   migrated->ReadKits(model);
   EXPECT_EQ(model.kit(0).name, juce::String("LINKED"));
   EXPECT_EQ(model.kit(0).pads[6].params.pad_link, 11);
-  EXPECT_EQ(model.kit(0).trigger_links[6], 0);  // nothing to inherit
+  EXPECT_EQ(model.kit(0).trigger(6).params.pad_link, 0);  // no v3 data
 }
 
 TEST_F(DeviceDbTest, OpenRejectsAFileThatIsNotADatabase) {

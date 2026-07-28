@@ -126,8 +126,10 @@ TEST(KitModel, StartsWithEveryLayerEmpty) {
 
 TEST(KitModel, PadIndexIsBoundsChecked) {
   const KitModel model;
-  EXPECT_THROW((void)model.pad(KitModel::kPadCount), std::out_of_range);
+  EXPECT_THROW((void)model.pad(KitModel::kObjectCount), std::out_of_range);
   EXPECT_THROW((void)model.pad(-1), std::out_of_range);
+  // Objects 9-16 are the triggers — valid, and MIX by default.
+  EXPECT_EQ(model.pad(KitModel::TriggerObject(0)).params.mode, LayerMode::kMix);
 }
 
 // ---- Mutation and notification ----

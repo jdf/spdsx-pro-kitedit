@@ -163,8 +163,9 @@ public:
   // the full page). Kit, pad and layer are all encoded in the address.
   struct PadLayerMixWrite {
     int kit = 0;
-    int pad = 0;  // 1-based
+    int pad = 0;  // 1-based (pad 1-9, or trigger 1-8 when kind is kTrig)
     PadSlot slot = PadSlot::kTop;
+    ObjectKind kind = ObjectKind::kPad;
     int volume_db10 = 0;
     int fade_in = 0;
     int decay = 127;
@@ -178,8 +179,9 @@ public:
   // address (live-verified across all 18 slots).
   struct PadWaveWrite {
     int kit = 0;
-    int pad = 0;  // 1-based
+    int pad = 0;  // 1-based (pad 1-9, or trigger 1-8 when kind is kTrig)
     PadSlot slot = PadSlot::kTop;
+    ObjectKind kind = ObjectKind::kPad;
     int sample = 0;  // pool index; 0 clears the layer
     double pace_seconds = 0.02;
   };
@@ -192,7 +194,8 @@ public:
   // hit working state; persist with Commit().
   struct PadParamsWrite {
     int kit = 0;
-    int pad = 0;  // 1-based
+    int pad = 0;  // 1-based (pad 1-9, or trigger 1-8 when kind is kTrig)
+    ObjectKind kind = ObjectKind::kPad;
     PadDeviceParams params;
     double pace_seconds = 0.02;
   };

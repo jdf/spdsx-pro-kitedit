@@ -214,10 +214,37 @@ TEST(ParseKits, ReadsPadAndTriggerLinkGroups) {
   ASSERT_EQ(kits.size(), static_cast<size_t>(kRecords));
   EXPECT_EQ(kits[128].pads[6].pad_link, 11);
   EXPECT_EQ(kits[128].pads[5].pad_link, 0);
-  EXPECT_EQ(kits[128].trigger_links[6], 11);
-  EXPECT_EQ(kits[128].trigger_links[7], 3);
-  EXPECT_EQ(kits[128].trigger_links[0], 0);
-  EXPECT_EQ(kits[127].trigger_links[6], 0);
+  EXPECT_EQ(kits[128].triggers[6].pad_link, 11);
+  EXPECT_EQ(kits[128].triggers[7].pad_link, 3);
+  EXPECT_EQ(kits[128].triggers[0].pad_link, 0);
+  EXPECT_EQ(kits[127].triggers[6].pad_link, 0);
+}
+
+// Trigger blocks mirror the pad blocks (probed offline 2026-07-27), and
+// trigger layers continue the layer table at block 18 (trigger t top =
+// block 18 + 2t).
+TEST(ParseKits, ReadsTriggerParamsAndLayerWaves) {
+  Bytes image = CleanImage();
+  const size_t trig3 = RecordAt(128) + kTrigTableOffset + 2 * kTrigBlockStride;
+  image[trig3 + kPadLayerMode] = 4;  // SWITCH
+  image[trig3 + kPadFadePoint] = 66;
+  image[trig3 + kPadFixedVel] = 99;
+  const size_t layer = RecordAt(128) + kLayerTableBase
+      + (kTrigLayerBlockBase + 2 * 2) * kLayerBlockStride;  // trigger 3 top
+  image[layer] = 0x2e;  // wave 1582 (u16 LE)
+  image[layer + 1] = 0x06;
+  image[layer + kLayerBlockStride] = 7;  // trigger 3 bottom: wave 7
+
+  const std::vector<KitRecord> kits = ParseKits(image);
+
+  const PadDeviceParams& trig = kits[128].triggers[2];
+  EXPECT_EQ(trig.layer_mode, 4);
+  EXPECT_EQ(trig.fade_point, 66);
+  EXPECT_EQ(trig.fixed_velocity, 99);
+  EXPECT_EQ(trig.wave_top, 1582);
+  EXPECT_EQ(trig.wave_bottom, 7);
+  EXPECT_EQ(kits[128].triggers[3].wave_top, 0);
+  EXPECT_EQ(kits[128].pads[8].wave_top, 0);  // pad layers untouched
 }
 
 // The layer table is 18 blocks: top = pad*2, bottom = pad*2 + 1, each

@@ -71,12 +71,18 @@ inline constexpr size_t kLayerTableBase = 0x49a;
 inline constexpr size_t kLayerBlockStride = 60;  // 0x3c
 
 // The trigger table follows the pad table directly: 8 triggers x 28-byte
-// blocks at rec+0x380, pad-link group at +0x0c (the trigger DT1 offset —
-// param index == record offset holds for triggers as for pads).
+// blocks at rec+0x380, mirroring the pad blocks field for field (probed
+// offline 2026-07-27: mode/fades/dynamics/curve/fixed-velocity/hi-hat
+// trio sit at the pad offsets) EXCEPT the pad-link group, which sits at
+// +0x0c (the trigger DT1 offset — param index == record offset holds
+// for triggers as for pads). Trigger layers continue the layer table:
+// blocks 18..33 (trigger t top = 18 + 2t), confirmed by preload kits
+// carrying consecutive pool waves there.
 inline constexpr int kTriggersPerKit = 8;
 inline constexpr size_t kTrigTableOffset = 0x380;
 inline constexpr size_t kTrigBlockStride = 28;
 inline constexpr size_t kTrigPadLink = 0x0c;
+inline constexpr int kTrigLayerBlockBase = 18;
 inline constexpr size_t kLayerVolumeLo = 0x02;  // s16 LE, 0.1 dB units
 inline constexpr size_t kLayerFadeIn = 0x0d;
 inline constexpr size_t kLayerDecay = 0x0e;
@@ -121,13 +127,12 @@ struct PadDeviceParams {
   LayerMix mix_bottom;
 };
 
-// One kit's parsed contents: name plus the nine pads' mapped params.
+// One kit's parsed contents: name plus the mapped params of the nine
+// pads and the eight external trigger inputs (structurally pads).
 struct KitRecord {
   std::string name;
   std::array<PadDeviceParams, kPadsPerKit> pads;
-  // Each trigger's pad-link group, 0 = unlinked. The only trigger field
-  // mapped so far.
-  std::array<uint8_t, kTriggersPerKit> trigger_links {};
+  std::array<PadDeviceParams, kTriggersPerKit> triggers;
 };
 
 // Parses the kit records out of a CLEAN (header-stripped) bank 0x10

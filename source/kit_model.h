@@ -99,19 +99,35 @@ struct Pad {
 
 class KitModel {
 public:
+  // The model holds every triggerable object on the kit: the nine pads
+  // (objects 0-8) followed by the eight external trigger inputs
+  // (objects 9-16). Triggers are structurally pads — same samples, same
+  // params — so everything downstream (undo, engine, sync) treats an
+  // object index uniformly; code that means the PHYSICAL pads (MIDI
+  // notes, the 3x3 grid) loops to kPadCount.
   static constexpr int kPadCount = 9;
+  static constexpr int kTriggerCount = 8;
+  static constexpr int kObjectCount = kPadCount + kTriggerCount;
   static constexpr int kLayersPerPad = 2;
   // The UI still sizes its flat slot arrays from this.
-  static constexpr int kSlotCount = kPadCount * kLayersPerPad;
+  static constexpr int kSlotCount = kObjectCount * kLayersPerPad;
 
-  // Pads start in their default modes (pad 9 is the hi-hat).
+  static bool IsTrigger(int object) { return object >= kPadCount; }
+
+  // Trigger t (0-based) as an object index, and back.
+  static int TriggerObject(int trigger) { return kPadCount + trigger; }
+
+  static int TriggerOf(int object) { return object - kPadCount; }
+
+  // Objects start in their default modes (pad 9 is the hi-hat).
   KitModel() {
-    for (int i = 0; i < kPadCount; ++i) {
+    for (int i = 0; i < kObjectCount; ++i) {
       pads_[static_cast<size_t>(i)].params = DefaultParams(i);
     }
   }
 
-  // Pad 9 (bottom-right) defaults to HI-HAT, the rest to MIX.
+  // Pad 9 (bottom-right) defaults to HI-HAT, the rest — triggers
+  // included — to MIX.
   static PadParams DefaultParams(int pad) {
     PadParams params;
     if (pad == kPadCount - 1) {
@@ -180,7 +196,7 @@ public:
 
 private:
   juce::String name_ {"Untitled Kit"};
-  std::array<Pad, kPadCount> pads_;
+  std::array<Pad, kObjectCount> pads_;
   juce::ListenerList<Listener> listeners_;
 };
 

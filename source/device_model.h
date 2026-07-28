@@ -15,20 +15,26 @@
 
 namespace spdsx {
 
-// One kit as stored data.
+// One kit as stored data: the nine pads (0-8) then the eight external
+// trigger inputs (9-16), indexed like KitModel's objects.
 struct KitData {
   KitData() {
-    for (int i = 0; i < KitModel::kPadCount; ++i) {
+    for (int i = 0; i < KitModel::kObjectCount; ++i) {
       pads[static_cast<size_t>(i)].params = KitModel::DefaultParams(i);
     }
   }
 
   juce::String name {"USER KIT"};  // the device's own default kit name
-  std::array<Pad, KitModel::kPadCount> pads;
-  // Each trigger input's pad-link group, 0 = unlinked. Not part of the
-  // live KitModel (no Edit Kits surface); stash/load leave it alone, so
-  // it rides in KitData between the document and the device.
-  std::array<int, device::kTriggersPerKit> trigger_links {};
+  std::array<Pad, KitModel::kObjectCount> pads;
+
+  // Trigger t's slot (t is 0-based).
+  Pad& trigger(int t) {
+    return pads[static_cast<size_t>(KitModel::TriggerObject(t))];
+  }
+
+  const Pad& trigger(int t) const {
+    return pads[static_cast<size_t>(KitModel::TriggerObject(t))];
+  }
 
   // Whole-kit value equality — what the three-way device sync diffs.
   bool operator==(const KitData&) const = default;

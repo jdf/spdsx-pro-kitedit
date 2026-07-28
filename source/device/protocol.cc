@@ -106,10 +106,22 @@ Bytes KitNameAddr(int kit, int i) {
 }
 
 namespace {
-// The pad+layer-encoded slot byte: 0x40 + 2*(pad-1) + layer.
-uint8_t PadSlotByte(int pad, PadSlot slot) {
-  return static_cast<uint8_t>(0x40 + 2 * (pad - 1)
+// The object+layer-encoded slot byte: pads 0x40 + 2*(pad-1) + layer
+// (0x40..0x51), triggers continuing at 0x52 + 2*(trig-1) + layer.
+uint8_t PadSlotByte(int pad, PadSlot slot, ObjectKind kind) {
+  const int base = kind == ObjectKind::kPad ? 0x40 : 0x52;
+  return static_cast<uint8_t>(base + 2 * (pad - 1)
                               + (slot == PadSlot::kBottom ? 1 : 0));
+}
+
+void CheckObjectIndex(ObjectKind kind, int index) {
+  if (kind == ObjectKind::kPad) {
+    if (index < 1 || index > 9) {
+      throw std::out_of_range("pad 1-9");
+    }
+  } else if (index < 1 || index > 8) {
+    throw std::out_of_range("trigger 1-8");
+  }
 }
 }  // namespace
 
@@ -117,8 +129,9 @@ Bytes PadLayerAddr(PadLayerRef layer, int offset) {
   if (offset < 0 || offset > 0x7F) {
     throw std::out_of_range("layer-page offset 0-0x7f");
   }
+  CheckObjectIndex(layer.kind, layer.pad);
   Bytes addr = PadLinkPrefix(layer.kit);  // kit-encoded prefix
-  addr.push_back(PadSlotByte(layer.pad, layer.slot));
+  addr.push_back(PadSlotByte(layer.pad, layer.slot, layer.kind));
   addr.push_back(static_cast<uint8_t>(offset));
   return addr;
 }
@@ -132,8 +145,10 @@ Bytes PadWaveEnableAddr(PadLayerRef layer) {
 }
 
 Bytes PadParamAddr(PadRef pad, int param) {
+  CheckObjectIndex(pad.kind, pad.pad);
   Bytes addr = PadLinkPrefix(pad.kit);  // kit-encoded prefix
-  addr.push_back(static_cast<uint8_t>(0x1F + pad.pad));
+  addr.push_back(static_cast<uint8_t>(
+      (pad.kind == ObjectKind::kPad ? 0x1F : 0x28) + pad.pad));
   addr.push_back(static_cast<uint8_t>(param));
   return addr;
 }

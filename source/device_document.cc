@@ -144,7 +144,7 @@ void DeviceDocument::StoreWaveAudio(int sample_index,
 void DeviceDocument::StashActiveKit() {
   auto& kit = device_.kit(device_.current_kit());
   kit.name = model_.name();
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     auto& stored = kit.pads[static_cast<size_t>(pad)];
     stored.samples = {model_.sample(pad, 0), model_.sample(pad, 1)};
     stored.params = model_.params(pad);
@@ -157,7 +157,7 @@ void DeviceDocument::LoadActiveKitIntoModel() {
   }
   const KitData& kit = device_.kit(device_.current_kit());
   model_.set_name(kit.name);
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     const auto& stored = kit.pads[static_cast<size_t>(pad)];
     model_.set_sample(pad, 0, stored.samples.first);
     model_.set_sample(pad, 1, stored.samples.second);
@@ -317,12 +317,11 @@ KitData DeviceDocument::KitContent(int index) const {
     return device_.kit(index);
   }
   // The active kit's stored copy can be stale; the model is the truth
-  // for what it holds. Fields the model does not carry (trigger links)
-  // keep the stored values — starting from a default KitData instead
-  // would zero them and read the kit dirty forever.
+  // for what it holds. Start from the stored kit so any field the model
+  // does not carry keeps its stored value rather than reading dirty.
   KitData kit = device_.kit(index);
   kit.name = model_.name();
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
+  for (int pad = 0; pad < KitModel::kObjectCount; ++pad) {
     auto& stored = kit.pads[static_cast<size_t>(pad)];
     stored.samples = {model_.sample(pad, 0), model_.sample(pad, 1)};
     stored.params = model_.params(pad);

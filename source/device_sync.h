@@ -62,22 +62,15 @@ juce::StringArray PadConflicts(const Pad& current,
                                const Pad& base,
                                const Pad& theirs);
 
-// One item for the resolution dialog: a pad, or the kit name (pad == -1).
+// One item for the resolution dialog: an object, or the kit name.
 struct SyncConflict {
   int kit = 0;  // 0-based kit index
-  // Which item: 0..8 = pad, -1 = the kit name, kPadCount + t = trigger
-  // t (0-based). The dialog never looks at this — descriptions carry the
-  // words — but the resolution routing does.
+  // Which item: 0..8 = pad, 9..16 = trigger (KitModel object index), -1
+  // = the kit name. The dialog never looks at this — descriptions carry
+  // the words — but the resolution routing does.
   int pad = -1;
   juce::String description;  // dialog-ready, both sides' values included
 };
-
-// The default "every conflict resolves to mine" trigger table.
-inline std::array<SyncResolution, device::kTriggersPerKit> AllMine() {
-  std::array<SyncResolution, device::kTriggersPerKit> all;
-  all.fill(SyncResolution::kMine);
-  return all;
-}
 
 // Every conflict in one kit, dialog-ready. `kit` is the 0-based index
 // (only used to label and address the conflicts).
@@ -91,26 +84,25 @@ struct KitSyncPlan {
   KitData new_current;  // document content after the sync
   KitData new_base;  // base after the sync (skipped items keep the old base)
   bool write_name = false;
-  std::array<bool, KitModel::kPadCount> write_params {};
-  std::array<std::array<bool, KitModel::kLayersPerPad>, KitModel::kPadCount>
+  // Indexed by KitModel object (pads 0-8, triggers 9-16).
+  std::array<bool, KitModel::kObjectCount> write_params {};
+  std::array<std::array<bool, KitModel::kLayersPerPad>, KitModel::kObjectCount>
       write_wave {};
-  std::array<bool, device::kTriggersPerKit> write_trigger_link {};
   bool skipped = false;  // some conflict was left unresolved ("do nothing")
 
   // Whether the device needs any write for this kit.
   bool WritesDevice() const;
 };
 
-// Plans one kit's sync. Resolutions matter only for conflicted items;
-// clean merges ignore them.
+// Plans one kit's sync. Resolutions matter only for conflicted items
+// (indexed by KitModel object); clean merges ignore them.
 KitSyncPlan PlanKitSync(
     const KitData& current,
     const KitData& base,
     const KitData& theirs,
     SyncResolution name_resolution,
-    const std::array<SyncResolution, KitModel::kPadCount>& pad_resolutions,
-    const std::array<SyncResolution, device::kTriggersPerKit>&
-        trigger_resolutions = AllMine());
+    const std::array<SyncResolution, KitModel::kObjectCount>&
+        object_resolutions);
 
 // A local file scheduled to become a pool wave.
 struct UploadPlan {
@@ -149,7 +141,8 @@ struct SmpUpload {
 
 // The wire-level writes for one kit.
 struct PadWrite {
-  int pad = 0;  // 1-based
+  int pad = 0;  // 1-based: pad 1-9, or trigger 1-8 when kind is kTrig
+  device::ObjectKind kind = device::ObjectKind::kPad;
   bool params = false;  // SetPadLayerParams needed
   std::array<bool, KitModel::kLayersPerPad> wave {};  // SetPadWave per layer
   device::PadDeviceParams dp;  // params + wave numbers to write
@@ -160,8 +153,6 @@ struct KitWrite {
   bool name = false;
   std::string kit_name;
   std::vector<PadWrite> pads;
-  // (trigger 1-8, link group) pairs to write via SetPadLink.
-  std::vector<std::pair<int, int>> trigger_links;
 };
 
 // Builds a kit's wire-level writes from its plan (0-based kit index).

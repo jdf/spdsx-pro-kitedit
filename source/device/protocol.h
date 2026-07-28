@@ -97,13 +97,17 @@ inline constexpr int kLayerLoopOffset = 0x19;  // 1 byte
 inline constexpr int kLayerTriggerTypeOffset = 0x1a;  // 1 byte
 inline constexpr int kLayerModeOffset = 0x41;  // 1 byte (0 = PITCH)
 
-// Names one layer of a pad on a kit (pad is 1-based). Address builders
-// take this by value with designated initializers at the call site, so
-// the kit/pad numbers can never swap silently.
+// Names one layer of a pad or trigger on a kit (pad is 1-based: pad
+// 1-9, or trigger 1-8 when kind is kTrig). Address builders take this
+// by value with designated initializers at the call site, so the
+// kit/pad numbers can never swap silently. Trigger layer pages continue
+// the pad sequence (0x52 + 2*(trig-1) + layer), matching the record
+// storage where trigger layer blocks follow the 18 pad blocks.
 struct PadLayerRef {
   int kit = 0;
   int pad = 0;
   PadSlot slot = PadSlot::kTop;
+  ObjectKind kind = ObjectKind::kPad;
 };
 
 // Address of one field in a pad layer's parameter page.
@@ -120,11 +124,23 @@ Bytes PadWaveEnableAddr(PadLayerRef layer);
 // byte offset within the pad's kit-record block: 0x00 layer mode, 0x01
 // fade point, 0x02 fade end, 0x03 dynamics, 0x04 dynamics curve, 0x05
 // fixed velocity, 0x13 trigger reserve.
-// Names a pad on a kit (pad is 1-based), for the per-pad parameter page.
+// Names a pad (1-9) or trigger (1-8) on a kit, for the per-object
+// parameter page: pads at 0x1F + pad, triggers at 0x28 + trigger.
 struct PadRef {
   int kit = 0;
   int pad = 0;
+  ObjectKind kind = ObjectKind::kPad;
 };
+
+// The pad-link group param index within the parameter page: pads carry
+// it at 0x0d, triggers at 0x0c (both verified live via SetPadLink).
+inline constexpr int kPadLinkParam = 0x0d;
+inline constexpr int kTrigLinkParam = 0x0c;
+
+// The link param index for the given object kind.
+inline constexpr int LinkParam(ObjectKind kind) {
+  return kind == ObjectKind::kPad ? kPadLinkParam : kTrigLinkParam;
+}
 
 Bytes PadParamAddr(PadRef pad, int param);
 

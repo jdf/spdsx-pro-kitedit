@@ -314,7 +314,8 @@ void SpdsxDevice::SetPadLayerMix(const PadLayerMixWrite& w) {
   // Kit, pad and layer are all encoded in the address; no select needed.
   // Volume is a signed 16-bit written as four nibbles (two's complement);
   // fade-in and decay are single bytes.
-  const PadLayerRef layer {.kit = w.kit, .pad = w.pad, .slot = w.slot};
+  const PadLayerRef layer {
+      .kit = w.kit, .pad = w.pad, .slot = w.slot, .kind = w.kind};
   auto pace = [&] {
     std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
   };
@@ -333,7 +334,8 @@ void SpdsxDevice::SetPadWave(const PadWaveWrite& w) {
   // Kit and pad+layer are both encoded in the address, so no kit select
   // or pad focus is needed (the app assigns waves without either). Write
   // the wave number, then the companion "slot in use" flag.
-  const PadLayerRef layer {.kit = w.kit, .pad = w.pad, .slot = w.slot};
+  const PadLayerRef layer {
+      .kit = w.kit, .pad = w.pad, .slot = w.slot, .kind = w.kind};
   Send(Dt1(PadWaveAddr(layer), NibbleEncode(w.sample)));
   std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
   Send(Dt1(PadWaveEnableAddr(layer), {0x01}));
@@ -343,10 +345,11 @@ void SpdsxDevice::SetPadWave(const PadWaveWrite& w) {
 void SpdsxDevice::SetPadLayerParams(const PadParamsWrite& w) {
   // Kit and pad are both encoded in the write address, so no kit select
   // is needed; focus the pad object (the app does before param edits).
-  SelectObject(ObjectKind::kPad, w.pad);  // focus; fire-and-forget
+  SelectObject(w.kind, w.pad);  // focus; fire-and-forget
   std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
   auto write = [&](int param, uint8_t value) {
-    Send(Dt1(PadParamAddr({.kit = w.kit, .pad = w.pad}, param), {value}));
+    Send(Dt1(PadParamAddr({.kit = w.kit, .pad = w.pad, .kind = w.kind}, param),
+             {value}));
     std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
   };
   write(0x00, w.params.layer_mode);
@@ -358,7 +361,7 @@ void SpdsxDevice::SetPadLayerParams(const PadParamsWrite& w) {
   write(0x07, w.params.hi_hat_volume);
   write(0x08, w.params.hi_hat_fade_in);
   write(0x09, w.params.hi_hat_decay);
-  write(0x0d, w.params.pad_link);
+  write(LinkParam(w.kind), w.params.pad_link);
   write(0x13, w.params.trigger_reserve);
 }
 

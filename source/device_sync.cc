@@ -89,9 +89,11 @@ KitData KitDataFromDevice(const device::KitRecord& rec) {
   if (!rec.name.empty()) {
     kit.name = juce::String(rec.name);
   }
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    const auto& dp = rec.pads[static_cast<size_t>(pad)];
-    auto& p = kit.pads[static_cast<size_t>(pad)];
+  for (int object = 0; object < KitModel::kObjectCount; ++object) {
+    const auto& dp = KitModel::IsTrigger(object)
+        ? rec.triggers[static_cast<size_t>(KitModel::TriggerOf(object))]
+        : rec.pads[static_cast<size_t>(object)];
+    auto& p = kit.pads[static_cast<size_t>(object)];
     p.params.mode = static_cast<LayerMode>(
         juce::jlimit(0, kLayerModeCount - 1, static_cast<int>(dp.layer_mode)));
     p.params.fade_point = juce::jlimit(1, 127, static_cast<int>(dp.fade_point));
@@ -125,10 +127,6 @@ KitData KitDataFromDevice(const device::KitRecord& rec) {
     p.samples.second = dp.wave_bottom > 0
         ? LayerSample::DeviceWave(dp.wave_bottom)
         : LayerSample();
-  }
-  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
-    kit.trigger_links[static_cast<size_t>(trig)] = juce::jlimit(
-        0, 127, static_cast<int>(rec.trigger_links[static_cast<size_t>(trig)]));
   }
   return kit;
 }
@@ -283,31 +281,16 @@ std::vector<SyncConflict> FindKitConflicts(int kit,
   if (!name_conflict.isEmpty()) {
     out.push_back({kit, -1, label + ": " + name_conflict.joinIntoString("; ")});
   }
-  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
-    const auto tr = static_cast<size_t>(trig);
-    juce::StringArray trigger_conflict;
-    Merge3(("trigger " + juce::String(trig + 1) + " link").toRawUTF8(),
-           current.trigger_links[tr],
-           base.trigger_links[tr],
-           theirs.trigger_links[tr],
-           true,
-           &trigger_conflict,
-           FmtLink);
-    if (!trigger_conflict.isEmpty()) {
-      out.push_back({kit,
-                     KitModel::kPadCount + trig,
-                     label + ": " + trigger_conflict.joinIntoString("; ")});
-    }
-  }
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    const auto p = static_cast<size_t>(pad);
+  for (int object = 0; object < KitModel::kObjectCount; ++object) {
+    const auto p = static_cast<size_t>(object);
     const juce::StringArray conflicts =
         PadConflicts(current.pads[p], base.pads[p], theirs.pads[p]);
     if (!conflicts.isEmpty()) {
-      out.push_back({kit,
-                     pad,
-                     label + " pad " + juce::String(pad + 1) + ": "
-                         + conflicts.joinIntoString("; ")});
+      const juce::String which = KitModel::IsTrigger(object)
+          ? " trigger " + juce::String(KitModel::TriggerOf(object) + 1)
+          : " pad " + juce::String(object + 1);
+      out.push_back(
+          {kit, object, label + which + ": " + conflicts.joinIntoString("; ")});
     }
   }
   return out;
@@ -317,14 +300,9 @@ bool KitSyncPlan::WritesDevice() const {
   if (write_name) {
     return true;
   }
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    const auto p = static_cast<size_t>(pad);
+  for (int object = 0; object < KitModel::kObjectCount; ++object) {
+    const auto p = static_cast<size_t>(object);
     if (write_params[p] || write_wave[p][0] || write_wave[p][1]) {
-      return true;
-    }
-  }
-  for (const bool write : write_trigger_link) {
-    if (write) {
       return true;
     }
   }
@@ -336,41 +314,11 @@ KitSyncPlan PlanKitSync(
     const KitData& base,
     const KitData& theirs,
     SyncResolution name_resolution,
-    const std::array<SyncResolution, KitModel::kPadCount>& pad_resolutions,
-    const std::array<SyncResolution, device::kTriggersPerKit>&
-        trigger_resolutions) {
+    const std::array<SyncResolution, KitModel::kObjectCount>&
+        object_resolutions) {
   KitSyncPlan plan;
   plan.new_current = current;
   plan.new_base = base;
-
-  // Trigger links: one field each, same rules as a pad's.
-  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
-    const auto tr = static_cast<size_t>(trig);
-    juce::StringArray conflict;
-    Merge3("trigger link",
-           current.trigger_links[tr],
-           base.trigger_links[tr],
-           theirs.trigger_links[tr],
-           true,
-           &conflict,
-           FmtLink);
-    if (conflict.isEmpty()
-        || trigger_resolutions[tr] != SyncResolution::kSkip) {
-      const int merged =
-          Merge3("trigger link",
-                 current.trigger_links[tr],
-                 base.trigger_links[tr],
-                 theirs.trigger_links[tr],
-                 trigger_resolutions[tr] == SyncResolution::kMine,
-                 static_cast<juce::StringArray*>(nullptr),
-                 FmtLink);
-      plan.new_current.trigger_links[tr] = merged;
-      plan.new_base.trigger_links[tr] = merged;
-      plan.write_trigger_link[tr] = merged != theirs.trigger_links[tr];
-    } else {
-      plan.skipped = true;
-    }
-  }
 
   // The kit name: one field, same rules as a pad's.
   juce::StringArray name_conflict;
@@ -396,20 +344,20 @@ KitSyncPlan PlanKitSync(
     plan.skipped = true;
   }
 
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    const auto p = static_cast<size_t>(pad);
+  for (int object = 0; object < KitModel::kObjectCount; ++object) {
+    const auto p = static_cast<size_t>(object);
     const Pad& c = current.pads[p];
     const Pad& b = base.pads[p];
     const Pad& t = theirs.pads[p];
     if (!PadConflicts(c, b, t).isEmpty()
-        && pad_resolutions[p] == SyncResolution::kSkip) {
-      // "Do nothing": the pad and its base stay put, so it re-flags on
-      // the next sync.
+        && object_resolutions[p] == SyncResolution::kSkip) {
+      // "Do nothing": the object and its base stay put, so it re-flags
+      // on the next sync.
       plan.skipped = true;
       continue;
     }
     const Pad merged =
-        MergePad(c, b, t, pad_resolutions[p] == SyncResolution::kMine);
+        MergePad(c, b, t, object_resolutions[p] == SyncResolution::kMine);
     plan.new_current.pads[p] = merged;
     plan.new_base.pads[p] = merged;
     plan.write_params[p] = merged.params != t.params;
@@ -440,8 +388,8 @@ std::vector<UploadPlan> PlanUploads(
   // Distinct files, in path order so index assignment is deterministic.
   std::map<juce::String, juce::File> files;
   for (const auto& [kit, plan] : plans) {
-    for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-      const auto p = static_cast<size_t>(pad);
+    for (int object = 0; object < KitModel::kObjectCount; ++object) {
+      const auto p = static_cast<size_t>(object);
       const Pad& merged = plan.new_current.pads[p];
       const std::array<const LayerSample*, 2> layers = {&merged.samples.first,
                                                         &merged.samples.second};
@@ -501,24 +449,23 @@ KitWrite BuildKitWrite(int kit_index, const KitSyncPlan& plan) {
   if (plan.write_name) {
     w.kit_name = SanitizedAscii(plan.new_current.name, device::kKitNameLength);
   }
-  for (int pad = 0; pad < KitModel::kPadCount; ++pad) {
-    const auto p = static_cast<size_t>(pad);
+  for (int object = 0; object < KitModel::kObjectCount; ++object) {
+    const auto p = static_cast<size_t>(object);
     if (!plan.write_params[p] && !plan.write_wave[p][0]
         && !plan.write_wave[p][1]) {
       continue;
     }
     PadWrite pw;
-    pw.pad = pad + 1;
+    if (KitModel::IsTrigger(object)) {
+      pw.pad = KitModel::TriggerOf(object) + 1;
+      pw.kind = device::ObjectKind::kTrig;
+    } else {
+      pw.pad = object + 1;
+    }
     pw.params = plan.write_params[p];
     pw.wave = plan.write_wave[p];
     pw.dp = DeviceParamsFromPad(plan.new_current.pads[p]);
     w.pads.push_back(pw);
-  }
-  for (int trig = 0; trig < device::kTriggersPerKit; ++trig) {
-    const auto tr = static_cast<size_t>(trig);
-    if (plan.write_trigger_link[tr]) {
-      w.trigger_links.push_back({trig + 1, plan.new_current.trigger_links[tr]});
-    }
   }
   return w;
 }
@@ -563,6 +510,7 @@ bool ExecutePush(device::SpdsxDevice& dev,
         dev.SetPadWave({.kit = kw.kit,
                         .pad = pw.pad,
                         .slot = device::PadSlot::kTop,
+                        .kind = pw.kind,
                         .sample = pw.dp.wave_top,
                         .pace_seconds = pace_seconds});
         wrote = true;
@@ -571,6 +519,7 @@ bool ExecutePush(device::SpdsxDevice& dev,
         dev.SetPadWave({.kit = kw.kit,
                         .pad = pw.pad,
                         .slot = device::PadSlot::kBottom,
+                        .kind = pw.kind,
                         .sample = pw.dp.wave_bottom,
                         .pace_seconds = pace_seconds});
         wrote = true;
@@ -578,6 +527,7 @@ bool ExecutePush(device::SpdsxDevice& dev,
       if (pw.params) {
         dev.SetPadLayerParams({.kit = kw.kit,
                                .pad = pw.pad,
+                               .kind = pw.kind,
                                .params = pw.dp,
                                .pace_seconds = pace_seconds});
         // The per-layer mixes live in a different page than the pad
@@ -588,6 +538,7 @@ bool ExecutePush(device::SpdsxDevice& dev,
           dev.SetPadLayerMix({.kit = kw.kit,
                               .pad = pw.pad,
                               .slot = slot,
+                              .kind = pw.kind,
                               .volume_db10 = mix.volume_db10,
                               .fade_in = mix.fade_in,
                               .decay = mix.decay,
@@ -595,14 +546,6 @@ bool ExecutePush(device::SpdsxDevice& dev,
         }
         wrote = true;
       }
-    }
-    for (const auto& [trigger, group] : kw.trigger_links) {
-      dev.SetPadLink({.kit = kw.kit,
-                      .kind = device::ObjectKind::kTrig,
-                      .index = trigger,
-                      .group = group,
-                      .pace_seconds = pace_seconds});
-      wrote = true;
     }
   }
   // Everything above (uploads + DT1 writes) is in working state; this single

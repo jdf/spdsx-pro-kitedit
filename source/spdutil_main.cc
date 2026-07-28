@@ -1062,11 +1062,28 @@ int RunKit(const KitShowArgs& args) {
         p.wave_top,
         p.wave_bottom);
   }
-  std::printf("  trigger links:");
   for (int trig = 0; trig < spdsx::device::kTriggersPerKit; ++trig) {
-    std::printf(" %d:%d", trig + 1, k.trigger_links[static_cast<size_t>(trig)]);
+    const auto& p = k.triggers[static_cast<size_t>(trig)];
+    const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
+    const char* curve =
+        p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
+    std::printf(
+        "   t%d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d\n",
+        trig + 1,
+        mode,
+        p.fade_point,
+        p.fade_end,
+        p.dynamics ? "ON" : "OFF",
+        curve,
+        p.fixed_velocity,
+        p.trigger_reserve ? "ON" : "OFF",
+        p.hi_hat_volume,
+        p.hi_hat_fade_in,
+        p.hi_hat_decay,
+        p.pad_link,
+        p.wave_top,
+        p.wave_bottom);
   }
-  std::printf("\n");
   return 0;
 }
 

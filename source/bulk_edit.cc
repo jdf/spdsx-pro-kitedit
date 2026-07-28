@@ -62,8 +62,7 @@ std::vector<LinkChange> PlanPadLink(const std::vector<KitData>& kits,
         if (trigger < 1 || trigger > device::kTriggersPerKit) {
           continue;
         }
-        const int current =
-            data.trigger_links[static_cast<size_t>(trigger - 1)];
+        const int current = data.trigger(trigger - 1).params.pad_link;
         if (current != request.group) {
           plan.push_back(
               {.kit = kit, .trigger = true, .index = trigger, .from = current});
@@ -97,7 +96,7 @@ void PadLinkAction::ApplyLinks(bool forward) {
       }
       const int value = forward ? group_ : change.from;
       if (change.trigger) {
-        content.trigger_links[static_cast<size_t>(change.index - 1)] = value;
+        content.trigger(change.index - 1).params.pad_link = value;
       } else {
         content.pads[static_cast<size_t>(change.index - 1)].params.pad_link =
             value;

@@ -30,8 +30,8 @@ KitData SyncBase() {
   return kit;
 }
 
-std::array<SyncResolution, KitModel::kPadCount> AllMine() {
-  std::array<SyncResolution, KitModel::kPadCount> r;
+std::array<SyncResolution, KitModel::kObjectCount> AllMine() {
+  std::array<SyncResolution, KitModel::kObjectCount> r;
   r.fill(SyncResolution::kMine);
   return r;
 }
@@ -259,30 +259,30 @@ TEST(DeviceSyncConflicts, ListsTheNameAndEachConflictedPad) {
   EXPECT_TRUE(conflicts[1].description.contains("layer mode"));
 }
 
-TEST(DeviceSyncConflicts, ATriggerLinkConflictIsListedByTriggerNumber) {
+TEST(DeviceSyncConflicts, ATriggerConflictIsListedByTriggerNumber) {
   const KitData base = SyncBase();
   KitData current = base;
-  current.trigger_links[6] = 11;  // trigger 7
+  current.trigger(6).params.pad_link = 11;  // trigger 7
   KitData theirs = base;
-  theirs.trigger_links[6] = 4;
+  theirs.trigger(6).params.pad_link = 4;
 
   const std::vector<SyncConflict> conflicts =
       FindKitConflicts(0, current, base, theirs);
 
   ASSERT_EQ(conflicts.size(), 1u);
-  EXPECT_EQ(conflicts[0].pad, KitModel::kPadCount + 6);
-  EXPECT_TRUE(conflicts[0].description.contains("trigger 7 link"));
+  EXPECT_EQ(conflicts[0].pad, KitModel::TriggerObject(6));
+  EXPECT_TRUE(conflicts[0].description.contains("trigger 7"));
   EXPECT_TRUE(conflicts[0].description.contains("group 11"));
   EXPECT_TRUE(conflicts[0].description.contains("group 4"));
 }
 
 TEST(DeviceSyncConflicts, AnUnlinkConflictSaysUnlinked) {
   KitData base = SyncBase();
-  base.trigger_links[0] = 9;
+  base.trigger(0).params.pad_link = 9;
   KitData current = base;
-  current.trigger_links[0] = 0;
+  current.trigger(0).params.pad_link = 0;
   KitData theirs = base;
-  theirs.trigger_links[0] = 3;
+  theirs.trigger(0).params.pad_link = 3;
 
   const std::vector<SyncConflict> conflicts =
       FindKitConflicts(0, current, base, theirs);
@@ -415,52 +415,57 @@ TEST(DeviceSyncPlan, AConflictResolvedMineWritesTheDevice) {
 
 // ---- Free pool indices ----
 
-TEST(DeviceSyncPlan, ALocalTriggerLinkEditWritesItAndAdvancesBase) {
+TEST(DeviceSyncPlan, ALocalTriggerEditWritesItAndAdvancesBase) {
   const KitData base = SyncBase();
   KitData current = base;
-  current.trigger_links[6] = 11;
+  current.trigger(6).params.pad_link = 11;
+  current.trigger(6).samples.first = LayerSample::DeviceWave(42);
 
   const KitSyncPlan plan =
       PlanKitSync(current, base, base, SyncResolution::kMine, AllMine());
 
-  EXPECT_TRUE(plan.write_trigger_link[6]);
-  EXPECT_FALSE(plan.write_trigger_link[5]);
+  const auto object = static_cast<size_t>(KitModel::TriggerObject(6));
+  EXPECT_TRUE(plan.write_params[object]);
+  EXPECT_TRUE(plan.write_wave[object][0]);
+  EXPECT_FALSE(
+      plan.write_params[static_cast<size_t>(KitModel::TriggerObject(5))]);
   EXPECT_TRUE(plan.WritesDevice());
-  EXPECT_EQ(plan.new_current.trigger_links[6], 11);
-  EXPECT_EQ(plan.new_base.trigger_links[6], 11);
+  EXPECT_EQ(plan.new_current.trigger(6).params.pad_link, 11);
+  EXPECT_EQ(plan.new_base.trigger(6).params.pad_link, 11);
 }
 
-TEST(DeviceSyncPlan, ADeviceTriggerLinkEditPullsWithoutWriting) {
+TEST(DeviceSyncPlan, ADeviceTriggerEditPullsWithoutWriting) {
   const KitData base = SyncBase();
   KitData theirs = base;
-  theirs.trigger_links[2] = 7;
+  theirs.trigger(2).params.pad_link = 7;
 
   const KitSyncPlan plan =
       PlanKitSync(base, base, theirs, SyncResolution::kMine, AllMine());
 
   EXPECT_FALSE(plan.WritesDevice());
-  EXPECT_EQ(plan.new_current.trigger_links[2], 7);
-  EXPECT_EQ(plan.new_base.trigger_links[2], 7);
+  EXPECT_EQ(plan.new_current.trigger(2).params.pad_link, 7);
+  EXPECT_EQ(plan.new_base.trigger(2).params.pad_link, 7);
 }
 
 TEST(DeviceSyncPlan, ASkippedTriggerConflictKeepsItsOldBase) {
   const KitData base = SyncBase();
   KitData current = base;
-  current.trigger_links[0] = 5;
+  current.trigger(0).params.pad_link = 5;
   KitData theirs = base;
-  theirs.trigger_links[0] = 6;
+  theirs.trigger(0).params.pad_link = 6;
 
-  // The file-local AllMine() is the pad-sized table; the header's is
-  // the trigger-sized default.
-  auto triggers = spdsx::AllMine();
-  triggers[0] = SyncResolution::kSkip;
-  const KitSyncPlan plan = PlanKitSync(
-      current, base, theirs, SyncResolution::kMine, AllMine(), triggers);
+  auto resolutions = AllMine();
+  resolutions[static_cast<size_t>(KitModel::TriggerObject(0))] =
+      SyncResolution::kSkip;
+  const KitSyncPlan plan =
+      PlanKitSync(current, base, theirs, SyncResolution::kMine, resolutions);
 
   EXPECT_TRUE(plan.skipped);
-  EXPECT_FALSE(plan.write_trigger_link[0]);
-  EXPECT_EQ(plan.new_current.trigger_links[0], 5);
-  EXPECT_EQ(plan.new_base.trigger_links[0], base.trigger_links[0]);
+  EXPECT_FALSE(
+      plan.write_params[static_cast<size_t>(KitModel::TriggerObject(0))]);
+  EXPECT_EQ(plan.new_current.trigger(0).params.pad_link, 5);
+  EXPECT_EQ(plan.new_base.trigger(0).params.pad_link,
+            base.trigger(0).params.pad_link);
 }
 
 TEST(DeviceSyncPool, AnEmptyPoolStartsAtOne) {
@@ -578,20 +583,25 @@ TEST(DeviceSyncWrite, CarriesOnlyThePadsThatNeedWrites) {
   EXPECT_EQ(write.pads[1].dp.wave_top, 42);
 }
 
-TEST(DeviceSyncWrite, CarriesTheTriggerLinksThatNeedWrites) {
+TEST(DeviceSyncWrite, CarriesTriggerWritesWithTheTrigKind) {
   const KitData base = SyncBase();
   KitData current = base;
-  current.trigger_links[6] = 11;
-  current.trigger_links[7] = 3;
+  current.trigger(6).params.pad_link = 11;
+  current.trigger(7).samples.first = LayerSample::DeviceWave(3);
 
   const KitSyncPlan plan =
       PlanKitSync(current, base, base, SyncResolution::kMine, AllMine());
   const KitWrite write = BuildKitWrite(198, plan);
 
-  EXPECT_TRUE(write.pads.empty());
-  ASSERT_EQ(write.trigger_links.size(), 2u);
-  EXPECT_EQ(write.trigger_links[0], std::make_pair(7, 11));
-  EXPECT_EQ(write.trigger_links[1], std::make_pair(8, 3));
+  ASSERT_EQ(write.pads.size(), 2u);
+  EXPECT_EQ(write.pads[0].pad, 7);
+  EXPECT_EQ(write.pads[0].kind, device::ObjectKind::kTrig);
+  EXPECT_TRUE(write.pads[0].params);
+  EXPECT_EQ(write.pads[0].dp.pad_link, 11);
+  EXPECT_EQ(write.pads[1].pad, 8);
+  EXPECT_EQ(write.pads[1].kind, device::ObjectKind::kTrig);
+  EXPECT_TRUE(write.pads[1].wave[0]);
+  EXPECT_EQ(write.pads[1].dp.wave_top, 3);
 }
 
 // ---- ExecutePush, against the fake port ----
@@ -667,14 +677,25 @@ TEST(DeviceSyncPush, WritesNameWaveAndParamsThenCommitsOnce) {
   EXPECT_EQ(sent[37][4], 0x22);
 }
 
-TEST(DeviceSyncPush, WritesTriggerLinksAsFocusPlusLinkThenCommits) {
+// A trigger's wave write goes to the trigger layer page (slot bytes
+// continuing the pad sequence at 0x52), and a trigger's param write
+// focuses the trigger and lands the link at param 0x0c, not the pads'
+// 0x0d.
+TEST(DeviceSyncPush, TriggerWritesUseTheTriggerPages) {
   FakeSerialPort port;
   device::SpdsxDevice dev(&port);
   dev.AssumeFirmware(device::SpdsxDevice::kSupportedFirmware);
 
   KitWrite kw;
   kw.kit = 199;
-  kw.trigger_links = {{7, 11}};
+  PadWrite pw;
+  pw.pad = 7;
+  pw.kind = device::ObjectKind::kTrig;
+  pw.params = true;
+  pw.wave = {true, false};
+  pw.dp.wave_top = 42;
+  pw.dp.pad_link = 11;
+  kw.pads.push_back(pw);
 
   port.QueueReply({0x7a});
   port.QueueReply(SyncCommitDone());
@@ -683,15 +704,22 @@ TEST(DeviceSyncPush, WritesTriggerLinksAsFocusPlusLinkThenCommits) {
 
   const std::vector<Bytes> sent = port.payloads();
   using namespace device;
-  ASSERT_EQ(sent.size(), 4u);  // focus + link + commit begin + poll
-  EXPECT_EQ(sent[0],
+  // wave + enable + focus + 11 params + 2 layer mixes (3 writes each)
+  // + commit begin + poll.
+  ASSERT_EQ(sent.size(), 22u);
+  const PadLayerRef top {
+      .kit = 199, .pad = 7, .slot = PadSlot::kTop, .kind = ObjectKind::kTrig};
+  // (PadWaveAddr(top) itself carries slot byte 0x5e = 0x52 + 12, the
+  // trigger 7 top layer page; the full-message equality pins it.)
+  EXPECT_EQ(sent[0], Dt1(PadWaveAddr(top), NibbleEncode(42)));
+  EXPECT_EQ(sent[1], Dt1(PadWaveEnableAddr(top), {0x01}));
+  EXPECT_EQ(sent[2],
             Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kTrig, 7)}));
-  EXPECT_EQ(
-      sent[1],
-      Dt1(PadLinkAddr({.kind = ObjectKind::kTrig, .index = 7, .kit = 199}),
-          {11}));
-  EXPECT_EQ(sent[2][4], 0x21);
-  EXPECT_EQ(sent[3][4], 0x22);
+  const PadRef trig {.kit = 199, .pad = 7, .kind = ObjectKind::kTrig};
+  EXPECT_EQ(sent[3], Dt1(PadParamAddr(trig, 0x00), {0}));  // mode
+  EXPECT_EQ(sent[12], Dt1(PadParamAddr(trig, kTrigLinkParam), {11}));
+  EXPECT_EQ(sent[20][4], 0x21);
+  EXPECT_EQ(sent[21][4], 0x22);
 }
 
 TEST(DeviceSyncPush, NothingToWriteMeansNoTrafficAndSuccess) {

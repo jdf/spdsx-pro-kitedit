@@ -107,7 +107,7 @@ TEST(BulkPadLink, PlansOnlyPadsNotAlreadyInTheGroup) {
 
 TEST(BulkPadLink, TriggersPlanFromTheTriggerTable) {
   auto kits = Kits(2);
-  kits[0].trigger_links[6] = 11;  // kit 1 trigger 7 already there
+  kits[0].trigger(6).params.pad_link = 11;  // kit 1 trigger 7 already there
   ops::PadLinkRequest request;
   request.kits = {{1, 2}};
   request.triggers = {7};
@@ -214,7 +214,7 @@ TEST_F(SetModeActionTest, TheActiveKitReloadsIntoTheModel) {
 
 TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
   device.kit(2).pads[6].params.pad_link = 4;  // kit 3 pad 7, group 4
-  device.kit(3).trigger_links[6] = 2;  // kit 4 trigger 7, group 2
+  device.kit(3).trigger(6).params.pad_link = 2;  // kit 4 trigger 7, group 2
   ops::PadLinkRequest request;
   request.kits = {{3, 4}};
   request.pads = {7};
@@ -230,13 +230,13 @@ TEST_F(SetModeActionTest, PadLinkActionRoundTrips) {
       *document, device, PlanPadLink(snapshot, request), request.group)));
   EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 11);
   EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 11);
-  EXPECT_EQ(device.kit(2).trigger_links[6], 11);
-  EXPECT_EQ(device.kit(3).trigger_links[6], 11);
+  EXPECT_EQ(device.kit(2).trigger(6).params.pad_link, 11);
+  EXPECT_EQ(device.kit(3).trigger(6).params.pad_link, 11);
   ASSERT_TRUE(undo.undo());
   EXPECT_EQ(device.kit(2).pads[6].params.pad_link, 4);
   EXPECT_EQ(device.kit(3).pads[6].params.pad_link, 0);
-  EXPECT_EQ(device.kit(2).trigger_links[6], 0);
-  EXPECT_EQ(device.kit(3).trigger_links[6], 2);
+  EXPECT_EQ(device.kit(2).trigger(6).params.pad_link, 0);
+  EXPECT_EQ(device.kit(3).trigger(6).params.pad_link, 2);
 }
 
 }  // namespace
