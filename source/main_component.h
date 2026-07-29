@@ -256,6 +256,9 @@ private:
   void InstallCli();
   void timerCallback() override;
   juce::Rectangle<int> GridArea() const;
+  // The pads/triggers section's inner frame; the Properties view aligns
+  // its top and bottom with it.
+  juce::Rectangle<int> SurfaceOutline() const;
   juce::Rectangle<int> PadBounds(int row, int col) const;
   // Whether the object (pad or trigger) lives on the active surface.
   bool ObjectOnSurface(int object) const;

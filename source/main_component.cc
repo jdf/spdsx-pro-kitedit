@@ -2003,6 +2003,13 @@ void MainComponent::paint(juce::Graphics& g) {
     return;  // the Bulk Edit panel paints itself
   }
 
+  // The outline around the Properties view.
+  if (properties_tab_.isVisible()) {
+    g.setColour(kPadBorder);
+    g.drawRoundedRectangle(
+        properties_tab_.getBounds().toFloat().expanded(1.5f), 8.0f, 1.0f);
+  }
+
   const auto now = juce::Time::getMillisecondCounter();
   for (int r = 0; r < SurfaceRows(); ++r) {
     for (int c = 0; c < SurfaceCols(); ++c) {
@@ -2051,6 +2058,11 @@ juce::Rectangle<int> MainComponent::GridArea() const {
   }
   area.removeFromRight(kPropertiesWidth);
   return area;
+}
+
+juce::Rectangle<int> MainComponent::SurfaceOutline() const {
+  // Midway between the section's edge and the pad tiles inside it.
+  return GridArea().reduced(kGridPadding / 2);
 }
 
 juce::Rectangle<int> MainComponent::PadBounds(int row, int col) const {
@@ -2107,10 +2119,15 @@ void MainComponent::resized() {
       browser_width_ - 3, panel_top, 6, getHeight() - panel_top);
   panel_divider_.setVisible(browser_visible_ && on_edit_tab_);
   panel_divider_.toFront(false);
+  // The Properties view's title strip top-aligns exactly with the left
+  // tabbed panel's content top (the line under its tab buttons), ends
+  // level with the pads section's bottom, and keeps a margin off the
+  // window's right edge so its outline has air.
+  const int properties_top = panel_top + panel_tabs_.getTabBarDepth();
   properties_tab_.setBounds(getWidth() - kPropertiesWidth,
-                            panel_top,
-                            kPropertiesWidth,
-                            getHeight() - panel_top);
+                            properties_top,
+                            kPropertiesWidth - kGridPadding / 2,
+                            SurfaceOutline().getBottom() - properties_top);
   // The Pads/Triggers surface switch sits in its own strip between the
   // kit header and the grid, spanning the grid's width.
   auto surface_strip = bounds.removeFromTop(kSurfaceBarHeight);
