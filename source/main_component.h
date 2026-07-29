@@ -47,6 +47,10 @@ public:
   // The document, for app-level flows (quit interception).
   DeviceDocument& document() { return document_; }
 
+  // The app's settings file, for state owned outside this component
+  // (the main window's saved size and position).
+  juce::PropertiesFile* user_settings() { return settings_.getUserSettings(); }
+
   // Opens the most recently used device document, if it still exists;
   // otherwise stays untitled. A device document is a staging area for
   // one physical device, so launching back into it is the common case.

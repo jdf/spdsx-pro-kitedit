@@ -60,14 +60,32 @@ public:
                              juce::Colour(0xff12161b),
                              juce::DocumentWindow::allButtons) {
     setUsingNativeTitleBar(true);
+    settings_ = content->user_settings();
     setContentOwned(content, true);
     setResizable(true, true);
-    centreWithSize(getWidth(), getHeight());
+    // Come back up where the user left the window (the restore clamps
+    // to the current screens, so a detached monitor can't strand it).
+    const juce::String state = settings_->getValue("windowState");
+    if (state.isEmpty() || !restoreWindowStateFromString(state)) {
+      centreWithSize(getWidth(), getHeight());
+    }
     setVisible(true);
   }
 
   void closeButtonPressed() override {
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
+  }
+
+  // Every move or resize persists the window state; the settings file
+  // debounces its own disk writes.
+  void moved() override {
+    juce::DocumentWindow::moved();
+    SaveWindowState();
+  }
+
+  void resized() override {
+    juce::DocumentWindow::resized();
+    SaveWindowState();
   }
 
   // The grid handles the spacebar; hand it the keyboard whenever the
@@ -77,6 +95,15 @@ public:
       getContentComponent()->grabKeyboardFocus();
     }
   }
+
+private:
+  void SaveWindowState() {
+    if (settings_ != nullptr && isVisible()) {
+      settings_->setValue("windowState", getWindowStateAsString());
+    }
+  }
+
+  juce::PropertiesFile* settings_ = nullptr;
 };
 
 class App : public juce::JUCEApplication {
