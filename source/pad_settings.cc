@@ -19,12 +19,17 @@ constexpr int kPadding = 12;
 constexpr int kTitleHeight = 28;
 constexpr int kHeaderHeight = 24;
 constexpr int kRowHeight = 24;
-constexpr int kRowGap = 6;  // horizontal spacing within a row
+// Air between the knobs of a small-knob row (the envelope triples and
+// the fade pair).
+constexpr int kRowGap = 20;
 // The one precise amount of clear vertical space between any two lines
 // of controls (and between a section header and its first line).
 constexpr int kControlGap = 12;
 // The Layer A/B captions sit tight against their own knobs.
 constexpr int kCaptionGap = 2;
+// Clear space above the Layer B group, so the two envelope groups read
+// as two groups rather than one stack.
+constexpr int kLayerGroupGap = 24;
 constexpr int kSectionGap = 16;
 constexpr int kKnobTextHeight = 18;
 constexpr int kKnobSize = 60;  // the dial square, textbox below it
@@ -455,7 +460,7 @@ void PadSettingsPanel::RefreshSections() {
       + section(kKnobHeight + kControlGap + kRowHeight)  // dynamics radios
       + section(2 * kRowHeight + kControlGap)  // link send + receive
       + section(2 * (kRowHeight + kCaptionGap + knob_unit)
-                + kControlGap)  // the two layer envelopes
+                + kLayerGroupGap)  // the two layer envelopes
       + (show_pedal_ ? section(3 * kKnobHeight + 2 * kControlGap) : 0)
       + kPadding;
   setSize(content_width_ > 0 ? content_width_ : kDefaultPanelWidth, height);
@@ -487,7 +492,11 @@ void PadSettingsPanel::resized() {
     auto name = names.begin();
     auto knob = knobs.begin();
     for (; name != names.end(); ++name, ++knob) {
-      (*name)->setBounds(labels.removeFromLeft(kMixKnobSize + kRowGap));
+      // Label and knob share one kMixKnobSize-wide column, so the
+      // centred label sits exactly over its dial; the gap is between
+      // columns, not inside them.
+      (*name)->setBounds(labels.removeFromLeft(kMixKnobSize + kRowGap)
+                             .withWidth(kMixKnobSize));
       (*knob)->setBounds(
           dials.removeFromLeft(kMixKnobSize + kRowGap).withWidth(kMixKnobSize));
     }
@@ -539,7 +548,7 @@ void PadSettingsPanel::resized() {
   for (size_t l = 0; l < mix_.size(); ++l) {
     MixControls& m = mix_[l];
     if (l > 0) {
-      area.removeFromTop(kControlGap);
+      area.removeFromTop(kLayerGroupGap);
     }
     m.heading.setBounds(area.removeFromTop(kRowHeight));
     // The caption belongs to its knobs; just a sliver of air.
