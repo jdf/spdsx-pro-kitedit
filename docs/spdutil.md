@@ -122,11 +122,12 @@ Switches the device's playback kit (1-200).
 
 Sets kit K's name (16 characters, space-padded/truncated).
 
-### `assign --kits K --sample N --pad P.S`
+### `assign --kits K --sample N --pad P.S|tN.S`
 
-Assigns pool sample N to a pad layer. `--pad P.S` is pad 1-9 dot slot (0 = top
-layer, 1 = bottom): `--pad 2.1` is pad 2's bottom layer. Sample 0 clears the
-layer.
+Assigns pool sample N to a pad or external-trigger layer. `--pad P.S` is pad
+1-9 dot slot (0 = top layer, 1 = bottom); prefix the number with `t` for
+external trigger 1-8. For example, `--pad 2.1` is pad 2 bottom and
+`--pad t1.0` is trigger 1 top. Sample 0 clears the layer.
 
 ### `setparams --kits K --pad N --params ...`
 

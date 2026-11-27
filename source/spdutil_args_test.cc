@@ -147,6 +147,38 @@ TEST(FlagRejectionHint, SaysWhyRatherThanJustNo) {
   EXPECT_FALSE(FlagRejectionHint("info", "sample").empty());
 }
 
+TEST(ParseObjectLayerSpec, ParsesPadLayers) {
+  ObjectLayerSpec layer;
+  ASSERT_TRUE(ParseObjectLayerSpec("1.0", &layer));
+  EXPECT_EQ(
+      layer,
+      (ObjectLayerSpec {device::ObjectKind::kPad, 1, device::PadSlot::kTop}));
+  ASSERT_TRUE(ParseObjectLayerSpec("9.1", &layer));
+  EXPECT_EQ(layer,
+            (ObjectLayerSpec {
+                device::ObjectKind::kPad, 9, device::PadSlot::kBottom}));
+}
+
+TEST(ParseObjectLayerSpec, ParsesTriggerLayers) {
+  ObjectLayerSpec layer;
+  ASSERT_TRUE(ParseObjectLayerSpec("t1.0", &layer));
+  EXPECT_EQ(
+      layer,
+      (ObjectLayerSpec {device::ObjectKind::kTrig, 1, device::PadSlot::kTop}));
+  ASSERT_TRUE(ParseObjectLayerSpec("t8.1", &layer));
+  EXPECT_EQ(layer,
+            (ObjectLayerSpec {
+                device::ObjectKind::kTrig, 8, device::PadSlot::kBottom}));
+}
+
+TEST(ParseObjectLayerSpec, RejectsMalformedOrOutOfRangeSpecs) {
+  ObjectLayerSpec layer;
+  for (const char* spec :
+       {"", "t9.0", "10.0", "tx.0", "t.0", "1.2", "1", "1.0x"}) {
+    EXPECT_FALSE(ParseObjectLayerSpec(spec, &layer)) << spec;
+  }
+}
+
 TEST(ParseKitSpec, ASingleKit) {
   std::vector<KitRange> ranges;
   std::string error;
