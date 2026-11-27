@@ -65,20 +65,15 @@ Bytes PadLinkPrefix(int kit) {
 }
 
 Bytes PadLinkAddr(PadLinkTarget target) {
-  Bytes addr = PadLinkPrefix(target.kit);
-  if (target.kind == ObjectKind::kPad) {
-    if (target.index < 1 || target.index > 9) {
-      throw std::out_of_range("pad 1-9");
-    }
-    addr.push_back(static_cast<uint8_t>(0x1F + target.index));
-  } else {
-    if (target.index < 1 || target.index > 8) {
-      throw std::out_of_range("trigger 1-8");
-    }
-    addr.push_back(static_cast<uint8_t>(0x28 + target.index));
-  }
-  addr.push_back(static_cast<uint8_t>(LinkParam(target.direction)));
-  return addr;
+  return PadParamAddr(
+      {.kit = target.kit, .pad = target.index, .kind = target.kind},
+      LinkParam(target.direction));
+}
+
+Bytes MuteGroupAddr(PadLinkTarget target) {
+  return PadParamAddr(
+      {.kit = target.kit, .pad = target.index, .kind = target.kind},
+      MuteGroupParam(target.direction));
 }
 
 Bytes NibbleEncode(int value) {

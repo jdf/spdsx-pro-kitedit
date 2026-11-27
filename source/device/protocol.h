@@ -74,8 +74,9 @@ struct PadLinkTarget {
   LinkDirection direction = LinkDirection::kReceive;
 };
 
-// Full pad-link parameter address for the object within its kit.
+// Full pad-link or mute-group parameter address for the object within its kit.
 Bytes PadLinkAddr(PadLinkTarget target);
+Bytes MuteGroupAddr(PadLinkTarget target);
 
 // Nibble-encodes a value into 4 bytes, one nibble each (big-endian). Roland
 // uses this for values that exceed 0x7F, since SysEx data bytes must stay
@@ -142,10 +143,18 @@ struct PadRef {
   ObjectKind kind = ObjectKind::kPad;
 };
 
-// The pad-link param indices within the parameter page (same for pads
-// and triggers): send group at 0x0c, receive group at 0x0d.
+// The mute-group and pad-link param indices within the parameter page. Both
+// are directional. Pad-link uses these offsets for pads and triggers;
+// mute-group is live-verified on pads and assumed to mirror them on triggers.
+inline constexpr int kMuteGroupSendParam = 0x0a;
+inline constexpr int kMuteGroupReceiveParam = 0x0b;
 inline constexpr int kLinkSendParam = 0x0c;
 inline constexpr int kLinkReceiveParam = 0x0d;
+
+inline constexpr int MuteGroupParam(LinkDirection direction) {
+  return direction == LinkDirection::kSend ? kMuteGroupSendParam
+                                           : kMuteGroupReceiveParam;
+}
 
 inline constexpr int LinkParam(LinkDirection direction) {
   return direction == LinkDirection::kSend ? kLinkSendParam : kLinkReceiveParam;

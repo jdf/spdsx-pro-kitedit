@@ -61,6 +61,8 @@ std::vector<KitRecord> ParseKits(const Bytes& clean_image) {
       pp.hi_hat_fade_in = clean_image[block + kPadHiHatFadeIn];
       pp.hi_hat_decay = clean_image[block + kPadHiHatDecay];
       pp.trigger_reserve = clean_image[block + kPadTrigReserve];
+      pp.mute_send = clean_image[block + kMuteGroupSendOffset];
+      pp.mute_receive = clean_image[block + kMuteGroupReceiveOffset];
       pp.link_send = clean_image[block + kLinkSendOffset];
       pp.link_receive = clean_image[block + kLinkReceiveOffset];
       const size_t top = rec + kLayerTableBase

@@ -45,6 +45,14 @@ const std::map<std::string, std::vector<std::string>, std::less<>>& Table() {
             "kits",
             "dry-run",
             "verbose"}},
+          {"mutegroup",
+           {"group",
+            "direction",
+            "trigger",
+            "pad",
+            "kits",
+            "dry-run",
+            "verbose"}},
       };
   return kTable;
 }
@@ -351,8 +359,13 @@ bool TakesPositionalNumber(std::string_view command) {
 }
 
 bool RequiresKitSpec(std::string_view command) {
-  static const std::vector<std::string> kNeedsKit = {
-      "assign", "setname", "setparams", "setlayer", "setmode", "padlink"};
+  static const std::vector<std::string> kNeedsKit = {"assign",
+                                                     "setname",
+                                                     "setparams",
+                                                     "setlayer",
+                                                     "setmode",
+                                                     "padlink",
+                                                     "mutegroup"};
   return std::find(kNeedsKit.begin(), kNeedsKit.end(), command)
       != kNeedsKit.end();
 }

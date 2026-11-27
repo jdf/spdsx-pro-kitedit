@@ -197,6 +197,26 @@ TEST(ParseKits, ReadsThePadParamsFromTheMappedOffsets) {
   EXPECT_EQ(kits[128].pads[1].layer_mode, 0);
 }
 
+// Mute send/receive sit immediately before pad link at +0x0a/+0x0b. Pads
+// were mapped live; trigger blocks are expected to mirror the same layout.
+TEST(ParseKits, ReadsTheDirectionalMuteGroupPair) {
+  Bytes image = CleanImage();
+  image[PadAt(62, 8) + kMuteGroupSendOffset] = 1;  // kit 63 pad 9 sends
+  image[PadAt(62, 5) + kMuteGroupReceiveOffset] = 1;  // pad 6 receives
+  const size_t trig = RecordAt(62) + kTrigTableOffset;
+  image[trig + 0 * kTrigBlockStride + kMuteGroupSendOffset] = 16;
+
+  const std::vector<KitRecord> kits = ParseKits(image);
+
+  ASSERT_EQ(kits.size(), static_cast<size_t>(kRecords));
+  EXPECT_EQ(kits[62].pads[8].mute_send, 1);
+  EXPECT_EQ(kits[62].pads[8].mute_receive, 0);
+  EXPECT_EQ(kits[62].pads[5].mute_receive, 1);
+  EXPECT_EQ(kits[62].pads[5].mute_send, 0);
+  EXPECT_EQ(kits[62].triggers[0].mute_send, 16);
+  EXPECT_EQ(kits[61].pads[8].mute_send, 0);
+}
+
 // The directional pad-link pair sits at the same offsets in pad and
 // trigger blocks: send at +0x0c, receive at +0x0d (mapped live
 // 2026-07-27 on kit 199: pad 3 send group 3, trigger 1 receive group

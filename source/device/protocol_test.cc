@@ -268,6 +268,27 @@ TEST(PadLinkAddr, RefusesAnObjectTheDeviceDoesNotHave) {
       std::out_of_range);
 }
 
+// ---- MuteGroupAddr ----
+
+TEST(MuteGroupAddr, UsesTheMappedSendAndReceiveParams) {
+  EXPECT_EQ(MuteGroupAddr({.kind = ObjectKind::kPad,
+                           .index = 9,
+                           .kit = 63,
+                           .direction = LinkDirection::kSend}),
+            FromHex("04 7c 28 0a"));
+  EXPECT_EQ(MuteGroupAddr({.kind = ObjectKind::kPad,
+                           .index = 6,
+                           .kit = 63,
+                           .direction = LinkDirection::kReceive}),
+            FromHex("04 7c 25 0b"));
+  // Trigger objects are expected to share the pad-block layout, like links.
+  EXPECT_EQ(MuteGroupAddr({.kind = ObjectKind::kTrig,
+                           .index = 1,
+                           .kit = 63,
+                           .direction = LinkDirection::kSend}),
+            FromHex("04 7c 29 0a"));
+}
+
 // ---- NibbleEncode ----
 
 TEST(NibbleEncode, SpreadsAValueOverFourNibbles) {

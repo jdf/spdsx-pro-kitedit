@@ -68,7 +68,7 @@ bool TakesPositionalNumber(std::string_view command);
 bool RequiresKitSpec(std::string_view command);
 
 // True if command writes exactly one kit, so its --kits spec may name
-// only one (setmode and padlink sweep, and accept any spec).
+// only one (setmode, padlink and mutegroup sweep, and accept any spec).
 bool TakesSingleKit(std::string_view command);
 
 // The first flag in `seen` (names without dashes) that `command` does

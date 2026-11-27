@@ -59,10 +59,14 @@ inline constexpr size_t kPadFixedVel = 0x05;
 inline constexpr size_t kPadHiHatVolume = 0x07;
 inline constexpr size_t kPadHiHatFadeIn = 0x08;
 inline constexpr size_t kPadHiHatDecay = 0x09;
-// The directional pad-link pair (same offsets for pads and triggers):
-// send group at +0x0c, receive group at +0x0d; 0 = none. Mapped live
-// 2026-07-27 on kit 199 (pad 3 send 3 -> +0x0c; trigger 1 receive 3 ->
-// +0x0d).
+// The directional mute-group pair: send at +0x0a, receive at +0x0b; 0 =
+// none. Mapped live 2026-11-27 on kit 63 for pads. Trigger blocks are assumed
+// to share these offsets, as they do for the adjacent pad-link pair.
+inline constexpr size_t kMuteGroupSendOffset = 0x0a;
+inline constexpr size_t kMuteGroupReceiveOffset = 0x0b;
+// The directional pad-link pair (same offsets for pads and triggers): send
+// group at +0x0c, receive group at +0x0d; 0 = none. Mapped live 2026-07-27 on
+// kit 199 (pad 3 send 3 -> +0x0c; trigger 1 receive 3 -> +0x0d).
 inline constexpr size_t kLinkSendOffset = 0x0c;
 inline constexpr size_t kLinkReceiveOffset = 0x0d;
 inline constexpr size_t kPadTrigReserve = 0x13;
@@ -105,7 +109,9 @@ struct PadDeviceParams {
   uint8_t dynamics_curve = 0;
   uint8_t fixed_velocity = 0;
   uint8_t trigger_reserve = 0;
-  // The directional pad-link pair, 0 = none.
+  // The directional mute-group and pad-link pairs, 0 = none.
+  uint8_t mute_send = 0;
+  uint8_t mute_receive = 0;
   uint8_t link_send = 0;
   uint8_t link_receive = 0;
   // HI-HAT closed-pedal shaping (used only in HI-HAT mode).
