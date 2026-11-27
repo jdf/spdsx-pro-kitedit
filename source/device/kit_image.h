@@ -16,10 +16,11 @@
 //       +0x00 layer mode, +0x01 fade point, +0x02 fade end,
 //       +0x03 dynamics on/off, +0x04 dynamics curve, +0x05 fixed velocity,
 //       +0x13 trigger reserve.
-//   - offset 0x49a: the per-layer table, 18 layers (9 pads x top/bottom)
-//     x 60-byte blocks; the block starts with the layer's wave (sample
-//     pool index) as u16 LE, 0 = no sample. Verified against the "ZZZ"
-//     experiment kit (pad 7 = 127/203) and the factory kits.
+//   - offset 0x49a: the per-layer table, 34 layer blocks (18 pad layers =
+//     9 pads x top/bottom, then 16 trigger layers) x 60-byte blocks;
+//     the block starts with the layer's wave (sample pool index) as u16
+//     LE, 0 = no sample. Verified against the "ZZZ" experiment kit
+//     (pad 7 = 127/203) and the factory kits.
 //   Many other pad params (EQ, effects, ...) are elsewhere in the record
 //   and still unmapped.
 #ifndef SPDSX_PATCHEDIT_SOURCE_DEVICE_KIT_IMAGE_H_
