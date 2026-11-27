@@ -206,7 +206,8 @@ constexpr CommandHelp kCommandHelp[] = {
      "                --pad N          link pad N\n"
      "                --kits SPEC      kits to touch (required)\n"
      "                --dry-run        print, send nothing\n"
-     "                --verbose        show device replies\n"},
+     "                --verbose        show DT1 write status\n"
+     "                --commit         persist after the sweep\n"},
     {"mutegroup",
      "  mutegroup   set MUTE GRP for triggers/pads across kits:\n"
      "                --group N        mute group (0 off, 1-16)\n"
@@ -217,9 +218,8 @@ constexpr CommandHelp kCommandHelp[] = {
      "                --pad N          set pad N\n"
      "                --kits SPEC      kits to touch (required)\n"
      "                --dry-run        print, send nothing\n"
-     "                --verbose        show device replies\n"
-     "                Changes stay in working state until another command\n"
-     "                commits them\n"},
+     "                --verbose        show DT1 write status\n"
+     "                --commit         persist after the sweep\n"},
 };
 
 int Usage() {
@@ -1082,15 +1082,15 @@ int RunKit(const KitShowArgs& args) {
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
   std::printf(
       "  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
-      "  hhVol hhFadeIn hhDecay  muteS muteR linkS linkR  top bottom\n");
+      "  hhVol hhFadeIn hhDecay  send  recv  top   bottom  muteS muteR\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
-        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d "
-        "%5d %5d %4d %6d\n",
+        "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d "
+        "%5d %5d %5d\n",
         pad + 1,
         mode,
         p.fade_point,
@@ -1102,12 +1102,12 @@ int RunKit(const KitShowArgs& args) {
         p.hi_hat_volume,
         p.hi_hat_fade_in,
         p.hi_hat_decay,
-        p.mute_send,
-        p.mute_receive,
         p.link_send,
         p.link_receive,
         p.wave_top,
-        p.wave_bottom);
+        p.wave_bottom,
+        p.mute_send,
+        p.mute_receive);
   }
   for (int trig = 0; trig < spdsx::device::kTriggersPerKit; ++trig) {
     const auto& p = k.triggers[static_cast<size_t>(trig)];
@@ -1115,8 +1115,8 @@ int RunKit(const KitShowArgs& args) {
     const char* curve =
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
-        "   t%d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d "
-        "%5d %5d %4d %6d\n",
+        "   t%d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d "
+        "%5d %5d %5d\n",
         trig + 1,
         mode,
         p.fade_point,
@@ -1128,12 +1128,12 @@ int RunKit(const KitShowArgs& args) {
         p.hi_hat_volume,
         p.hi_hat_fade_in,
         p.hi_hat_decay,
-        p.mute_send,
-        p.mute_receive,
         p.link_send,
         p.link_receive,
         p.wave_top,
-        p.wave_bottom);
+        p.wave_bottom,
+        p.mute_send,
+        p.mute_receive);
   }
   return 0;
 }
@@ -1147,6 +1147,7 @@ struct ObjectGroupArgs {
   std::vector<KitRange> ranges;
   bool mute_group = false;
   bool dry_run = false;
+  bool commit = false;
   bool verbose = false;
 };
 
@@ -1213,10 +1214,9 @@ int RunObjectGroup(const ObjectGroupArgs& args) {
       std::printf("%s%s\n", buf, ToHex(sel).c_str());
       ++messages;
       if (dev != nullptr) {
-        const Bytes rep = dev->Command(sel);
+        dev->SelectKit(kit);
         if (verbose) {
-          std::printf("    <- %s\n",
-                      rep.empty() ? "(no reply)" : ToHex(rep).c_str());
+          std::printf("    <- (DT1 select is fire-and-forget)\n");
         }
       }
       for (const auto& [kind, index] : objects) {
@@ -1263,6 +1263,10 @@ int RunObjectGroup(const ObjectGroupArgs& args) {
         }
       }
     }
+  }
+  if (dev != nullptr && args.commit && !dev->Commit()) {
+    std::fprintf(stderr, "commit did not confirm\n");
+    return 1;
   }
   std::printf("\n%s  %d messages.\n",
               dry_run ? "(dry run \xe2\x80\x94 nothing sent)" : "Done.",
@@ -1324,7 +1328,11 @@ int main(int argc, char** argv) {
       } else if (arg == "--port") {
         port = next();
       } else if (arg == "--group") {
-        group = std::atoi(next().c_str());
+        std::string error;
+        if (!spdsx::spdutil::ParseWholeNumber(next(), 0, 127, &group, &error)) {
+          std::fprintf(stderr, "--group: %s\n", error.c_str());
+          return 2;
+        }
       } else if (arg == "--direction") {
         const std::string v = next();
         if (v == "send") {
@@ -1337,7 +1345,13 @@ int main(int argc, char** argv) {
         }
         have_direction = true;
       } else if (arg == "--trigger") {
-        objects.emplace_back(ObjectKind::kTrig, std::atoi(next().c_str()));
+        int trigger = 0;
+        std::string error;
+        if (!spdsx::spdutil::ParseWholeNumber(next(), 1, 8, &trigger, &error)) {
+          std::fprintf(stderr, "--trigger: %s\n", error.c_str());
+          return 2;
+        }
+        objects.emplace_back(ObjectKind::kTrig, trigger);
       } else if (arg == "--pad") {
         // Dotted "P.S" is the assign pad+slot spec; a bare number is a
         // padlink pad object.
@@ -1345,7 +1359,11 @@ int main(int argc, char** argv) {
         if (v.find('.') != std::string::npos) {
           pad_spec = v;
         } else {
-          pad_num = std::atoi(v.c_str());  // setparams uses a plain pad num
+          std::string error;
+          if (!spdsx::spdutil::ParseWholeNumber(v, 1, 9, &pad_num, &error)) {
+            std::fprintf(stderr, "--pad: %s\n", error.c_str());
+            return 2;
+          }
           objects.emplace_back(ObjectKind::kPad, pad_num);
         }
       } else if (arg == "--range") {
@@ -1608,6 +1626,7 @@ int main(int argc, char** argv) {
                              .ranges = ranges,
                              .mute_group = mute_group,
                              .dry_run = dry_run,
+                             .commit = commit_flag,
                              .verbose = verbose});
     }
     return command.empty() ? Usage() : UnknownCommand(command);

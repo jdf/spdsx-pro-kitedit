@@ -39,10 +39,9 @@ anything.
 ## Working state vs. commit
 
 Device writes land in **working state**: audible immediately, gone on power
-cycle. Most kit write commands take `--commit` to follow the writes with a flash
+cycle. Kit write commands take `--commit` to follow the writes with a flash
 commit (the same durable WRITE the official app's WRITE button performs).
-`padlink` and `mutegroup` leave their changes in working state. Uncommitted
-edits accumulate across separate spdutil invocations, and one later
+Uncommitted edits accumulate across separate spdutil invocations, and one later
 `--commit`-ing command flushes everything staged. `deletewave` and `sendwave`
 always commit.
 
@@ -112,8 +111,8 @@ A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST` inclusive:
 
 `setname`, `assign`, `setparams`, and `setlayer` write one kit, so their spec
 must name exactly one. `setmode`, `padlink`, and `mutegroup` sweep and take any
-spec. All seven honor `--dry-run`; the first five honor `--commit`. `kit` and
-`selectkit` read or select a single kit and take a positional number instead
+spec. All seven honor `--dry-run` and `--commit`. `kit` and `selectkit` read
+or select a single kit and take a positional number instead
 (`spdutil kit 108`).
 
 ### `selectkit <N>`
@@ -186,7 +185,8 @@ typical link is two invocations, e.g. trigger 1 `--direction send` and pad 3
 | `--trigger N` / `--pad N`   | which objects to link (repeatable)                               |
 | `--kits SPEC`               | kits to touch (**required**)                                     |
 | `--dry-run`                 | print the messages, send nothing                                 |
-| `--verbose`                 | show device replies                                              |
+| `--verbose`                 | show DT1 write status                                            |
+| `--commit`                  | persist after the sweep                                          |
 
 Back the unit up before a padlink run across many kits.
 
@@ -203,7 +203,8 @@ group when struck. Group 0 turns that direction off; groups 1-16 are active.
 | `--trigger N` / `--pad N`   | which objects to change (repeatable)                       |
 | `--kits SPEC`               | kits to touch (**required**)                               |
 | `--dry-run`                 | print the messages, send nothing                           |
-| `--verbose`                 | show device replies                                        |
+| `--verbose`                 | show DT1 write status                                      |
+| `--commit`                  | persist after the sweep                                    |
 
 The pad offsets were verified on firmware 2.00 build 0094. Trigger blocks use
 the same layout, but mute-group writes to triggers have not been hardware

@@ -69,6 +69,8 @@ TEST(UnacceptedFlag, CommitIsRejectedByReadOnlyCommands) {
 
 TEST(UnacceptedFlag, CommitIsAcceptedWhereTheCommandReallyCommits) {
   EXPECT_EQ(UnacceptedFlag("setname", {"commit"}), "");
+  EXPECT_EQ(UnacceptedFlag("padlink", {"commit"}), "");
+  EXPECT_EQ(UnacceptedFlag("mutegroup", {"commit"}), "");
   EXPECT_EQ(UnacceptedFlag("deletewave", {"commit"}), "");
   EXPECT_EQ(UnacceptedFlag("sendwave", {"commit"}), "");
 }
@@ -174,6 +176,32 @@ TEST(FlagRejectionHint, SaysWhyRatherThanJustNo) {
   EXPECT_NE(FlagRejectionHint("selectkit", "commit").find("nothing to commit"),
             std::string::npos);
   EXPECT_FALSE(FlagRejectionHint("info", "sample").empty());
+}
+
+TEST(ParseWholeNumber, AcceptsAnInRangeWholeNumber) {
+  int value = 0;
+  std::string error;
+  ASSERT_TRUE(ParseWholeNumber("16", 0, 16, &value, &error)) << error;
+  EXPECT_EQ(value, 16);
+}
+
+TEST(ParseWholeNumber, RejectsMalformedNumbers) {
+  int value = 0;
+  std::string error;
+  for (const char* text : {"", "banana", "16x", "1x", "-1"}) {
+    EXPECT_FALSE(ParseWholeNumber(text, 0, 16, &value, &error))
+        << "accepted \"" << text << "\"";
+    EXPECT_NE(error.find("whole number"), std::string::npos);
+  }
+}
+
+TEST(ParseWholeNumber, RejectsOutOfRangeNumbers) {
+  int value = 0;
+  std::string error;
+  EXPECT_FALSE(ParseWholeNumber("17", 0, 16, &value, &error));
+  EXPECT_NE(error.find("0-16"), std::string::npos);
+  EXPECT_FALSE(ParseWholeNumber("0", 1, 8, &value, &error));
+  EXPECT_NE(error.find("1-8"), std::string::npos);
 }
 
 TEST(ParseKitSpec, ASingleKit) {

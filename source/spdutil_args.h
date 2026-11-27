@@ -77,6 +77,11 @@ bool TakesSingleKit(std::string_view command);
 std::string UnacceptedFlag(std::string_view command,
                            const std::vector<std::string>& seen);
 
+// Parses an unsigned decimal whole number in the inclusive min-max range.
+// Returns false and fills *error for malformed or out-of-range input.
+bool ParseWholeNumber(
+    std::string_view text, int min, int max, int* out, std::string* error);
+
 // Parses a --params list: the ten pad hit-response values in order,
 // comma separated —
 //   mode,fadePoint,fadeEnd,dynamics,curve,fixedVel,hhVol,hhFadeIn,
