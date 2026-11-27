@@ -612,19 +612,42 @@ void SpdsxDevice::WriteRemoteFile(int sample_index, const Bytes& smp) {
   // A single oversized frame wedges the unit mid-write; 0x40 on every
   // chunk makes the device ack every chunk and desyncs the stream.
   constexpr size_t kMaxWriteChunk = 65536;
+  // A single WRITE is kept to at most four frames (256 KiB): a larger file
+  // goes as several writes, each its own burst ending in the 0x40 marker and
+  // each waiting for its own ack. Live 2026-11-27 (fw 2.00): an 859 KB
+  // stereo wave sent as ONE 14-frame burst landed with two altered bytes
+  // past 538 KB and wedged the import commit ("Processing..." forever; after
+  // the power cycle the wave directory read empty and user kits reset). The
+  // same file split this way acked each write within 0.1 s, read back
+  // byte-exact, and survived a power cycle. The largest single burst known
+  // good is 538,496 bytes; the official app's import-large capture is one
+  // 243 KiB burst, so files up to 256 KiB still go out exactly as before.
+  constexpr size_t kMaxWriteBytes = 4 * kMaxWriteChunk;
   auto write_data = [&](const char* label, const Bytes& data) {
-    Bytes burst;
-    for (size_t off = 0; off < data.size(); off += kMaxWriteChunk) {
-      const size_t n = std::min(kMaxWriteChunk, data.size() - off);
-      const Bytes frame = Wrap(FileRequest(
-          0x06,
-          WriteBody(Bytes(data.begin() + static_cast<long>(off),
-                          data.begin() + static_cast<long>(off + n)),
-                    /*final_frame=*/off + n == data.size())));
-      burst.insert(burst.end(), frame.begin(), frame.end());
+    for (size_t start = 0; start < data.size(); start += kMaxWriteBytes) {
+      const size_t end = std::min(data.size(), start + kMaxWriteBytes);
+      Bytes burst;
+      for (size_t off = start; off < end; off += kMaxWriteChunk) {
+        const size_t n = std::min(kMaxWriteChunk, end - off);
+        const Bytes frame = Wrap(FileRequest(
+            0x06,
+            WriteBody(Bytes(data.begin() + static_cast<long>(off),
+                            data.begin() + static_cast<long>(off + n)),
+                      /*final_frame=*/off + n == end)));
+        burst.insert(burst.end(), frame.begin(), frame.end());
+      }
+      port_->Write(burst);
+      const Bytes ack = ReadFrame(3.0);
+      trace_ack(label, ack);
+      // Without its ack the reply stream is one behind from here on: every
+      // later step would read the previous step's reply. Stop before the
+      // wave is registered or anything is committed.
+      if (ack.empty()) {
+        throw std::runtime_error(std::string(label)
+                                 + ": the device did not ack the write; "
+                                   "upload stopped before registering");
+      }
     }
-    port_->Write(burst);
-    trace_ack(label, ReadFrame(3.0));
   };
   // The directory of the .SMP (".../WAVE/DATA/D0NN") and its parent
   // (".../WAVE/DATA").
