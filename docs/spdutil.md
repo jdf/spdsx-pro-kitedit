@@ -39,9 +39,9 @@ anything.
 ## Working state vs. commit
 
 Device writes land in **working state**: audible immediately, gone on power
-cycle. Write commands take `--commit` to follow the writes with a flash commit
-(the same durable WRITE the official app's WRITE button performs). Uncommitted
-edits accumulate across separate spdutil invocations, and one final
+cycle. Kit write commands take `--commit` to follow the writes with a flash
+commit (the same durable WRITE the official app's WRITE button performs).
+Uncommitted edits accumulate across separate spdutil invocations, and one later
 `--commit`-ing command flushes everything staged. `deletewave` and `sendwave`
 always commit.
 
@@ -66,8 +66,8 @@ image via `--from`.
 Shows kit N's per-object parameters as a table — the nine pads, then the eight
 external trigger inputs as `t1`-`t8` rows: layer mode, fade point/end,
 dynamics + curve, fixed velocity, trigger reserve, the hi-hat closed-pedal trio,
-the send/receive link groups, and each object's top/bottom wave assignment. Live
-or `--from` a dump.
+the send/receive mute and link groups, and each object's top/bottom wave
+assignment. Live or `--from` a dump.
 
 ### `samples [--from FILE]`
 
@@ -110,9 +110,10 @@ A SPEC is comma-separated ranges; a range is one kit or `FIRST-LAST` inclusive:
 | `--kits 1-200`     | every kit               |
 
 `setname`, `assign`, `setparams`, and `setlayer` write one kit, so their spec
-must name exactly one. `setmode` and `padlink` sweep and take any spec. All six
-also honor `--commit` and `--dry-run`. `kit` and `selectkit` read or select a
-single kit and take a positional number instead (`spdutil kit 108`).
+must name exactly one. `setmode`, `padlink`, and `mutegroup` sweep and take any
+spec. All seven honor `--dry-run` and `--commit`. `kit` and `selectkit` read
+or select a single kit and take a positional number instead
+(`spdutil kit 108`).
 
 ### `selectkit <N>`
 
@@ -184,9 +185,30 @@ typical link is two invocations, e.g. trigger 1 `--direction send` and pad 3
 | `--trigger N` / `--pad N`   | which objects to link (repeatable)                               |
 | `--kits SPEC`               | kits to touch (**required**)                                     |
 | `--dry-run`                 | print the messages, send nothing                                 |
-| `--verbose`                 | show device replies                                              |
+| `--verbose`                 | show DT1 write status                                            |
+| `--commit`                  | persist after the sweep                                          |
 
 Back the unit up before a padlink run across many kits.
+
+### `mutegroup`
+
+Sets Roland **MUTE GRP** for triggers/pads across kits. Mute groups are
+directional: an object with MUTE SEND mutes objects in the same MUTE RECEIVE
+group when struck. Group 0 turns that direction off; groups 1-16 are active.
+
+| option                      | meaning                                                    |
+| --------------------------- | ---------------------------------------------------------- |
+| `--group N`                 | mute group, 0-16 (required; 0 = off)                       |
+| `--direction send\|receive` | whether to set MUTE SEND or MUTE RECEIVE (required)         |
+| `--trigger N` / `--pad N`   | which objects to change (repeatable)                       |
+| `--kits SPEC`               | kits to touch (**required**)                               |
+| `--dry-run`                 | print the messages, send nothing                           |
+| `--verbose`                 | show DT1 write status                                      |
+| `--commit`                  | persist after the sweep                                    |
+
+The pad offsets were verified on firmware 2.00 build 0094. Trigger blocks use
+the same layout, but mute-group writes to triggers have not been hardware
+verified. Back the unit up before a mutegroup run across many kits.
 
 ## Sample pool writes
 

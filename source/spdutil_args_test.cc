@@ -14,6 +14,7 @@ TEST(SpdutilCommands, KnowsTheRealOnes) {
   EXPECT_TRUE(IsCommand("help"));
   EXPECT_TRUE(IsCommand("setmode"));
   EXPECT_TRUE(IsCommand("padlink"));
+  EXPECT_TRUE(IsCommand("mutegroup"));
   EXPECT_FALSE(IsCommand("pnig"));
   EXPECT_FALSE(IsCommand(""));
 }
@@ -38,10 +39,21 @@ TEST(UnacceptedFlag, PingTakesNoPad) {
 
 // A rehearsal that writes is worse than no rehearsal.
 TEST(UnacceptedFlag, DryRunIsAcceptedByTheWriteCommandsThatHonorIt) {
-  for (const char* command :
-       {"assign", "setname", "setparams", "setlayer", "setmode", "padlink"}) {
+  for (const char* command : {"assign",
+                              "setname",
+                              "setparams",
+                              "setlayer",
+                              "setmode",
+                              "padlink",
+                              "mutegroup"}) {
     EXPECT_EQ(UnacceptedFlag(command, {"dry-run"}), "") << command;
   }
+}
+
+TEST(UnacceptedFlag, MuteGroupAcceptsItsObjectAndDirectionFlags) {
+  EXPECT_EQ(UnacceptedFlag("mutegroup",
+                           {"group", "direction", "trigger", "pad", "kits"}),
+            "");
 }
 
 TEST(UnacceptedFlag, DryRunIsRejectedWhereItCannotWork) {
@@ -57,13 +69,20 @@ TEST(UnacceptedFlag, CommitIsRejectedByReadOnlyCommands) {
 
 TEST(UnacceptedFlag, CommitIsAcceptedWhereTheCommandReallyCommits) {
   EXPECT_EQ(UnacceptedFlag("setname", {"commit"}), "");
+  EXPECT_EQ(UnacceptedFlag("padlink", {"commit"}), "");
+  EXPECT_EQ(UnacceptedFlag("mutegroup", {"commit"}), "");
   EXPECT_EQ(UnacceptedFlag("deletewave", {"commit"}), "");
   EXPECT_EQ(UnacceptedFlag("sendwave", {"commit"}), "");
 }
 
 TEST(UnacceptedFlag, KitsBelongsToTheKitWrites) {
-  for (const char* command :
-       {"setmode", "padlink", "setname", "assign", "setparams", "setlayer"}) {
+  for (const char* command : {"setmode",
+                              "padlink",
+                              "mutegroup",
+                              "setname",
+                              "assign",
+                              "setparams",
+                              "setlayer"}) {
     EXPECT_EQ(UnacceptedFlag(command, {"kits"}), "") << command;
   }
   EXPECT_EQ(UnacceptedFlag("kit", {"kits"}), "kits");
@@ -74,6 +93,7 @@ TEST(UnacceptedFlag, KitsBelongsToTheKitWrites) {
 TEST(UnacceptedFlag, RangeIsNotAFlag) {
   EXPECT_EQ(UnacceptedFlag("setmode", {"range"}), "range");
   EXPECT_EQ(UnacceptedFlag("padlink", {"range"}), "range");
+  EXPECT_EQ(UnacceptedFlag("mutegroup", {"range"}), "range");
 }
 
 TEST(UnacceptedFlag, PortAndVersionAreUniversal) {
@@ -94,8 +114,13 @@ TEST(AllowedFlags, UnknownCommandAllowsNothing) {
 }
 
 TEST(TakesPositionalNumber, TheKitWritesTakeNoneTheyUseKits) {
-  for (const char* command :
-       {"setmode", "assign", "setname", "setparams", "setlayer", "padlink"}) {
+  for (const char* command : {"setmode",
+                              "assign",
+                              "setname",
+                              "setparams",
+                              "setlayer",
+                              "padlink",
+                              "mutegroup"}) {
     EXPECT_FALSE(TakesPositionalNumber(command)) << command;
   }
 }
@@ -115,8 +140,13 @@ TEST(TakesPositionalNumber, FalseForCommandsWithoutOne) {
 
 // A write with no kit named must not pick one.
 TEST(RequiresKitSpec, TrueForEveryCommandThatWritesToKits) {
-  for (const char* command :
-       {"assign", "setname", "setparams", "setlayer", "setmode", "padlink"}) {
+  for (const char* command : {"assign",
+                              "setname",
+                              "setparams",
+                              "setlayer",
+                              "setmode",
+                              "padlink",
+                              "mutegroup"}) {
     EXPECT_TRUE(RequiresKitSpec(command)) << command;
   }
 }
@@ -127,6 +157,7 @@ TEST(TakesSingleKit, TrueOnlyForTheOneKitWrites) {
   }
   EXPECT_FALSE(TakesSingleKit("setmode"));
   EXPECT_FALSE(TakesSingleKit("padlink"));
+  EXPECT_FALSE(TakesSingleKit("mutegroup"));
 }
 
 TEST(RequiresKitSpec, FalseForReadsAndPoolCommands) {
@@ -145,6 +176,32 @@ TEST(FlagRejectionHint, SaysWhyRatherThanJustNo) {
   EXPECT_NE(FlagRejectionHint("selectkit", "commit").find("nothing to commit"),
             std::string::npos);
   EXPECT_FALSE(FlagRejectionHint("info", "sample").empty());
+}
+
+TEST(ParseWholeNumber, AcceptsAnInRangeWholeNumber) {
+  int value = 0;
+  std::string error;
+  ASSERT_TRUE(ParseWholeNumber("16", 0, 16, &value, &error)) << error;
+  EXPECT_EQ(value, 16);
+}
+
+TEST(ParseWholeNumber, RejectsMalformedNumbers) {
+  int value = 0;
+  std::string error;
+  for (const char* text : {"", "banana", "16x", "1x", "-1"}) {
+    EXPECT_FALSE(ParseWholeNumber(text, 0, 16, &value, &error))
+        << "accepted \"" << text << "\"";
+    EXPECT_NE(error.find("whole number"), std::string::npos);
+  }
+}
+
+TEST(ParseWholeNumber, RejectsOutOfRangeNumbers) {
+  int value = 0;
+  std::string error;
+  EXPECT_FALSE(ParseWholeNumber("17", 0, 16, &value, &error));
+  EXPECT_NE(error.find("0-16"), std::string::npos);
+  EXPECT_FALSE(ParseWholeNumber("0", 1, 8, &value, &error));
+  EXPECT_NE(error.find("1-8"), std::string::npos);
 }
 
 TEST(ParseKitSpec, ASingleKit) {

@@ -44,7 +44,17 @@ const std::map<std::string, std::vector<std::string>, std::less<>>& Table() {
             "pad",
             "kits",
             "dry-run",
-            "verbose"}},
+            "verbose",
+            "commit"}},
+          {"mutegroup",
+           {"group",
+            "direction",
+            "trigger",
+            "pad",
+            "kits",
+            "dry-run",
+            "verbose",
+            "commit"}},
       };
   return kTable;
 }
@@ -127,6 +137,22 @@ std::vector<std::string_view> SplitOnCommas(std::string_view spec) {
 }
 
 }  // namespace
+
+bool ParseWholeNumber(
+    std::string_view text, int min, int max, int* out, std::string* error) {
+  const auto number = WholeNumber(text);
+  if (!number) {
+    *error = "\"" + std::string(text) + "\" is not a whole number";
+    return false;
+  }
+  if (*number < min || *number > max) {
+    *error = "\"" + std::string(text) + "\" is outside " + std::to_string(min)
+        + "-" + std::to_string(max);
+    return false;
+  }
+  *out = *number;
+  return true;
+}
 
 bool ParsePadParams(std::string_view spec,
                     device::PadDeviceParams* out,
@@ -351,8 +377,13 @@ bool TakesPositionalNumber(std::string_view command) {
 }
 
 bool RequiresKitSpec(std::string_view command) {
-  static const std::vector<std::string> kNeedsKit = {
-      "assign", "setname", "setparams", "setlayer", "setmode", "padlink"};
+  static const std::vector<std::string> kNeedsKit = {"assign",
+                                                     "setname",
+                                                     "setparams",
+                                                     "setlayer",
+                                                     "setmode",
+                                                     "padlink",
+                                                     "mutegroup"};
   return std::find(kNeedsKit.begin(), kNeedsKit.end(), command)
       != kNeedsKit.end();
 }

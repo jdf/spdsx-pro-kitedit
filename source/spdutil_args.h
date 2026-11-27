@@ -68,7 +68,7 @@ bool TakesPositionalNumber(std::string_view command);
 bool RequiresKitSpec(std::string_view command);
 
 // True if command writes exactly one kit, so its --kits spec may name
-// only one (setmode and padlink sweep, and accept any spec).
+// only one (setmode, padlink and mutegroup sweep, and accept any spec).
 bool TakesSingleKit(std::string_view command);
 
 // The first flag in `seen` (names without dashes) that `command` does
@@ -76,6 +76,11 @@ bool TakesSingleKit(std::string_view command);
 // error rather than silently dropping the flag.
 std::string UnacceptedFlag(std::string_view command,
                            const std::vector<std::string>& seen);
+
+// Parses an unsigned decimal whole number in the inclusive min-max range.
+// Returns false and fills *error for malformed or out-of-range input.
+bool ParseWholeNumber(
+    std::string_view text, int min, int max, int* out, std::string* error);
 
 // Parses a --params list: the ten pad hit-response values in order,
 // comma separated —

@@ -299,6 +299,17 @@ void SpdsxDevice::SetPadLink(const PadLinkWrite& w) {
   std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
 }
 
+void SpdsxDevice::SetMuteGroup(const MuteGroupWrite& w) {
+  SelectObject(w.kind, w.index);  // focus; fire-and-forget like every DT1
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
+  Send(Dt1(MuteGroupAddr({.kind = w.kind,
+                          .index = w.index,
+                          .kit = w.kit,
+                          .direction = w.direction}),
+           {static_cast<uint8_t>(w.group & 0x7F)}));
+  std::this_thread::sleep_for(std::chrono::duration<double>(w.pace_seconds));
+}
+
 void SpdsxDevice::SetKitName(int kit,
                              const std::string& name,
                              double pace_seconds) {

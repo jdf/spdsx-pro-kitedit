@@ -12,11 +12,12 @@
 //   samples     list the device wave pool from the bank 0x20 sample
 //               directory (live or --from); metadata only, no audio
 //   padlink     put triggers/pads into a pad-link group across kits
+//   mutegroup   set directional mute groups across kits
 //
 // With no --port, scans /dev/cu.usbmodem* and pings each node until the
 // device answers (the node number changes every time it's plugged in).
 // Close the SPD-SX PRO App first (one program per port), and back the
-// unit up before a padlink run.
+// unit up before a padlink or mutegroup run.
 
 #include <algorithm>
 #include <array>
@@ -205,7 +206,20 @@ constexpr CommandHelp kCommandHelp[] = {
      "                --pad N          link pad N\n"
      "                --kits SPEC      kits to touch (required)\n"
      "                --dry-run        print, send nothing\n"
-     "                --verbose        show device replies\n"},
+     "                --verbose        show DT1 write status\n"
+     "                --commit         persist after the sweep\n"},
+    {"mutegroup",
+     "  mutegroup   set MUTE GRP for triggers/pads across kits:\n"
+     "                --group N        mute group (0 off, 1-16)\n"
+     "                --direction send|receive   whether the objects\n"
+     "                                 mute the group or are muted by it\n"
+     "                                 (required)\n"
+     "                --trigger N      set trigger N\n"
+     "                --pad N          set pad N\n"
+     "                --kits SPEC      kits to touch (required)\n"
+     "                --dry-run        print, send nothing\n"
+     "                --verbose        show DT1 write status\n"
+     "                --commit         persist after the sweep\n"},
 };
 
 int Usage() {
@@ -220,8 +234,8 @@ int Usage() {
       "\n"
       "--kits SPEC is comma-separated ranges: 108, 108-200, 1,5,10-20\n"
       "(1-200 is every kit). Required by assign, setname, setparams,\n"
-      "setlayer, setmode and padlink; the first four take exactly one\n"
-      "kit.\n"
+      "setlayer, setmode, padlink and mutegroup; the first four take\n"
+      "exactly one kit.\n"
       "\n"
       "With no --port, scans /dev/cu.usbmodem* and pings each node.\n",
       stderr);
@@ -1068,7 +1082,7 @@ int RunKit(const KitShowArgs& args) {
   std::printf("kit %d  \"%s\"\n", kit, k.name.c_str());
   std::printf(
       "  pad  mode      fadeP fadeE  dyn curve   fixVel trigRsv"
-      "  hhVol hhFadeIn hhDecay  send  recv  top   bottom\n");
+      "  hhVol hhFadeIn hhDecay  send  recv  top   bottom  muteS muteR\n");
   for (int pad = 0; pad < spdsx::device::kPadsPerKit; ++pad) {
     const auto& p = k.pads[static_cast<size_t>(pad)];
     const char* mode = p.layer_mode < 8 ? kModeNames[p.layer_mode] : "?";
@@ -1076,7 +1090,7 @@ int RunKit(const KitShowArgs& args) {
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
         "  %3d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d "
-        "%5d\n",
+        "%5d %5d %5d\n",
         pad + 1,
         mode,
         p.fade_point,
@@ -1091,7 +1105,9 @@ int RunKit(const KitShowArgs& args) {
         p.link_send,
         p.link_receive,
         p.wave_top,
-        p.wave_bottom);
+        p.wave_bottom,
+        p.mute_send,
+        p.mute_receive);
   }
   for (int trig = 0; trig < spdsx::device::kTriggersPerKit; ++trig) {
     const auto& p = k.triggers[static_cast<size_t>(trig)];
@@ -1100,7 +1116,7 @@ int RunKit(const KitShowArgs& args) {
         p.dynamics_curve < 4 ? kCurveNames[p.dynamics_curve] : "?";
     std::printf(
         "   t%d  %-9s %5d %5d  %-3s %-7s %5d  %-7s %5d %8d %7d %5d %5d %5d "
-        "%5d\n",
+        "%5d %5d %5d\n",
         trig + 1,
         mode,
         p.fade_point,
@@ -1115,23 +1131,27 @@ int RunKit(const KitShowArgs& args) {
         p.link_send,
         p.link_receive,
         p.wave_top,
-        p.wave_bottom);
+        p.wave_bottom,
+        p.mute_send,
+        p.mute_receive);
   }
   return 0;
 }
 
-struct PadLinkArgs {
+struct ObjectGroupArgs {
   std::string port;
   int group = 0;
   spdsx::device::LinkDirection direction =
       spdsx::device::LinkDirection::kReceive;
   std::vector<std::pair<ObjectKind, int>> objects;
   std::vector<KitRange> ranges;
+  bool mute_group = false;
   bool dry_run = false;
+  bool commit = false;
   bool verbose = false;
 };
 
-int RunPadLink(const PadLinkArgs& args) {
+int RunObjectGroup(const ObjectGroupArgs& args) {
   const int group = args.group;
   const auto& objects = args.objects;
   const bool dry_run = args.dry_run;
@@ -1144,8 +1164,9 @@ int RunPadLink(const PadLinkArgs& args) {
   std::unique_ptr<spdsx::device::SpdsxDevice> owned;
   if (!dry_run) {
     const std::string port = ResolvePort(args.port);
-    std::printf("About to WRITE to %s (group %d, %s):",
+    std::printf("About to WRITE to %s (%s group %d, %s):",
                 port.c_str(),
+                args.mute_group ? "mute" : "pad-link",
                 group,
                 args.direction == spdsx::device::LinkDirection::kSend
                     ? "send"
@@ -1193,22 +1214,26 @@ int RunPadLink(const PadLinkArgs& args) {
       std::printf("%s%s\n", buf, ToHex(sel).c_str());
       ++messages;
       if (dev != nullptr) {
-        const Bytes rep = dev->Command(sel);
+        dev->SelectKit(kit);
         if (verbose) {
-          std::printf("    <- %s\n",
-                      rep.empty() ? "(no reply)" : ToHex(rep).c_str());
+          std::printf("    <- (DT1 select is fire-and-forget)\n");
         }
       }
       for (const auto& [kind, index] : objects) {
         const Bytes foc =
             spdsx::device::Dt1(spdsx::device::kObjectSelectAddr,
                                {spdsx::device::SelectValue(kind, index)});
-        const Bytes wr = spdsx::device::Dt1(
-            spdsx::device::PadLinkAddr({.kind = kind,
-                                        .index = index,
-                                        .kit = kit,
-                                        .direction = args.direction}),
-            {static_cast<uint8_t>(group & 0x7F)});
+        const spdsx::device::PadLinkTarget target {
+            .kind = kind,
+            .index = index,
+            .kit = kit,
+            .direction = args.direction,
+        };
+        const Bytes addr = args.mute_group
+            ? spdsx::device::MuteGroupAddr(target)
+            : spdsx::device::PadLinkAddr(target);
+        const Bytes wr =
+            spdsx::device::Dt1(addr, {static_cast<uint8_t>(group & 0x7F)});
         std::printf("        focus %s%d : %s\n",
                     KindName(kind),
                     index,
@@ -1219,16 +1244,29 @@ int RunPadLink(const PadLinkArgs& args) {
                     ToHex(wr).c_str());
         messages += 2;
         if (dev != nullptr) {
-          const Bytes rep = dev->Command(foc);
-          if (verbose) {
-            std::printf("    <- %s\n",
-                        rep.empty() ? "(no reply)" : ToHex(rep).c_str());
+          if (args.mute_group) {
+            dev->SetMuteGroup({.kit = kit,
+                               .kind = kind,
+                               .index = index,
+                               .direction = args.direction,
+                               .group = group});
+          } else {
+            dev->SetPadLink({.kit = kit,
+                             .kind = kind,
+                             .index = index,
+                             .direction = args.direction,
+                             .group = group});
           }
-          dev->Send(wr);
-          std::this_thread::sleep_for(std::chrono::duration<double>(0.02));
+          if (verbose) {
+            std::printf("    <- (DT1 writes are fire-and-forget)\n");
+          }
         }
       }
     }
+  }
+  if (dev != nullptr && args.commit && !dev->Commit()) {
+    std::fprintf(stderr, "commit did not confirm\n");
+    return 1;
   }
   std::printf("\n%s  %d messages.\n",
               dry_run ? "(dry run \xe2\x80\x94 nothing sent)" : "Done.",
@@ -1290,7 +1328,11 @@ int main(int argc, char** argv) {
       } else if (arg == "--port") {
         port = next();
       } else if (arg == "--group") {
-        group = std::atoi(next().c_str());
+        std::string error;
+        if (!spdsx::spdutil::ParseWholeNumber(next(), 0, 127, &group, &error)) {
+          std::fprintf(stderr, "--group: %s\n", error.c_str());
+          return 2;
+        }
       } else if (arg == "--direction") {
         const std::string v = next();
         if (v == "send") {
@@ -1303,7 +1345,13 @@ int main(int argc, char** argv) {
         }
         have_direction = true;
       } else if (arg == "--trigger") {
-        objects.emplace_back(ObjectKind::kTrig, std::atoi(next().c_str()));
+        int trigger = 0;
+        std::string error;
+        if (!spdsx::spdutil::ParseWholeNumber(next(), 1, 8, &trigger, &error)) {
+          std::fprintf(stderr, "--trigger: %s\n", error.c_str());
+          return 2;
+        }
+        objects.emplace_back(ObjectKind::kTrig, trigger);
       } else if (arg == "--pad") {
         // Dotted "P.S" is the assign pad+slot spec; a bare number is a
         // padlink pad object.
@@ -1311,7 +1359,11 @@ int main(int argc, char** argv) {
         if (v.find('.') != std::string::npos) {
           pad_spec = v;
         } else {
-          pad_num = std::atoi(v.c_str());  // setparams uses a plain pad num
+          std::string error;
+          if (!spdsx::spdutil::ParseWholeNumber(v, 1, 9, &pad_num, &error)) {
+            std::fprintf(stderr, "--pad: %s\n", error.c_str());
+            return 2;
+          }
           objects.emplace_back(ObjectKind::kPad, pad_num);
         }
       } else if (arg == "--range") {
@@ -1546,28 +1598,36 @@ int main(int argc, char** argv) {
                            .dry_run = dry_run,
                            .commit = commit_flag});
     }
-    if (command == "padlink") {
+    if (command == "padlink" || command == "mutegroup") {
+      const bool mute_group = command == "mutegroup";
       if (group < 0) {
-        std::fprintf(stderr, "padlink needs --group\n");
+        std::fprintf(stderr, "%s needs --group\n", command.c_str());
+        return 2;
+      }
+      if (mute_group && group > 16) {
+        std::fprintf(stderr, "mutegroup --group wants 0-16 (0 = off)\n");
         return 2;
       }
       if (objects.empty()) {
-        std::fprintf(stderr, "padlink needs at least one --trigger or --pad\n");
+        std::fprintf(stderr,
+                     "%s needs at least one --trigger or --pad\n",
+                     command.c_str());
         return 2;
       }
       if (!have_direction) {
-        std::fprintf(stderr,
-                     "padlink needs --direction send|receive (do these "
-                     "objects fire the group, or get fired by it?)\n");
+        std::fprintf(
+            stderr, "%s needs --direction send|receive\n", command.c_str());
         return 2;
       }
-      return RunPadLink({.port = port,
-                         .group = group,
-                         .direction = direction_arg,
-                         .objects = objects,
-                         .ranges = ranges,
-                         .dry_run = dry_run,
-                         .verbose = verbose});
+      return RunObjectGroup({.port = port,
+                             .group = group,
+                             .direction = direction_arg,
+                             .objects = objects,
+                             .ranges = ranges,
+                             .mute_group = mute_group,
+                             .dry_run = dry_run,
+                             .commit = commit_flag,
+                             .verbose = verbose});
     }
     return command.empty() ? Usage() : UnknownCommand(command);
   } catch (const std::exception& e) {

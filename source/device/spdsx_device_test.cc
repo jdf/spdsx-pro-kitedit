@@ -379,6 +379,26 @@ TEST_F(SpdsxDeviceTest, SetPadLinkFocusesTheObjectThenWritesTheGroup) {
                 {0x0b}));
 }
 
+TEST_F(SpdsxDeviceTest, SetMuteGroupFocusesTheObjectThenWritesTheGroup) {
+  dev.SetMuteGroup({.kit = 63,
+                    .kind = ObjectKind::kPad,
+                    .index = 9,
+                    .direction = LinkDirection::kSend,
+                    .group = 1,
+                    .pace_seconds = 0.0});
+
+  const std::vector<Bytes> sent = port.payloads();
+  ASSERT_EQ(sent.size(), 2u);
+  EXPECT_EQ(sent[0],
+            Dt1(kObjectSelectAddr, {SelectValue(ObjectKind::kPad, 9)}));
+  EXPECT_EQ(sent[1],
+            Dt1(MuteGroupAddr({.kind = ObjectKind::kPad,
+                               .index = 9,
+                               .kit = 63,
+                               .direction = LinkDirection::kSend}),
+                {0x01}));
+}
+
 // One DT1 per field, at the param indices the kit record stores them at --
 // including the hi-hat trio at 0x07/08/09.
 TEST_F(SpdsxDeviceTest, SetPadLayerParamsWritesEveryFieldToItsOwnParam) {

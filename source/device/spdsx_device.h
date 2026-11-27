@@ -155,6 +155,19 @@ public:
 
   void SetPadLink(const PadLinkWrite& w);
 
+  // Focus the object, then write its mute send/receive group. The object
+  // layout matches pad link; pad writes are live-verified, triggers assumed.
+  struct MuteGroupWrite {
+    int kit = 0;
+    ObjectKind kind = ObjectKind::kPad;
+    int index = 0;  // 1-based pad/trigger number
+    LinkDirection direction = LinkDirection::kReceive;
+    int group = 0;
+    double pace_seconds = 0.02;
+  };
+
+  void SetMuteGroup(const MuteGroupWrite& w);
+
   // Selects the kit, then writes its 16-char name (space-padded/truncated).
   void SetKitName(int kit, const std::string& name, double pace_seconds = 0.02);
 
