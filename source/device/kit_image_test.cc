@@ -269,7 +269,8 @@ TEST(ParseKits, ReadsTriggerParamsAndLayerWaves) {
   EXPECT_EQ(kits[128].pads[8].wave_top, 0);  // pad layers untouched
 }
 
-// The layer table is 18 blocks: top = pad*2, bottom = pad*2 + 1, each
+// Pad layers are the table's first 18 blocks (of 34; triggers follow):
+// top = pad*2, bottom = pad*2 + 1, each
 // starting with the wave as a u16 LE.
 TEST(ParseKits, ReadsEachLayersWaveAsALittleEndianPoolIndex) {
   Bytes image = CleanImage();
