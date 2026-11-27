@@ -34,6 +34,19 @@ struct KitRange {
 inline constexpr int kFirstKit = 1;
 inline constexpr int kLastKit = 200;
 
+// A pad or external-trigger layer named by --pad P.S / tN.S.
+struct ObjectLayerSpec {
+  device::ObjectKind kind = device::ObjectKind::kPad;
+  int index = 0;
+  device::PadSlot slot = device::PadSlot::kTop;
+
+  bool operator==(const ObjectLayerSpec&) const = default;
+};
+
+// Parses P.S for pad P (1-9), or tN.S for external trigger N (1-8), where
+// S is 0 (top) or 1 (bottom). Rejects partial numbers and extra text.
+bool ParseObjectLayerSpec(std::string_view spec, ObjectLayerSpec* out);
+
 // Parses a --kits spec: comma-separated ranges, each a single kit or
 // FIRST-LAST inclusive ("108", "1,5,10-20", "108-200"). Returns false and
 // fills *error with a one-line explanation on anything malformed or out

@@ -128,6 +128,27 @@ std::vector<std::string_view> SplitOnCommas(std::string_view spec) {
 
 }  // namespace
 
+bool ParseObjectLayerSpec(std::string_view spec, ObjectLayerSpec* out) {
+  const bool trigger = !spec.empty() && spec.front() == 't';
+  const size_t number_start = trigger ? 1 : 0;
+  const size_t dot = spec.find('.', number_start);
+  if (dot == std::string_view::npos
+      || spec.find('.', dot + 1) != std::string_view::npos) {
+    return false;
+  }
+  const auto index = WholeNumber(spec.substr(number_start, dot - number_start));
+  const auto slot = WholeNumber(spec.substr(dot + 1));
+  const int last_index =
+      trigger ? device::kTriggersPerKit : device::kPadsPerKit;
+  if (!index || *index < 1 || *index > last_index || !slot || *slot > 1) {
+    return false;
+  }
+  out->kind = trigger ? device::ObjectKind::kTrig : device::ObjectKind::kPad;
+  out->index = *index;
+  out->slot = *slot == 0 ? device::PadSlot::kTop : device::PadSlot::kBottom;
+  return true;
+}
+
 bool ParsePadParams(std::string_view spec,
                     device::PadDeviceParams* out,
                     std::string* error) {

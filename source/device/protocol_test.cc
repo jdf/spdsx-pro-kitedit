@@ -320,9 +320,20 @@ TEST(PadWaveAddr, MatchesTheCapturedSlotAddresses) {
             FromHex("06 00 40 01"));
   EXPECT_EQ(PadWaveEnableAddr({.kit = 129, .pad = 1, .slot = PadSlot::kTop}),
             FromHex("06 00 40 00"));
-  // Pad 9's bottom slot is the far end of the range, verified live.
+  // Pad 9's bottom slot is the far end of the pad range, verified live.
   EXPECT_EQ(PadWaveAddr({.kit = 129, .pad = 9, .slot = PadSlot::kBottom}),
             FromHex("06 00 51 01"));
+  // Trigger 1 top was live-verified on kit 63; trigger slots continue at 0x52.
+  EXPECT_EQ(PadWaveAddr({.kit = 63,
+                         .pad = 1,
+                         .slot = PadSlot::kTop,
+                         .kind = ObjectKind::kTrig}),
+            FromHex("04 7c 52 01"));
+  EXPECT_EQ(PadWaveAddr({.kit = 63,
+                         .pad = 8,
+                         .slot = PadSlot::kBottom,
+                         .kind = ObjectKind::kTrig}),
+            FromHex("04 7c 61 01"));
 }
 
 // The whole assignment message for pad 7, both slots: the wave travels

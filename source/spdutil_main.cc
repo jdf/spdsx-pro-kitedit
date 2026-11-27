@@ -52,6 +52,7 @@ using spdsx::device::Bytes;
 using spdsx::device::ObjectKind;
 using spdsx::device::PadSlot;
 using spdsx::spdutil::KitRange;
+using spdsx::spdutil::ObjectLayerSpec;
 
 std::string ToHex(const Bytes& b) {
   std::string s;
@@ -180,10 +181,11 @@ constexpr CommandHelp kCommandHelp[] = {
      "                  and report MATCH/FAIL (use a fresh index; --name\n"
      "                  applies only to a single file)\n"},
     {"assign",
-     "  assign --kits K --sample N --pad P.S   assign pool sample N to\n"
-     "                  kit K, pad P (1-9), slot S (0 top/1 bottom);\n"
-     "                  e.g. --pad 2.1 = pad 2 bottom. Working state only,\n"
-     "                  not committed (revert with a power cycle)\n"},
+     "  assign --kits K --sample N --pad P.S|tN.S   assign sample N to\n"
+     "                  kit K, pad P (1-9), or use tN.S for external\n"
+     "                  trigger N (1-8); S is 0 top/1 bottom. Example:\n"
+     "                  --pad t1.0 = trigger 1 top. Sample 0 clears;\n"
+     "                  --commit persists the change\n"},
     {"setname",
      "  setname --kits K --name TEXT   set kit K's name (16 chars,\n"
      "                  space-padded); --commit to persist\n"},
@@ -562,23 +564,6 @@ int RunSendWave(const SendWaveArgs& args) {
   return failures == 0 ? 0 : 1;
 }
 
-// Parses a "P.S" pad spec: pad 1-9 before the dot, slot after (0 = top,
-// 1 = bottom). Returns false on a malformed spec.
-bool ParsePadSpec(const std::string& spec, int* pad, PadSlot* slot) {
-  const size_t dot = spec.find('.');
-  if (dot == std::string::npos) {
-    return false;
-  }
-  const int p = std::atoi(spec.substr(0, dot).c_str());
-  const int s = std::atoi(spec.substr(dot + 1).c_str());
-  if (p < 1 || p > spdsx::device::kPadsPerKit || (s != 0 && s != 1)) {
-    return false;
-  }
-  *pad = p;
-  *slot = s == 0 ? PadSlot::kTop : PadSlot::kBottom;
-  return true;
-}
-
 struct AssignArgs {
   std::string port;
   int kit = 1;
@@ -591,24 +576,25 @@ struct AssignArgs {
 int RunAssign(const AssignArgs& args) {
   if (args.sample < 0 || args.pad_spec.empty()) {
     std::fprintf(stderr,
-                 "assign needs --sample <index> and --pad <P.S> "
-                 "(e.g. --pad 2.1 = pad 2 bottom slot)\n");
+                 "assign needs --sample <index> and --pad <P.S|tN.S> "
+                 "(e.g. --pad t1.0 = trigger 1 top slot)\n");
     return 2;
   }
-  int pad = 0;
-  PadSlot slot = PadSlot::kTop;
-  if (!ParsePadSpec(args.pad_spec, &pad, &slot)) {
+  ObjectLayerSpec layer;
+  if (!spdsx::spdutil::ParseObjectLayerSpec(args.pad_spec, &layer)) {
     std::fprintf(stderr,
-                 "bad --pad \"%s\"; want P.S with P 1-9, S 0(top)"
-                 "/1(bottom)\n",
+                 "bad --pad \"%s\"; want P.S with P 1-9 or tN.S with N "
+                 "1-8, S 0(top)/1(bottom)\n",
                  args.pad_spec.c_str());
     return 2;
   }
+  const char* object = layer.kind == ObjectKind::kTrig ? "trigger" : "pad";
   if (args.dry_run) {
-    std::printf("dry run: kit %d pad %d %s <- sample %d (nothing sent)\n",
+    std::printf("dry run: kit %d %s %d %s <- sample %d (nothing sent)\n",
                 args.kit,
-                pad,
-                slot == PadSlot::kTop ? "top" : "bottom",
+                object,
+                layer.index,
+                layer.slot == PadSlot::kTop ? "top" : "bottom",
                 args.sample);
     return 0;
   }
@@ -616,15 +602,19 @@ int RunAssign(const AssignArgs& args) {
   const std::unique_ptr<spdsx::device::SerialPort> serial =
       spdsx::device::PlatformPorts().Open(port);
   spdsx::device::SpdsxDevice dev(serial.get());
-  std::printf("opened %s: kit %d pad %d %s <- sample %d%s\n",
+  std::printf("opened %s: kit %d %s %d %s <- sample %d%s\n",
               port.c_str(),
               args.kit,
-              pad,
-              slot == PadSlot::kTop ? "top" : "bottom",
+              object,
+              layer.index,
+              layer.slot == PadSlot::kTop ? "top" : "bottom",
               args.sample,
               args.commit ? " (committing)" : " (working state)");
-  dev.SetPadWave(
-      {.kit = args.kit, .pad = pad, .slot = slot, .sample = args.sample});
+  dev.SetPadWave({.kit = args.kit,
+                  .pad = layer.index,
+                  .slot = layer.slot,
+                  .kind = layer.kind,
+                  .sample = args.sample});
   if (args.commit) {
     dev.Commit();
   }
@@ -764,13 +754,16 @@ struct SetLayerArgs {
 };
 
 int RunSetLayer(const SetLayerArgs& args) {
-  int pad = 0;
-  PadSlot slot = PadSlot::kTop;
-  if (args.pad_spec.empty() || !ParsePadSpec(args.pad_spec, &pad, &slot)) {
+  ObjectLayerSpec layer;
+  if (args.pad_spec.empty()
+      || !spdsx::spdutil::ParseObjectLayerSpec(args.pad_spec, &layer)
+      || layer.kind != ObjectKind::kPad) {
     std::fprintf(stderr,
                  "setlayer needs --pad <P.S> (P 1-9, S 0 top/1 bottom)\n");
     return 2;
   }
+  const int pad = layer.index;
+  const PadSlot slot = layer.slot;
   if (args.fade_in < 0 || args.fade_in > 127 || args.decay < 0
       || args.decay > 127) {
     std::fprintf(stderr, "--fadein and --decay want 0-127\n");
