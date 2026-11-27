@@ -567,7 +567,9 @@ Bytes MissingDirReply() {
 // answers with a handle and the upload is 19 commands; a missing one takes
 // the mkdir walk (five more). The free-space query answers with 16 raw
 // off-format bytes AND a normal ack frame, both of which must come off.
-void QueueUploadReplies(FakeSerialPort& port, bool dir_exists) {
+void QueueUploadReplies(FakeSerialPort& port,
+                        bool dir_exists,
+                        int pcm_writes = 1) {
   port.QueueReply({0x7a});  // session open 09
   port.QueueReply({0x7a});  // session open 0a
   port.QueueReply({0x7a});  // stat tmp
@@ -587,7 +589,9 @@ void QueueUploadReplies(FakeSerialPort& port, bool dir_exists) {
   port.QueueReply({0x7a});  // seek
   port.QueueRaw(Bytes(16, 0x00));  // free-space: the off-format fragment...
   port.QueueReply({0x7a});  // ...then its normal ack frame
-  port.QueueReply({0x7a});  // write pcm ack
+  for (int i = 0; i < pcm_writes; ++i) {
+    port.QueueReply({0x7a});  // write pcm ack, one per write
+  }
   port.QueueReply({0x7a});  // seek 0
   port.QueueReply({0x7a});  // write hdr ack
   port.QueueReply({0x7a});  // close
@@ -818,6 +822,92 @@ TEST_F(SpdsxDeviceTest, UploadWaveSplitsALargePcmIntoSixtyFourKChunks) {
   // Continuations carry 0x00; only the final frame carries the 0x40
   // end-of-write marker that makes the device send its one ack.
   EXPECT_EQ(markers, Bytes({0x00, 0x00, 0x40}));
+}
+
+// The file data written by an upload, one entry per WRITE (port Write()):
+// each write's frames, reassembled, and their end-of-write markers. The
+// 512-byte header write is excluded.
+struct PcmWrite {
+  Bytes data;
+  Bytes markers;
+};
+
+std::vector<PcmWrite> PcmWrites(const std::vector<Bytes>& writes) {
+  std::vector<PcmWrite> out;
+  for (const Bytes& w : writes) {
+    if (w.size() < 20 + 15 || w[20 + 4] != 0x06) {
+      continue;  // not a write-data burst
+    }
+    PcmWrite pw;
+    size_t i = 0;
+    while (i + 20 <= w.size()) {
+      const size_t len =
+          w[i + 16] | w[i + 17] << 8 | w[i + 18] << 16 | w[i + 19] << 24;
+      const Bytes payload(w.begin() + static_cast<long>(i + 20),
+                          w.begin() + static_cast<long>(i + 20 + len));
+      pw.markers.push_back(payload[10]);
+      pw.data.insert(pw.data.end(), payload.begin() + 15, payload.end() - 1);
+      i += 20 + len;
+    }
+    if (pw.data.size() != kRfwvHeaderSize) {
+      out.push_back(pw);
+    }
+  }
+  return out;
+}
+
+// More than 256 KiB of PCM goes as several WRITEs of at most four 64 KiB
+// frames, each ending in the 0x40 marker and each acked on its own. One
+// 14-frame burst of an 859 KB wave corrupted it and wedged the unit live.
+TEST_F(SpdsxDeviceTest, UploadWaveSplitsPcmOverAQuarterMebibyteIntoWrites) {
+  Bytes pcm(600000);
+  for (size_t i = 0; i < pcm.size(); ++i) {
+    pcm[i] = static_cast<uint8_t>(i * 13 + 5);
+  }
+  QueueUploadReplies(port, /*dir_exists=*/true, /*pcm_writes=*/3);
+
+  dev.UploadWave(1601, PcmToRfwv(pcm, 48000, 2, 16), "big", "big.wav");
+
+  const std::vector<PcmWrite> writes = PcmWrites(port.writes());
+  ASSERT_EQ(writes.size(), 3u);  // 256 KiB + 256 KiB + 75,712 bytes
+  EXPECT_EQ(writes[0].data.size(), 262144u);
+  EXPECT_EQ(writes[1].data.size(), 262144u);
+  EXPECT_EQ(writes[2].data.size(), 75712u);
+  EXPECT_EQ(writes[0].markers, Bytes({0x00, 0x00, 0x00, 0x40}));
+  EXPECT_EQ(writes[1].markers, Bytes({0x00, 0x00, 0x00, 0x40}));
+  EXPECT_EQ(writes[2].markers, Bytes({0x00, 0x40}));
+  Bytes reassembled;
+  for (const PcmWrite& w : writes) {
+    reassembled.insert(reassembled.end(), w.data.begin(), w.data.end());
+  }
+  EXPECT_EQ(reassembled, pcm);
+}
+
+// A write the device never acks leaves every later reply one behind. The
+// upload stops right there: the wave is not registered (no 6a 0b) and no
+// directory record goes out.
+TEST_F(SpdsxDeviceTest, UploadWaveStopsBeforeRegisteringWhenAWriteIsNotAcked) {
+  port.QueueReply({0x7a});  // session open 09
+  port.QueueReply({0x7a});  // session open 0a
+  port.QueueReply({0x7a});  // stat tmp
+  port.QueueReply({0x7a});  // create
+  port.QueueReply(DirReply());  // dir D0NN -> handle
+  port.QueueReply({0x7a});  // dir 0d
+  port.QueueReply({0x7a});  // open write
+  port.QueueReply({0x7a});  // seek
+  port.QueueRaw(Bytes(16, 0x00));  // free-space fragment
+  port.QueueReply({0x7a});  // free-space ack
+  // ...and no ack for the PCM write.
+
+  EXPECT_THROW(dev.UploadWave(1601, CapturedSmp(), "n", "n.wav"),
+               std::runtime_error);
+
+  for (const Bytes& p : port.payloads()) {
+    const bool register_0b = p.size() > 4 && p[2] == 0x6A && p[4] == 0x0B;
+    EXPECT_FALSE(register_0b) << "registered a wave whose write was not acked";
+    EXPECT_FALSE(p.size() > 4 && p[1] == 0x41 && p[2] == 0x10)
+        << "sent a directory record";
+  }
 }
 
 // The two directory records are what make the wave visible and assignable.
